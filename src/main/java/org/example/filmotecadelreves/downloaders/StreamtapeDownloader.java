@@ -88,7 +88,7 @@ public class StreamtapeDownloader implements DirectDownloader {
         connection.setRequestProperty("Referer", "https://streamtape.com/");
         connection.setRequestProperty("User-Agent", "Mozilla/5.0");
 
-        int fileSize = connection.getContentLength();
+        long fileSize = connection.getContentLengthLong();
         directDownload.setFileSize(fileSize);
 
         long startTime = System.currentTimeMillis();
