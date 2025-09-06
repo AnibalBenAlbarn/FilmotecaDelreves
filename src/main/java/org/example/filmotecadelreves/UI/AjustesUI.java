@@ -1,6 +1,6 @@
 package org.example.filmotecadelreves.UI;
 
-import org.example.filmotecainvertida.downloaders.TorrentDownloader;
+import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 
 import javafx.application.Platform;
 import javafx.geometry.Insets;

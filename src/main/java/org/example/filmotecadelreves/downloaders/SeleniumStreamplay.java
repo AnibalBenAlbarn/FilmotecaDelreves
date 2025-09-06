@@ -1,9 +1,9 @@
-package org.example.filmotecainvertida.downloaders;
+package org.example.filmotecadelreves.downloaders;
 
-import org.example.filmotecainvertida.DirectDownloader;
-import org.example.filmotecainvertida.UI.DescargasUI;
-import org.example.filmotecainvertida.moviesad.DownloadLimitManager;
-import org.example.filmotecainvertida.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.DirectDownloader;
+import org.example.filmotecadelreves.UI.DescargasUI;
+import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
+import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
