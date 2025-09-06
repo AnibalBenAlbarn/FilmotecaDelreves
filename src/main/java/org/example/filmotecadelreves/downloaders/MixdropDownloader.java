@@ -229,7 +229,8 @@ public class MixdropDownloader implements DirectDownloader {
             throw new Exception("No se pudo crear el directorio: " + outputPath);
         }
 
-        int fileSize = connection.getContentLength();
+        long fileSize = connection.getContentLengthLong();
+        directDownload.setFileSize(fileSize);
         long startTime = System.currentTimeMillis();
 
         File outputFile = new File(outDir, fileName);
