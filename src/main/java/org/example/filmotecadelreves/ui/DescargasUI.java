@@ -1,4 +1,4 @@
-package org.example.filmotecadelreves.UI;
+package org.example.filmotecadelreves.ui;
 //ver1.3
 
 import com.frostwire.jlibtorrent.TorrentStats;
@@ -22,11 +22,11 @@ import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Callback;
-import org.example.filmotecainvertida.DirectDownloader;
-import org.example.filmotecainvertida.downloaders.TorrentDownloader;
-import org.example.filmotecainvertida.moviesad.DownloadLimitManager;
-import org.example.filmotecainvertida.moviesad.ProgressDialog;
-import org.example.filmotecainvertida.moviesad.TorrentState;
+import org.example.filmotecadelreves.DirectDownloader;
+import org.example.filmotecadelreves.downloaders.TorrentDownloader;
+import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
+import org.example.filmotecadelreves.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.moviesad.TorrentState;
 import org.json.simple.JSONObject;
 
 import java.awt.Desktop;

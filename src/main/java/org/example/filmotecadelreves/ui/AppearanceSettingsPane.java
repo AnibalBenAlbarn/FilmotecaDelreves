@@ -1,4 +1,4 @@
-package org.example.filmotecadelreves.UI;
+package org.example.filmotecadelreves.ui;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -14,7 +14,7 @@ import org.json.simple.parser.ParseException;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
-import static org.example.filmotecadelreves.UI.AjustesUI.DARK_THEME_FILE;
+import static org.example.filmotecadelreves.ui.AjustesUI.DARK_THEME_FILE;
 
 /**
  * Panel reutilizable para ajustes de apariencia

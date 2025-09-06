@@ -1,8 +1,8 @@
-package org.example.filmotecainvertida.UI;
+package org.example.filmotecadelreves.ui;
 
-import org.example.filmotecainvertida.downloaders.TorrentDownloader;
-import org.example.filmotecainvertida.moviesad.ConnectDataBase;
-import org.example.filmotecainvertida.moviesad.DatabaseStatusPanel;
+import org.example.filmotecadelreves.downloaders.TorrentDownloader;
+import org.example.filmotecadelreves.moviesad.ConnectDataBase;
+import org.example.filmotecadelreves.moviesad.DatabaseStatusPanel;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -27,7 +27,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import static org.example.filmotecainvertida.UI.AjustesUI.DARK_THEME_FILE;
+import static org.example.filmotecadelreves.ui.AjustesUI.DARK_THEME_FILE;
 //ver1.3
 
 public class MainUI extends Application {

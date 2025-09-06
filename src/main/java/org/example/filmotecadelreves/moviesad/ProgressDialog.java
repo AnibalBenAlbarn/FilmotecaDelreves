@@ -1,4 +1,4 @@
-package org.example.filmotecainvertida.moviesad;
+package org.example.filmotecadelreves.moviesad;
 
 
 import javafx.application.Platform;

@@ -1,13 +1,13 @@
-package org.example.filmotecainvertida.moviesad;
+package org.example.filmotecadelreves.moviesad;
 
 
-import org.example.filmotecainvertida.DirectDownloader;
-import org.example.filmotecainvertida.UI.AjustesUI;
-import org.example.filmotecainvertida.UI.DescargasUI;
-import org.example.filmotecainvertida.downloaders.MixdropDownloader;
-import org.example.filmotecainvertida.downloaders.SeleniumPowvideo;
-import org.example.filmotecainvertida.downloaders.SeleniumStreamplay;
-import org.example.filmotecainvertida.downloaders.StreamtapeDownloader;
+import org.example.filmotecadelreves.DirectDownloader;
+import org.example.filmotecadelreves.ui.AjustesUI;
+import org.example.filmotecadelreves.ui.DescargasUI;
+import org.example.filmotecadelreves.downloaders.MixdropDownloader;
+import org.example.filmotecadelreves.downloaders.SeleniumPowvideo;
+import org.example.filmotecadelreves.downloaders.SeleniumStreamplay;
+import org.example.filmotecadelreves.downloaders.StreamtapeDownloader;
 
 import java.io.File;
 import java.util.HashMap;

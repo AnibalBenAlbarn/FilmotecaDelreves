@@ -1,6 +1,6 @@
 package org.example.filmotecadelreves;
 
-import org.example.filmotecadelreves.UI.DescargasUI;
+import org.example.filmotecadelreves.ui.DescargasUI;
 
 /**
  * Interfaz para los descargadores directos de diferentes servidores
