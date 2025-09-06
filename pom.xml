@@ -216,7 +216,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>org.example.filmotecainvertida.UI.MainUI</mainClass>
+                            <mainClass>org.example.filmotecadelreves.UI.MainUI</mainClass>
                             <addClasspath>true</addClasspath>
                             <classpathPrefix>lib/</classpathPrefix>
                         </manifest>

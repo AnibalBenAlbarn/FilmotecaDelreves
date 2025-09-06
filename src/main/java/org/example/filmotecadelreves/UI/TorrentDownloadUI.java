@@ -1,9 +1,9 @@
-package org.example.filmotecainvertida.UI;
+package org.example.filmotecadelreves.UI;
 
-import org.example.filmotecainvertida.downloaders.TorrentDownloader;
-import org.example.filmotecainvertida.moviesad.ConnectDataBase;
-import org.example.filmotecainvertida.moviesad.ProgressDialog;
-import org.example.filmotecainvertida.moviesad.TorrentState;
+import org.example.filmotecadelreves.downloaders.TorrentDownloader;
+import org.example.filmotecadelreves.moviesad.ConnectDataBase;
+import org.example.filmotecadelreves.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.moviesad.TorrentState;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;

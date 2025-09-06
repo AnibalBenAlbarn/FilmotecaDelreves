@@ -1,4 +1,4 @@
-package org.example.filmotecainvertida.downloaders;
+package org.example.filmotecadelreves.downloaders;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;

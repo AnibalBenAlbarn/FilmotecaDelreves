@@ -1,4 +1,4 @@
-package org.example.filmotecainvertida.downloaders;
+package org.example.filmotecadelreves.downloaders;
 
 import com.frostwire.jlibtorrent.*;
 import com.frostwire.jlibtorrent.alerts.*;
@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.example.filmotecainvertida.moviesad.TorrentState;
+import org.example.filmotecadelreves.moviesad.TorrentState;
 //ver1.3
 // Apache Commons IO and Commons Compress imports
 import org.apache.commons.io.FileUtils;

@@ -1,7 +1,7 @@
-package org.example.filmotecainvertida.downloaders;
+package org.example.filmotecadelreves.downloaders;
 
-import org.example.filmotecainvertida.DirectDownloader;
-import org.example.filmotecainvertida.UI.DescargasUI;
+import org.example.filmotecadelreves.DirectDownloader;
+import org.example.filmotecadelreves.UI.DescargasUI;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;

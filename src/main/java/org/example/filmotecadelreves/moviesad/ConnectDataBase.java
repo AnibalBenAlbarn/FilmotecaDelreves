@@ -1,7 +1,7 @@
-package org.example.filmotecainvertida.moviesad;
+package org.example.filmotecadelreves.moviesad;
 
-import org.example.filmotecainvertida.UI.DirectDownloadUI;
-import org.example.filmotecainvertida.UI.TorrentDownloadUI;
+import org.example.filmotecadelreves.UI.DirectDownloadUI;
+import org.example.filmotecadelreves.UI.TorrentDownloadUI;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 
