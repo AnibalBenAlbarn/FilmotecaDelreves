@@ -8,7 +8,6 @@ module org.example.filmotecadelreves {
     requires javafx.web;
     requires javafx.swing;
     requires javafx.media;
-    requires java.desktop;
     requires java.sql;
 
     requires org.controlsfx.controls;
@@ -20,6 +19,11 @@ module org.example.filmotecadelreves {
     requires com.almasb.fxgl.all;
     requires json.simple;
     requires jlibtorrent;
+    requires org.jetbrains.annotations;
+    requires org.apache.commons.compress;
+    requires org.apache.commons.io;
+    requires org.seleniumhq.selenium.support;
+    requires org.seleniumhq.selenium.chrome_driver;
 
     opens org.example.filmotecadelreves to javafx.fxml;
     opens org.example.filmotecadelreves.UI to javafx.fxml;

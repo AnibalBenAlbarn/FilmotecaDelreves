@@ -1,5 +1,8 @@
 package org.example.filmotecadelreves.UI;
 
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 
 import javafx.application.Platform;
@@ -14,6 +17,8 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.scene.control.ColorPicker;
+
+import java.awt.*;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
