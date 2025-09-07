@@ -330,10 +330,14 @@ public class MainUI extends Application {
      */
     public void loadStylesheet(String cssPath) {
         try {
-            // Limpiar cualquier stylesheet previo
-            if (scene != null) {
-                scene.getStylesheets().clear();
+            // Verificar que la escena esté inicializada
+            if (scene == null) {
+                System.err.println("Escena no inicializada; estilos no aplicados.");
+                return;
             }
+
+            // Limpiar cualquier stylesheet previo
+            scene.getStylesheets().clear();
             // Si la ruta es nula o vacía, no aplicar ningún CSS personalizado
             if (cssPath == null || cssPath.trim().isEmpty()) {
                 System.out.println("Hoja de estilos limpia; se usarán los estilos predeterminados de JavaFX.");

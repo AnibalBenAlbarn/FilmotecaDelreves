@@ -1,15 +1,14 @@
-/* Default dark theme */
-:root {
-    -color-primary: #6c63ff;
-    -color-bg-dark: #1e1e2f;
-    -color-bg-light: #2b2b3f;
-    -color-text-light: #e7e7e7;
-    -color-text-dark: #e7e7e7;
-    -color-border: #3c3c50;
-}
-
-/* General */
+/* Windows-like dark theme */
 .root {
+    /* Color palette */
+    -color-primary: #0a84ff;      /* Windows accent blue */
+    -color-bg-dark: #1e1e1e;
+    -color-bg-light: #2d2d2d;
+    -color-text-light: #f1f1f1;
+    -color-text-dark: #f1f1f1;
+    -color-border: #3f3f3f;
+
+    /* Base styles */
     -fx-background-color: -color-bg-dark;
     -fx-font-family: 'Segoe UI';
     -fx-font-size: 14px;
@@ -23,7 +22,7 @@
 
 /* Buttons */
 .button {
-    -fx-background-color: linear-gradient(to bottom, -color-primary, derive(-color-primary, -10%));
+    -fx-background-color: linear-gradient(-color-primary, derive(-color-primary, -10%));
     -fx-text-fill: white;
     -fx-font-weight: bold;
     -fx-background-radius: 8;
@@ -36,7 +35,7 @@
 /* Inputs */
 .text-field, .combo-box, .text-area {
     -fx-background-color: -color-bg-light;
-    -fx-text-fill: -color-text-dark;
+    -fx-text-fill: -color-text-light;
     -fx-border-radius: 6;
     -fx-background-radius: 6;
     -fx-padding: 6;
