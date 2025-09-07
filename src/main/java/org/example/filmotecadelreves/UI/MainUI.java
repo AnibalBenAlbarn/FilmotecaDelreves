@@ -23,6 +23,7 @@ import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Base64;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -189,7 +190,7 @@ public class MainUI extends Application {
                 byte[] sessionState = torrentDownloader.saveSessionState();
                 if (sessionState != null) {
                     // Convertir el array de bytes a una cadena Base64 para almacenarlo en JSON
-                    String base64SessionState = java.util.Base64.getEncoder().encodeToString(sessionState);
+                    String base64SessionState = Base64.getEncoder().encodeToString(sessionState);
                     configJson.put("torrentSessionState", base64SessionState);
                 }
             }
@@ -228,7 +229,7 @@ public class MainUI extends Application {
                 String base64SessionState = (String) configJson.get("torrentSessionState");
                 if (base64SessionState != null && !base64SessionState.isEmpty()) {
                     try {
-                        byte[] sessionState = java.util.Base64.getDecoder().decode(base64SessionState);
+                        byte[] sessionState = Base64.getDecoder().decode(base64SessionState);
                         torrentDownloader.restoreSessionState(sessionState);
                     } catch (Exception e) {
                         System.err.println("Error al restaurar el estado de la sesión de torrent: " + e.getMessage());
