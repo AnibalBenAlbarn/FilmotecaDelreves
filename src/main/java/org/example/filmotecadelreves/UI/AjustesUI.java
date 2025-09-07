@@ -951,6 +951,11 @@ public class AjustesUI {
                 System.out.println("TorrentDownloader no disponible, la configuración se aplicará en el próximo reinicio");
             }
 
+            // Recargar conexiones de bases de datos con las nuevas rutas
+            if (mainUI != null) {
+                mainUI.reloadDatabases(torrentDatabasePathField.getText(), directDatabasePathField.getText());
+            }
+
             showAlert(Alert.AlertType.INFORMATION, "Configuración Guardada", "La configuración se ha guardado correctamente.");
         } catch (IOException e) {
             System.err.println("Error al guardar la configuración: " + e.getMessage());

@@ -26,8 +26,8 @@ import java.sql.Statement;
  * A panel that displays database statistics at the bottom of the application
  */
 public class DatabaseStatusPanel extends HBox {
-    private final ConnectDataBase directDB;
-    private final ConnectDataBase torrentDB;
+    private ConnectDataBase directDB;
+    private ConnectDataBase torrentDB;
 
     private final Label directMoviesCountLabel;
     private final Label directSeriesCountLabel;
@@ -136,6 +136,19 @@ public class DatabaseStatusPanel extends HBox {
         startPeriodicUpdates();
 
 // Initial update
+        updateStatistics();
+    }
+
+    /**
+     * Updates the database connections used by this panel and refreshes the
+     * displayed statistics. Allows changing database paths at runtime.
+     *
+     * @param newDirectDB  new connection for direct download database
+     * @param newTorrentDB new connection for torrent database
+     */
+    public void updateConnections(ConnectDataBase newDirectDB, ConnectDataBase newTorrentDB) {
+        this.directDB = newDirectDB;
+        this.torrentDB = newTorrentDB;
         updateStatistics();
     }
 
