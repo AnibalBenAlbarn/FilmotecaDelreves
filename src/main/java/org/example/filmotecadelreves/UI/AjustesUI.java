@@ -18,6 +18,8 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.awt.Desktop;
+import java.net.URI;
 
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -386,7 +388,7 @@ public class AjustesUI {
         Hyperlink captchaLink = new Hyperlink("Obtener una API Key en 2captcha.com");
         captchaLink.setOnAction(e -> {
             try {
-                java.awt.Desktop.getDesktop().browse(new java.net.URI("https://2captcha.com"));
+                Desktop.getDesktop().browse(new URI("https://2captcha.com"));
             } catch (Exception ex) {
                 ex.printStackTrace();
             }

@@ -12,6 +12,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -2031,7 +2032,7 @@ public class TorrentDownloader {
 
                 String encodedName = magnetUri.substring(start, end);
 // Decodificar el nombre (reemplazar %20 por espacios, etc.)
-                return java.net.URLDecoder.decode(encodedName, "UTF-8");
+                return URLDecoder.decode(encodedName, "UTF-8");
             }
         } catch (Exception e) {
             log(Level.WARNING, "Error al extraer nombre del magnet: " + e.getMessage(), "magnet");

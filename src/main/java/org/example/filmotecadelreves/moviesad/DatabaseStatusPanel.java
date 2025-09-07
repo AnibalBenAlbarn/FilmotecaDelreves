@@ -18,6 +18,9 @@ import javafx.util.Duration;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 
 /**
  * A panel that displays database statistics at the bottom of the application
@@ -277,9 +280,9 @@ public class DatabaseStatusPanel extends HBox {
 
         try {
 // Consulta específica para contar películas en la base de datos de torrent
-            java.sql.Connection conn = torrentDB.getConnection();
-            java.sql.Statement stmt = conn.createStatement();
-            java.sql.ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as count FROM torrent_downloads WHERE type = 'movie'");
+            Connection conn = torrentDB.getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as count FROM torrent_downloads WHERE type = 'movie'");
 
             if (rs.next()) {
                 return rs.getInt("count");
@@ -301,9 +304,9 @@ public class DatabaseStatusPanel extends HBox {
 
         try {
 // Consulta específica para contar series en la base de datos de torrent
-            java.sql.Connection conn = torrentDB.getConnection();
-            java.sql.Statement stmt = conn.createStatement();
-            java.sql.ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as count FROM torrent_downloads WHERE type = 'series'");
+            Connection conn = torrentDB.getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as count FROM torrent_downloads WHERE type = 'series'");
 
             if (rs.next()) {
                 return rs.getInt("count");

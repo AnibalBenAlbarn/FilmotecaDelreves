@@ -13,6 +13,8 @@ import javafx.beans.property.IntegerProperty;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
+import java.net.URLDecoder;
+import java.time.Duration;
 
 /**
  *Enhanced TorrentState class to track the state of a torrent download*/
@@ -102,7 +104,7 @@ public class TorrentState implements Serializable {
             for (String part : parts) {
                 if (part.startsWith("dn=")) {
                     try {
-                        return java.net.URLDecoder.decode(part.substring(3), "UTF-8");
+                        return URLDecoder.decode(part.substring(3), "UTF-8");
                     } catch (Exception e) {
                         return "Magnet-" + UUID.randomUUID().toString().substring(0, 8);
                     }
@@ -509,7 +511,7 @@ public class TorrentState implements Serializable {
      *Calculate download time*/
     public long getDownloadTime() {
         if (startedAt == null || completedAt == null) return -1;
-        return java.time.Duration.between(startedAt, completedAt).getSeconds();
+        return Duration.between(startedAt, completedAt).getSeconds();
     }
 
     /**
@@ -534,7 +536,7 @@ public class TorrentState implements Serializable {
     public double getAverageDownloadSpeed() {
         if (startedAt == null || completedAt == null || fileSize.get() <= 0) return 0;
 
-        long seconds = java.time.Duration.between(startedAt, completedAt).getSeconds();
+        long seconds = Duration.between(startedAt, completedAt).getSeconds();
         if (seconds <= 0) return 0;
 
         return (fileSize.get() / 1024.0) / seconds; // KB/s
