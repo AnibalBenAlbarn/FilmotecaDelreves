@@ -8,6 +8,8 @@ module org.example.filmotecadelreves {
     requires javafx.web;
     requires javafx.swing;
     requires javafx.media;
+    requires java.desktop;
+    requires java.sql;
 
     requires org.controlsfx.controls;
     requires com.dlsc.formsfx;
