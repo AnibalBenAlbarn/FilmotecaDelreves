@@ -137,6 +137,25 @@ public class DirectDownloadUI {
         loadInitialData();
     }
 
+    /**
+     * Replace the active database connection with a new one. Called when the
+     * user changes the database path in AjustesUI.
+     *
+     * @param newPath path to the new direct-download database
+     */
+    public void updateDatabase(String newPath) {
+        if (connectDataBase != null) {
+            connectDataBase.closeConnection();
+        }
+        connectDataBase = new ConnectDataBase(newPath);
+        movieDirectFilesCache.clear();
+        movieLanguageCache.clear();
+        movieServerCache.clear();
+        episodesBySeason.clear();
+        filesByEpisode.clear();
+        loadInitialData();
+    }
+
     // ==================== DESCARGAS Y SERVIDORES Y ESTATUS ====================
 
     // ==================== INICIALIZACIÓN Y CONFIGURACIÓN ====================

@@ -65,7 +65,7 @@ public class AppearanceSettingsPane {
 
         fontSizeBox = new ComboBox<>();
         fontSizeBox.getItems().addAll(12, 13, 14, 15, 16, 18, 20);
-        fontSizeBox.setValue(13);
+        fontSizeBox.setValue(14);
 
         applyBtn = new Button("Aplicar (vista)");
         saveBtn = new Button("Guardar");
@@ -161,7 +161,7 @@ public class AppearanceSettingsPane {
         themeBox.setValue("Oscuro");
         accentPicker.setValue(Color.web("#6c63ff"));
         fontFamilyBox.setValue("Segoe UI");
-        fontSizeBox.setValue(13);
+        fontSizeBox.setValue(14);
     }
 
     /**
@@ -256,7 +256,37 @@ public class AppearanceSettingsPane {
                 "    -fx-text-fill: -color-text-dark;\n" +
                 "    -fx-border-radius: 6;\n" +
                 "    -fx-background-radius: 6;\n" +
-                "    -fx-padding: 6;\n                -fx-border-color: -color-border;\n" +
+                "    -fx-padding: 6;\n" +
+                "    -fx-border-color: -color-border;\n" +
+                "}\n" +
+                "/* Labels */\n" +
+                ".label {\n" +
+                "    -fx-text-fill: -color-text-light;\n" +
+                "}\n" +
+                "/* CheckBox */\n" +
+                ".check-box .box {\n" +
+                "    -fx-border-color: -color-border;\n" +
+                "    -fx-background-color: -color-bg-light;\n" +
+                "}\n" +
+                ".check-box:selected .box {\n" +
+                "    -fx-background-color: -color-primary;\n" +
+                "}\n" +
+                "/* TableView */\n" +
+                ".table-view {\n" +
+                "    -fx-background-color: -color-bg-light;\n" +
+                "}\n" +
+                ".table-view .column-header-background {\n" +
+                "    -fx-background-color: -color-bg-light;\n" +
+                "}\n" +
+                ".table-view .table-row-cell {\n" +
+                "    -fx-border-color: -color-border;\n" +
+                "}\n" +
+                "/* ScrollBar */\n" +
+                ".scroll-bar {\n" +
+                "    -fx-background-color: -color-bg-light;\n" +
+                "}\n" +
+                ".scroll-bar .thumb {\n" +
+                "    -fx-background-color: -color-primary;\n" +
                 "}\n" +
                 "/* Panel titled */\n" +
                 ".titled-pane > .title {\n" +

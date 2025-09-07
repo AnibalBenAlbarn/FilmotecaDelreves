@@ -101,6 +101,22 @@ public class TorrentDownloadUI {
         System.out.println("TorrentDownloadUI: TorrentDownloader actualizado");
     }
 
+    /**
+     * Replace the database used by the torrent interface. Called when the
+     * user saves a new database path in AjustesUI.
+     *
+     * @param newPath path to the new torrent database
+     */
+    public void updateDatabase(String newPath) {
+        if (connectDataBase != null) {
+            connectDataBase.closeConnection();
+        }
+        connectDataBase = new ConnectDataBase(newPath);
+        episodesBySeason.clear();
+        torrentFilesByEpisode.clear();
+        loadInitialData();
+    }
+
     private void createTempDirectory() {
         try {
             Path tempDir = Paths.get(TEMP_DIR);

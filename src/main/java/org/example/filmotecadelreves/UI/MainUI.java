@@ -404,6 +404,45 @@ public class MainUI extends Application {
         }
     }
 
+    /**
+     * Recreate database connections using the provided paths. Called when the
+     * user updates database locations in AjustesUI.
+     *
+     * @param torrentPath path to torrent database
+     * @param directPath  path to direct-download database
+     */
+    public void reloadDatabases(String torrentPath, String directPath) {
+        try {
+            System.out.println("Recargando bases de datos...");
+            if (torrentDB != null) {
+                torrentDB.closeConnection();
+            }
+            if (directDB != null) {
+                directDB.closeConnection();
+            }
+            torrentDB = new ConnectDataBase(torrentPath);
+            directDB = new ConnectDataBase(directPath);
+            if (!torrentDB.connect()) {
+                showDatabaseError("torrent_dw_db");
+            }
+            if (!directDB.connect()) {
+                showDatabaseError("direct_dw_db");
+            }
+            if (torrentDownloadUI != null) {
+                torrentDownloadUI.updateDatabase(torrentPath);
+            }
+            if (directDownloadUI != null) {
+                directDownloadUI.updateDatabase(directPath);
+            }
+            if (statusPanel != null) {
+                statusPanel.updateConnections(directDB, torrentDB);
+            }
+        } catch (Exception e) {
+            showAlert(Alert.AlertType.ERROR, "Error crítico", "No se pudo recargar las bases de datos: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
     private void showDatabaseError(String dbName) {
         showAlert(Alert.AlertType.ERROR, "Error de conexión",
                 "No se pudo conectar a la base de datos: " + dbName + "\\n" +
