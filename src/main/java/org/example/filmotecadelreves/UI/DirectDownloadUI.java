@@ -124,7 +124,8 @@ public class DirectDownloadUI {
     public DirectDownloadUI(AjustesUI ajustesUI, DescargasUI descargasUI, Stage primaryStage) {
         this.ajustesUI = ajustesUI;
         this.descargasUI = descargasUI;
-        this.connectDataBase = new ConnectDataBase("direct_dw_db");
+        // Use the database path specified in the user settings instead of a hardcoded name
+        this.connectDataBase = new ConnectDataBase(ajustesUI.getDirectDatabasePath());
 
         // Inicializar downloaders
         initializeDownloaders();
