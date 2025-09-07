@@ -88,6 +88,8 @@ public class ConnectDataBase {
                 System.out.println("Conexión exitosa a: " + dbPath);
                 // Establecer la fecha de última actualización al momento de la conexión
                 lastUpdateDate = new Date();
+                // Crear tablas si no existen
+                initializeTables();
                 return true;
             }
             return false;
@@ -117,6 +119,114 @@ public class ConnectDataBase {
             System.err.println("Error al obtener conexión: " + e.getMessage());
         }
         return connection;
+    }
+
+    /**
+     * Crea las tablas necesarias para la base de datos si aún no existen.
+     * El esquema se determina según el nombre de la base de datos.
+     */
+    private void initializeTables() {
+        if (connection == null) {
+            return;
+        }
+
+        String lowerPath = dbPath.toLowerCase();
+        try (Statement stmt = connection.createStatement()) {
+            if (lowerPath.contains("direct_dw_db")) {
+                // Tablas para descargas directas
+                String[] directSql = {
+                    "CREATE TABLE IF NOT EXISTS episode_update_stats (" +
+                        "update_date DATE PRIMARY KEY, " +
+                        "duration_minutes REAL, new_series INTEGER, new_seasons INTEGER, " +
+                        "new_episodes INTEGER, new_links INTEGER, " +
+                        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+                    "CREATE TABLE IF NOT EXISTS links_files_download (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, movie_id INTEGER, server_id INTEGER, " +
+                        "language TEXT, link TEXT, quality_id INTEGER, episode_id INTEGER, " +
+                        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, " +
+                        "FOREIGN KEY(episode_id) REFERENCES series_episodes(id), " +
+                        "FOREIGN KEY(movie_id) REFERENCES media_downloads(id) ON DELETE CASCADE, " +
+                        "FOREIGN KEY(quality_id) REFERENCES qualities(quality_id), " +
+                        "FOREIGN KEY(server_id) REFERENCES servers(id))",
+                    "CREATE TABLE IF NOT EXISTS media_downloads (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, year INTEGER, imdb_rating REAL, " +
+                        "genre TEXT, type TEXT CHECK(type IN ('movie','serie')), " +
+                        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, " +
+                        "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+                    "CREATE TABLE IF NOT EXISTS qualities (" +
+                        "quality_id INTEGER PRIMARY KEY AUTOINCREMENT, quality TEXT)",
+                    "CREATE TABLE IF NOT EXISTS series_episodes (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, season_id INTEGER, episode INTEGER, title TEXT, " +
+                        "FOREIGN KEY(season_id) REFERENCES series_seasons(id))",
+                    "CREATE TABLE IF NOT EXISTS series_seasons (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, movie_id INTEGER, season INTEGER, " +
+                        "FOREIGN KEY(movie_id) REFERENCES media_downloads(id))",
+                    "CREATE TABLE IF NOT EXISTS servers (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)",
+                    "CREATE TABLE IF NOT EXISTS update_stats (" +
+                        "update_date DATE PRIMARY KEY, duration_minutes REAL, updated_movies INTEGER, " +
+                        "new_links INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+                    "CREATE INDEX IF NOT EXISTS idx_episodes_season ON series_episodes(season_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_links_episode ON links_files_download(episode_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_links_episode_id ON links_files_download(episode_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_links_movie ON links_files_download(movie_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_links_movie_id ON links_files_download(movie_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_links_quality ON links_files_download(quality_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_links_server ON links_files_download(server_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_media_created ON media_downloads(created_at)",
+                    "CREATE INDEX IF NOT EXISTS idx_media_downloads_title ON media_downloads(title, type)",
+                    "CREATE INDEX IF NOT EXISTS idx_media_title ON media_downloads(title COLLATE NOCASE)",
+                    "CREATE INDEX IF NOT EXISTS idx_media_type ON media_downloads(type)",
+                    "CREATE INDEX IF NOT EXISTS idx_media_year ON media_downloads(year)",
+                    "CREATE INDEX IF NOT EXISTS idx_seasons_movie ON series_seasons(movie_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_series_episodes_season_id ON series_episodes(season_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_series_seasons_movie_id ON series_seasons(movie_id)"
+                };
+
+                for (String sql : directSql) {
+                    stmt.executeUpdate(sql);
+                }
+            } else if (lowerPath.contains("torrent_dw_db")) {
+                // Tablas para descargas por torrent
+                String[] torrentSql = {
+                    "CREATE TABLE IF NOT EXISTS qualities (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, quality TEXT NOT NULL UNIQUE)",
+                    "CREATE TABLE IF NOT EXISTS series_episodes (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, season_id INTEGER NOT NULL, " +
+                        "episode_number INTEGER NOT NULL, title TEXT NOT NULL, " +
+                        "FOREIGN KEY(season_id) REFERENCES series_seasons(id) ON DELETE CASCADE)",
+                    "CREATE TABLE IF NOT EXISTS series_seasons (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, series_id INTEGER NOT NULL, " +
+                        "season_number INTEGER NOT NULL, FOREIGN KEY(series_id) REFERENCES torrent_downloads(id) ON DELETE CASCADE)",
+                    "CREATE TABLE IF NOT EXISTS torrent_downloads (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, year INTEGER NOT NULL, " +
+                        "genre TEXT, director TEXT, type TEXT NOT NULL CHECK(type IN ('movie','series')), " +
+                        "added_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+                    "CREATE TABLE IF NOT EXISTS torrent_files (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, torrent_id INTEGER, episode_id INTEGER, " +
+                        "quality_id INTEGER NOT NULL, torrent_link TEXT NOT NULL, " +
+                        "FOREIGN KEY(episode_id) REFERENCES series_episodes(id) ON DELETE CASCADE, " +
+                        "FOREIGN KEY(quality_id) REFERENCES qualities(id) ON DELETE CASCADE, " +
+                        "FOREIGN KEY(torrent_id) REFERENCES torrent_downloads(id) ON DELETE CASCADE)",
+                    "CREATE INDEX IF NOT EXISTS idx_episodes_season ON series_episodes(season_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_seasons_series ON series_seasons(series_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_added ON torrent_downloads(added_at)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_episode ON torrent_files(episode_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_files_episode ON torrent_files(episode_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_files_quality ON torrent_files(quality_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_quality ON torrent_files(quality_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_title ON torrent_downloads(title COLLATE NOCASE)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_type ON torrent_downloads(type)",
+                    "CREATE INDEX IF NOT EXISTS idx_torrent_year ON torrent_downloads(year)"
+                };
+
+                for (String sql : torrentSql) {
+                    stmt.executeUpdate(sql);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error al crear tablas: " + e.getMessage());
+        }
     }
 
     // Methods for direct download database
