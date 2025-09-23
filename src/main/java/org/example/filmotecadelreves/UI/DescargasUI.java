@@ -1,7 +1,7 @@
 package org.example.filmotecadelreves.UI;
 //ver1.3
 
-import org.libtorrent4j.TorrentStats;
+import org.example.filmotecadelreves.downloaders.TorrentStats;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.SimpleDoubleProperty;
