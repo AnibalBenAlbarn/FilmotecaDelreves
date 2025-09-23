@@ -46,20 +46,17 @@ public class ConnectDataBase {
 
     private void initializeDatabaseDirectory() {
         try {
-            // Obtener el directorio padre de la ruta de la base de datos
             File dbFile = new File(dbPath);
-            File parentDir = dbFile.getParentFile();
+            if (!dbFile.exists()) {
+                return;
+            }
 
+            File parentDir = dbFile.getParentFile();
             if (parentDir != null && !parentDir.exists()) {
-                boolean created = parentDir.mkdirs();
-                if (created) {
-                    System.out.println("Directorio creado: " + parentDir.getAbsolutePath());
-                } else {
-                    System.err.println("No se pudo crear el directorio: " + parentDir.getAbsolutePath());
-                }
+                System.err.println("El directorio de la base de datos no existe: " + parentDir.getAbsolutePath());
             }
         } catch (Exception e) {
-            System.err.println("Error al crear directorio para la base de datos: " + e.getMessage());
+            System.err.println("Error al verificar el directorio de la base de datos: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -73,12 +70,18 @@ public class ConnectDataBase {
             File dbFile = new File(dbPath);
             File parentDir = dbFile.getParentFile();
 
+            if (!dbFile.exists() || dbFile.isDirectory()) {
+                System.err.println("La base de datos no existe en la ruta indicada: " + dbFile.getAbsolutePath());
+                System.err.println("Selecciona un archivo .db existente creado por los scripts antes de continuar.");
+                return false;
+            }
+
             if (parentDir != null && !parentDir.exists()) {
                 System.err.println("El directorio no existe: " + parentDir.getAbsolutePath());
                 return false;
             }
 
-            // SQLite creará la base de datos si no existe
+            // Conectarse únicamente si la base de datos ya fue creada por los scripts externos
             String url = "jdbc:sqlite:" + dbPath;
             System.out.println("Intentando conectar a: " + url);
 

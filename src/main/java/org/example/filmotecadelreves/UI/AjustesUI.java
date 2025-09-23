@@ -4,6 +4,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
+import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -34,6 +35,7 @@ public class AjustesUI {
 
     private Tab tab;
     private MainUI mainUI;
+    private final ScraperProgressTracker scraperProgressTracker;
 
     // Rutas de descarga
     private TextField movieDestinationField;
@@ -95,8 +97,9 @@ public class AjustesUI {
     // Referencia al TorrentDownloader
     private TorrentDownloader torrentDownloader;
 
-    public AjustesUI(Stage primaryStage, MainUI mainUI) {
+    public AjustesUI(Stage primaryStage, MainUI mainUI, ScraperProgressTracker scraperProgressTracker) {
         this.mainUI = mainUI;
+        this.scraperProgressTracker = scraperProgressTracker;
         tab = new Tab("Ajustes");
         tab.setClosable(false);
 
@@ -833,6 +836,11 @@ public class AjustesUI {
 
         File selectedFile = fileChooser.showOpenDialog(primaryStage);
         if (selectedFile != null) {
+            if (!selectedFile.exists() || !selectedFile.isFile()) {
+                showAlert(Alert.AlertType.ERROR, "Archivo inválido",
+                        "Debes seleccionar una base de datos existente. No se crearán archivos nuevos desde la aplicación.");
+                return;
+            }
             textField.setText(selectedFile.getAbsolutePath());
             System.out.println("Archivo de base de datos seleccionado: " + selectedFile.getAbsolutePath());
         }
@@ -912,6 +920,13 @@ public class AjustesUI {
         config.put("backgroundColor", toHexString(backgroundColorPicker.getValue()));
         config.put("fontColor", toHexString(fontColorPicker.getValue()));
         config.put("buttonColor", toHexString(buttonColorPicker.getValue()));
+
+        if (scraperProgressTracker != null) {
+            config.put("directScraperMoviesLastPage", scraperProgressTracker.getDirectMoviesLastPage());
+            config.put("directScraperSeriesLastPage", scraperProgressTracker.getDirectSeriesLastPage());
+            config.put("torrentScraperMoviesLastPage", scraperProgressTracker.getTorrentMoviesLastPage());
+            config.put("torrentScraperSeriesLastPage", scraperProgressTracker.getTorrentSeriesLastPage());
+        }
 
         try {
 // Asegurar que el directorio existe
@@ -1061,6 +1076,13 @@ public class AjustesUI {
                     buttonColorPicker.setValue(Color.web((String) config.get("buttonColor")));
                 }
 
+                if (scraperProgressTracker != null) {
+                    scraperProgressTracker.setDirectMoviesLastPage(parseConfigInt(config.get("directScraperMoviesLastPage"), -1));
+                    scraperProgressTracker.setDirectSeriesLastPage(parseConfigInt(config.get("directScraperSeriesLastPage"), -1));
+                    scraperProgressTracker.setTorrentMoviesLastPage(parseConfigInt(config.get("torrentScraperMoviesLastPage"), -1));
+                    scraperProgressTracker.setTorrentSeriesLastPage(parseConfigInt(config.get("torrentScraperSeriesLastPage"), -1));
+                }
+
                 // Actualizar la vista previa
                 updatePreview();
 
@@ -1100,6 +1122,20 @@ public class AjustesUI {
         }
     }
 
+    private int parseConfigInt(Object value, int defaultValue) {
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException ignored) {
+                // Fall through to return default value
+            }
+        }
+        return defaultValue;
+    }
+
     private void resetSettings() {
 // Restaurar valores predeterminados
 // Rutas
@@ -1127,6 +1163,10 @@ public class AjustesUI {
         applySelectedTheme("Oscuro Elegante");
         showNotificationsCheckbox.setSelected(true);
         minimizeToTrayCheckbox.setSelected(false);
+
+        if (scraperProgressTracker != null) {
+            scraperProgressTracker.reset();
+        }
 
 // Restaurar colores predeterminados
         resetColorSettings();
