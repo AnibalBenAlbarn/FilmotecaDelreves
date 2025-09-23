@@ -3,6 +3,7 @@ package org.example.filmotecadelreves.UI;
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 import org.example.filmotecadelreves.moviesad.ConnectDataBase;
 import org.example.filmotecadelreves.moviesad.DatabaseStatusPanel;
+import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -43,11 +44,14 @@ public class MainUI extends Application {
     private DirectDownloadUI directDownloadUI;
     private JSONObject configJson;
     private static final String CONFIG_FILE_PATH = "config.json";
+    private final ScraperProgressTracker scraperProgressTracker = new ScraperProgressTracker();
 
     @Override
     public void start(Stage primaryStage) {
         // Cargar configuración
         loadConfig();
+        registerScraperProgressListeners();
+        applyScraperProgressFromConfig();
 
         // Crear directorios necesarios
         createRequiredDirectories();
@@ -64,7 +68,7 @@ public class MainUI extends Application {
         mainTabs.getStyleClass().add("main-tabs");
 
         // 1. Crear AjustesUI y cargar configuración
-        AjustesUI ajustesUI = new AjustesUI(primaryStage, this);
+        AjustesUI ajustesUI = new AjustesUI(primaryStage, this, scraperProgressTracker);
 
         // 2. Inicializar TorrentDownloader de forma diferida. En lugar de crear
         // automáticamente una instancia al inicio, se cargará cuando el usuario
@@ -83,10 +87,10 @@ public class MainUI extends Application {
         // Aplicar configuración de columnas visibles
         applyColumnVisibilityConfig();
 
-        torrentDownloadUI = new TorrentDownloadUI(ajustesUI, descargasUI, primaryStage);
+        torrentDownloadUI = new TorrentDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker);
         torrentDownloadUI.updateDownloader(this.torrentDownloader);
 
-        directDownloadUI = new DirectDownloadUI(ajustesUI, descargasUI, primaryStage);
+        directDownloadUI = new DirectDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker);
 
         // Inicializar bases de datos después de cargar la configuración
         initializeDatabases(ajustesUI);
@@ -195,6 +199,12 @@ public class MainUI extends Application {
                 }
             }
 
+            // Guardar el progreso actual de los scrapers
+            configJson.put("directScraperMoviesLastPage", scraperProgressTracker.getDirectMoviesLastPage());
+            configJson.put("directScraperSeriesLastPage", scraperProgressTracker.getDirectSeriesLastPage());
+            configJson.put("torrentScraperMoviesLastPage", scraperProgressTracker.getTorrentMoviesLastPage());
+            configJson.put("torrentScraperSeriesLastPage", scraperProgressTracker.getTorrentSeriesLastPage());
+
             // Escribir el archivo de configuración
             try (FileWriter file = new FileWriter(CONFIG_FILE_PATH)) {
                 file.write(configJson.toJSONString());
@@ -205,6 +215,37 @@ public class MainUI extends Application {
             System.err.println("Error al guardar la configuración: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private void registerScraperProgressListeners() {
+        scraperProgressTracker.directMoviesLastPageProperty().addListener((obs, oldValue, newValue) ->
+                configJson.put("directScraperMoviesLastPage", newValue.intValue()));
+        scraperProgressTracker.directSeriesLastPageProperty().addListener((obs, oldValue, newValue) ->
+                configJson.put("directScraperSeriesLastPage", newValue.intValue()));
+        scraperProgressTracker.torrentMoviesLastPageProperty().addListener((obs, oldValue, newValue) ->
+                configJson.put("torrentScraperMoviesLastPage", newValue.intValue()));
+        scraperProgressTracker.torrentSeriesLastPageProperty().addListener((obs, oldValue, newValue) ->
+                configJson.put("torrentScraperSeriesLastPage", newValue.intValue()));
+    }
+
+    private void applyScraperProgressFromConfig() {
+        if (configJson == null) {
+            scraperProgressTracker.reset();
+            return;
+        }
+
+        scraperProgressTracker.setDirectMoviesLastPage(getIntConfigValue("directScraperMoviesLastPage", -1));
+        scraperProgressTracker.setDirectSeriesLastPage(getIntConfigValue("directScraperSeriesLastPage", -1));
+        scraperProgressTracker.setTorrentMoviesLastPage(getIntConfigValue("torrentScraperMoviesLastPage", -1));
+        scraperProgressTracker.setTorrentSeriesLastPage(getIntConfigValue("torrentScraperSeriesLastPage", -1));
+    }
+
+    private int getIntConfigValue(String key, int defaultValue) {
+        Object value = configJson.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        return defaultValue;
     }
 
     /**
