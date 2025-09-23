@@ -17,7 +17,6 @@ import org.libtorrent4j.alerts.StateChangedAlert;
 import org.libtorrent4j.alerts.StateUpdateAlert;
 import org.libtorrent4j.alerts.TorrentErrorAlert;
 import org.libtorrent4j.alerts.TorrentFinishedAlert;
-import org.libtorrent4j.swig.error_code;
 import org.libtorrent4j.swig.settings_pack;
 
 import java.io.IOException;
@@ -36,6 +35,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -98,7 +98,7 @@ public class TorrentDownloader {
     private final Deque<PendingTorrent> pendingQueue;
     private final Map<TorrentState, PendingTorrent> pendingByState;
     private final Map<TorrentState, ManagedTorrent> managedByState;
-    private final Map<String, ManagedTorrent> managedByHash;
+    private final ConcurrentHashMap<String, ManagedTorrent> managedByHash;
     private final List<TorrentNotificationListener> listeners;
     private final List<Path> temporaryTorrentFiles;
     private final Path temporaryDirectory;
@@ -136,7 +136,7 @@ public class TorrentDownloader {
         this.pendingQueue = new ArrayDeque<>();
         this.pendingByState = new java.util.HashMap<>();
         this.managedByState = new java.util.HashMap<>();
-        this.managedByHash = new java.util.HashMap<>();
+        this.managedByHash = new ConcurrentHashMap<>();
         this.listeners = new CopyOnWriteArrayList<>();
         this.temporaryTorrentFiles = new CopyOnWriteArrayList<>();
         this.temporaryDirectory = createTemporaryDirectory();
@@ -164,6 +164,7 @@ public class TorrentDownloader {
         sessionManager.addListener(alertListener);
         sessionManager.start(new SessionParams(settings));
         applyRateLimits();
+        requestTorrentStatusUpdates();
     }
 
     private SettingsPack buildDefaultSettings() {
@@ -173,11 +174,15 @@ public class TorrentDownloader {
         settings.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true);
+        populatePerformanceSettings(settings);
+        settings.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), String.join(",", DEFAULT_DHT_NODES));
+        return settings;
+    }
+
+    private void populatePerformanceSettings(SettingsPack settings) {
         settings.setInteger(settings_pack.int_types.active_downloads.swigValue(), maxConcurrentDownloads);
         settings.setInteger(settings_pack.int_types.active_seeds.swigValue(), maxConcurrentDownloads);
         settings.setInteger(settings_pack.int_types.active_limit.swigValue(), maxConcurrentDownloads * 2);
-        settings.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), String.join(",", DEFAULT_DHT_NODES));
-        return settings;
     }
 
     private void applyRateLimits() {
@@ -194,6 +199,17 @@ public class TorrentDownloader {
         }
     }
 
+    private void applySessionSettings() {
+        SettingsPack pack = new SettingsPack();
+        populatePerformanceSettings(pack);
+        try {
+            sessionManager.applySettings(pack);
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo aplicar la configuración dinámica: " + t.getMessage());
+        }
+        applyRateLimits();
+    }
+
     /** Update downloader configuration at runtime. */
     public void updateConfig(int maxConcurrentDownloads,
                               boolean extractArchives,
@@ -207,7 +223,7 @@ public class TorrentDownloader {
             this.uploadSpeedLimit = Math.max(0, uploadSpeedLimit);
             this.autoStartDownloads = autoStartDownloads;
         }
-        applyRateLimits();
+        applySessionSettings();
         if (autoStartDownloads) {
             startNextIfPossible();
         }
@@ -220,6 +236,98 @@ public class TorrentDownloader {
         }
         if (autoStartDownloads) {
             startNextIfPossible();
+        }
+    }
+
+    /** Ajusta la prioridad del torrent y reordena la cola de inicio. */
+    public void reprioritize(TorrentState torrentState, int priority) {
+        if (torrentState == null) {
+            return;
+        }
+        torrentState.setPriority(priority);
+        synchronized (lock) {
+            PendingTorrent pending = pendingByState.get(torrentState);
+            if (pending != null) {
+                pendingQueue.remove(pending);
+                pendingQueue.offerFirst(pending);
+            }
+        }
+        if (autoStartDownloads) {
+            startNextIfPossible();
+        }
+    }
+
+    /** Habilita o deshabilita la descarga secuencial para un torrent concreto. */
+    public void setSequentialDownload(TorrentState torrentState, boolean sequential) {
+        if (torrentState == null) {
+            return;
+        }
+        ManagedTorrent managed;
+        synchronized (lock) {
+            PendingTorrent pending = pendingByState.get(torrentState);
+            if (pending != null) {
+                pending.setSequentialDownload(sequential);
+                if (sequential) {
+                    pendingQueue.remove(pending);
+                    pendingQueue.offerFirst(pending);
+                }
+                return;
+            }
+            managed = managedByState.get(torrentState);
+        }
+        if (managed != null && managed.handle.isValid()) {
+            try {
+                managed.handle.setSequentialDownload(sequential);
+                managed.sequentialDownload = sequential;
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo actualizar la descarga secuencial: " + t.getMessage());
+            }
+        }
+    }
+
+    /** Aplica límites de velocidad individuales (en KiB/s) a un torrent. */
+    public void setTorrentRateLimits(TorrentState torrentState, int downloadLimitKiB, int uploadLimitKiB) {
+        if (torrentState == null) {
+            return;
+        }
+        int downloadBytes = downloadLimitKiB <= 0 ? -1 : downloadLimitKiB * 1024;
+        int uploadBytes = uploadLimitKiB <= 0 ? -1 : uploadLimitKiB * 1024;
+
+        ManagedTorrent managed;
+        synchronized (lock) {
+            PendingTorrent pending = pendingByState.get(torrentState);
+            if (pending != null) {
+                pending.setDownloadLimitBytes(downloadBytes);
+                pending.setUploadLimitBytes(uploadBytes);
+                return;
+            }
+            managed = managedByState.get(torrentState);
+        }
+
+        if (managed != null && managed.handle.isValid()) {
+            try {
+                managed.handle.setDownloadLimit(downloadBytes);
+                managed.downloadLimitBytes = downloadBytes;
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo establecer el límite de descarga del torrent: " + t.getMessage());
+            }
+            try {
+                managed.handle.setUploadLimit(uploadBytes);
+                managed.uploadLimitBytes = uploadBytes;
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo establecer el límite de subida del torrent: " + t.getMessage());
+            }
+        }
+    }
+
+    /** Devuelve las estadísticas vivas asociadas a un torrent gestionado. */
+    public TorrentStats getTorrentStats(TorrentState torrentState) {
+        if (torrentState == null) {
+            return null;
+        }
+        synchronized (lock) {
+            ManagedTorrent managed = managedByState.get(torrentState);
+            return managed != null ? managed.stats : null;
         }
     }
 
@@ -339,8 +447,8 @@ public class TorrentDownloader {
                 pendingQueue.remove(pending);
             }
             managed = managedByState.remove(torrentState);
-            if (managed != null && managed.handle.isValid()) {
-                managedByHash.remove(managed.handle.infoHash().toString());
+            if (managed != null) {
+                managedByHash.remove(managed.infoHashKey);
             }
         }
         if (managed != null && managed.handle.isValid()) {
@@ -381,7 +489,7 @@ public class TorrentDownloader {
         try {
             sessionManager.stop();
             sessionManager.start(new SessionParams(sessionState));
-            applyRateLimits();
+            applySessionSettings();
             running = true;
             startNextIfPossible();
             log(Level.INFO, "Estado de sesión restaurado correctamente.");
@@ -402,7 +510,7 @@ public class TorrentDownloader {
                 pendingQueue.remove(previous);
             }
             if (autoStartDownloads) {
-                pendingQueue.offer(pendingTorrent);
+                pendingQueue.offerLast(pendingTorrent);
                 state.setStatus("En espera");
             } else {
                 state.setStatus("Pausado");
@@ -423,7 +531,7 @@ public class TorrentDownloader {
                 return;
             }
             while (countActiveDownloadsInternal() < maxConcurrentDownloads && !pendingQueue.isEmpty()) {
-                PendingTorrent pending = pendingQueue.poll();
+                PendingTorrent pending = pollNextPendingUnlocked();
                 if (pending == null) {
                     break;
                 }
@@ -433,6 +541,27 @@ public class TorrentDownloader {
         for (PendingTorrent pending : toStart) {
             workerExecutor.submit(() -> startTorrent(pending));
         }
+    }
+
+    private PendingTorrent pollNextPendingUnlocked() {
+        PendingTorrent selected = null;
+        int selectedPriority = Integer.MIN_VALUE;
+        int selectedIndex = Integer.MAX_VALUE;
+        int index = 0;
+        for (PendingTorrent candidate : pendingQueue) {
+            int candidatePriority = candidate.getPriority();
+            if (selected == null || candidatePriority > selectedPriority
+                    || (candidatePriority == selectedPriority && index < selectedIndex)) {
+                selected = candidate;
+                selectedPriority = candidatePriority;
+                selectedIndex = index;
+            }
+            index++;
+        }
+        if (selected != null) {
+            pendingQueue.remove(selected);
+        }
+        return selected;
     }
 
     private int countActiveDownloadsInternal() {
@@ -448,14 +577,24 @@ public class TorrentDownloader {
     private void startTorrent(PendingTorrent pending) {
         TorrentState state = pending.state;
         try {
-            Path destination = ensureDestinationDirectory(state.getDestinationPath());
-            if (!hasEnoughDiskSpace(destination)) {
+            AddTorrentParams params = pending.paramsSupplier.get();
+            if (params == null) {
+                throw new IllegalStateException("No se pudo construir la configuración del torrent.");
+            }
+
+            String destinationPath = state.getDestinationPath();
+            if (destinationPath == null || destinationPath.isBlank()) {
+                throw new IllegalStateException("La ruta de descarga no está configurada.");
+            }
+
+            Path destination = ensureDestinationDirectory(destinationPath);
+            long requiredSpace = calculateRequiredSpace(state);
+            if (!hasEnoughDiskSpace(destination, requiredSpace)) {
                 state.setStatus("Pausado (Espacio insuficiente)");
-                notifyDiskSpace(destination);
+                notifyDiskSpace(destination, requiredSpace);
                 return;
             }
 
-            AddTorrentParams params = pending.paramsSupplier.get();
             params.setSavePath(destination.toAbsolutePath().toString());
             if (params.getName() == null || params.getName().isBlank()) {
                 params.setName(state.getName());
@@ -464,26 +603,59 @@ public class TorrentDownloader {
                 params.setTrackers(Arrays.asList(DEFAULT_TRACKERS));
             }
 
-            error_code ec = new error_code();
-            TorrentHandle handle = new TorrentHandle(sessionManager.swig().add_torrent(params.swig(), ec));
-            if (ec.value() != 0 || !handle.isValid()) {
-                throw new IllegalStateException(ec.message());
+            TorrentHandle handle = sessionManager.addTorrent(params);
+            if (handle == null || !handle.isValid()) {
+                throw new IllegalStateException("No se pudo registrar el torrent en la sesión activa.");
             }
 
-            ManagedTorrent managed = new ManagedTorrent(state, handle);
+            InfoHash infoHash = handle.infoHash();
+            if (infoHash == null || infoHash.getBest() == null) {
+                throw new IllegalStateException("El torrent no proporcionó un infohash válido.");
+            }
+
+            Sha1Hash bestHash = infoHash.getBest();
+            ManagedTorrent managed = new ManagedTorrent(state, handle, bestHash);
+            managed.sequentialDownload = pending.isSequentialDownload();
+            if (managed.sequentialDownload) {
+                try {
+                    handle.setSequentialDownload(true);
+                } catch (Throwable t) {
+                    log(Level.FINEST, "No se pudo activar la descarga secuencial: " + t.getMessage());
+                }
+            }
+            if (pending.hasCustomDownloadLimit()) {
+                int limitBytes = pending.getDownloadLimitBytes();
+                try {
+                    handle.setDownloadLimit(limitBytes);
+                } catch (Throwable t) {
+                    log(Level.FINEST, "No se pudo aplicar el límite de descarga: " + t.getMessage());
+                }
+                managed.downloadLimitBytes = limitBytes;
+            }
+            if (pending.hasCustomUploadLimit()) {
+                int limitBytes = pending.getUploadLimitBytes();
+                try {
+                    handle.setUploadLimit(limitBytes);
+                } catch (Throwable t) {
+                    log(Level.FINEST, "No se pudo aplicar el límite de subida: " + t.getMessage());
+                }
+                managed.uploadLimitBytes = limitBytes;
+            }
             synchronized (lock) {
                 pendingByState.remove(state);
                 managedByState.put(state, managed);
-                managedByHash.put(handle.infoHash().toString(), managed);
+                managedByHash.put(managed.infoHashKey, managed);
             }
 
             state.setStatus("Descargando");
-            state.setTorrentId(handle.infoHash().toString());
-            state.setHash(handle.infoHash().toHex());
+            state.setTorrentId(infoHash.toString());
+            state.setHash(bestHash.toHex());
             updateStateFromHandle(managed);
             notifyStatusUpdate(state, managed.stats);
             log(Level.INFO, "Torrent iniciado: " + state.getName());
+            requestTorrentStatusUpdates();
         } catch (Exception e) {
+            state.setStatus("Error");
             log(Level.SEVERE, "Error al iniciar el torrent " + state.getName() + ": " + e.getMessage());
             notifyError(state, e.getMessage());
             synchronized (lock) {
@@ -496,9 +668,17 @@ public class TorrentDownloader {
         if (!running) {
             return;
         }
-        List<ManagedTorrent> snapshot = new ArrayList<>(managedByState.values());
+        requestTorrentStatusUpdates();
+        List<ManagedTorrent> snapshot;
+        synchronized (lock) {
+            snapshot = new ArrayList<>(managedByState.values());
+        }
         for (ManagedTorrent managed : snapshot) {
             if (!managed.handle.isValid()) {
+                synchronized (lock) {
+                    managedByState.remove(managed.state);
+                    managedByHash.remove(managed.infoHashKey);
+                }
                 continue;
             }
             try {
@@ -507,6 +687,22 @@ public class TorrentDownloader {
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo actualizar el estado del torrent: " + t.getMessage());
             }
+        }
+    }
+
+    private void requestTorrentStatusUpdates() {
+        if (!running) {
+            return;
+        }
+        try {
+            sessionManager.postTorrentUpdates();
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo solicitar la actualización de torrents: " + t.getMessage());
+        }
+        try {
+            sessionManager.postSessionStats();
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo solicitar las estadísticas de sesión: " + t.getMessage());
         }
     }
 
@@ -567,6 +763,17 @@ public class TorrentDownloader {
         return Duration.ofSeconds(remaining / Math.max(1, rate)).getSeconds();
     }
 
+    private long calculateRequiredSpace(TorrentState state) {
+        if (state == null) {
+            return MIN_DISK_SPACE;
+        }
+        long size = state.getFileSize();
+        if (size <= 0) {
+            return MIN_DISK_SPACE;
+        }
+        return Math.max(MIN_DISK_SPACE, size);
+    }
+
     private void updateStateFromHandle(ManagedTorrent managed) {
         try {
             TorrentInfo info = managed.handle.torrentFile();
@@ -580,22 +787,22 @@ public class TorrentDownloader {
         }
     }
 
-    private boolean hasEnoughDiskSpace(Path destination) {
+    private boolean hasEnoughDiskSpace(Path destination, long requiredSpace) {
         try {
             FileStore store = Files.getFileStore(destination);
             long free = store.getUsableSpace();
-            return free >= MIN_DISK_SPACE;
+            return free >= Math.max(MIN_DISK_SPACE, requiredSpace);
         } catch (IOException e) {
             log(Level.WARNING, "No se pudo comprobar el espacio en disco: " + e.getMessage());
             return true;
         }
     }
 
-    private void notifyDiskSpace(Path destination) {
+    private void notifyDiskSpace(Path destination, long requiredSpace) {
         try {
             long free = Files.getFileStore(destination).getUsableSpace();
             for (TorrentNotificationListener listener : listeners) {
-                listener.onDiskSpaceLow(free, MIN_DISK_SPACE);
+                listener.onDiskSpaceLow(free, Math.max(MIN_DISK_SPACE, requiredSpace));
             }
         } catch (IOException e) {
             log(Level.WARNING, "No se pudo determinar el espacio en disco: " + e.getMessage());
@@ -614,6 +821,11 @@ public class TorrentDownloader {
         params.setTorrentInfo(info);
         params.setName(info.name());
         params.setTrackers(Arrays.asList(DEFAULT_TRACKERS));
+        if (state != null) {
+            state.setFileSize(info.totalSize());
+            state.setFileName(info.name());
+            state.setName(info.name());
+        }
         return params;
     }
 
@@ -679,6 +891,9 @@ public class TorrentDownloader {
     }
 
     private void notifyError(TorrentState state, String error) {
+        if (state != null) {
+            state.setStatus("Error");
+        }
         for (TorrentNotificationListener listener : listeners) {
             listener.onTorrentError(state, error);
         }
@@ -760,7 +975,11 @@ public class TorrentDownloader {
         if (infoHash == null) {
             return null;
         }
-        return managedByHash.get(infoHash.getBest().toString());
+        Sha1Hash best = infoHash.getBest();
+        if (best == null) {
+            return null;
+        }
+        return managedByHash.get(best.toString());
     }
 
     private static ThreadFactory daemonThreadFactory(String baseName) {
@@ -776,10 +995,49 @@ public class TorrentDownloader {
     private static final class PendingTorrent {
         private final TorrentState state;
         private final Supplier<AddTorrentParams> paramsSupplier;
+        private volatile boolean sequentialDownload;
+        private volatile int downloadLimitBytes = -1;
+        private volatile int uploadLimitBytes = -1;
 
         private PendingTorrent(TorrentState state, Supplier<AddTorrentParams> paramsSupplier) {
             this.state = state;
             this.paramsSupplier = paramsSupplier;
+        }
+
+        private int getPriority() {
+            return state.getPriority();
+        }
+
+        private boolean isSequentialDownload() {
+            return sequentialDownload;
+        }
+
+        private void setSequentialDownload(boolean sequentialDownload) {
+            this.sequentialDownload = sequentialDownload;
+        }
+
+        private void setDownloadLimitBytes(int downloadLimitBytes) {
+            this.downloadLimitBytes = downloadLimitBytes;
+        }
+
+        private int getDownloadLimitBytes() {
+            return downloadLimitBytes;
+        }
+
+        private boolean hasCustomDownloadLimit() {
+            return downloadLimitBytes >= 0;
+        }
+
+        private void setUploadLimitBytes(int uploadLimitBytes) {
+            this.uploadLimitBytes = uploadLimitBytes;
+        }
+
+        private int getUploadLimitBytes() {
+            return uploadLimitBytes;
+        }
+
+        private boolean hasCustomUploadLimit() {
+            return uploadLimitBytes >= 0;
         }
 
         @Override
@@ -801,15 +1059,23 @@ public class TorrentDownloader {
         private final TorrentState state;
         private final TorrentHandle handle;
         private final TorrentStats stats;
+        private final Sha1Hash infoHash;
+        private final String infoHashKey;
         private volatile boolean paused;
         private volatile boolean completed;
+        private volatile boolean sequentialDownload;
+        private volatile int downloadLimitBytes = -1;
+        private volatile int uploadLimitBytes = -1;
 
-        private ManagedTorrent(TorrentState state, TorrentHandle handle) {
+        private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
             this.handle = handle;
-            this.stats = new TorrentStats(handle.infoHash(), 120);
+            this.infoHash = infoHash;
+            this.infoHashKey = infoHash.toString();
+            this.stats = new TorrentStats(infoHash, 120);
             this.paused = false;
             this.completed = false;
+            this.sequentialDownload = false;
         }
     }
 }
