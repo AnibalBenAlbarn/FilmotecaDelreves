@@ -103,16 +103,14 @@ public class MainUI extends Application {
         // Cargar el TorrentDownloader de forma diferida cuando el usuario seleccione
         // la pestaña de descarga torrent por primera vez.
         mainTabs.getSelectionModel().selectedItemProperty().addListener((obs, oldTab, newTab) -> {
-            if (newTab == torrentDownloadUI.getTab() && this.torrentDownloader == null) {
-                // Crear nueva instancia con la configuración actual
-                this.torrentDownloader = ajustesUI.createTorrentDownloader();
-                // Actualizar todas las referencias
-                ajustesUI.setTorrentDownloader(this.torrentDownloader);
-                descargasUI.setTorrentDownloader(this.torrentDownloader);
-                torrentDownloadUI.updateDownloader(this.torrentDownloader);
-                System.out.println("TorrentDownloader creado y configurado al seleccionar la pestaña torrent");
+            if (newTab == torrentDownloadUI.getTab()) {
+                ensureTorrentDownloaderInitialized(ajustesUI);
             }
         });
+
+        if (mainTabs.getSelectionModel().getSelectedItem() == torrentDownloadUI.getTab()) {
+            ensureTorrentDownloaderInitialized(ajustesUI);
+        }
 
         contentLayout.getChildren().add(mainTabs);
 
@@ -158,6 +156,24 @@ public class MainUI extends Application {
             System.err.println("Error al cargar la configuración: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private void ensureTorrentDownloaderInitialized(AjustesUI ajustesUI) {
+        if (this.torrentDownloader != null) {
+            return;
+        }
+
+        TorrentDownloader newDownloader = ajustesUI.createTorrentDownloader();
+        if (newDownloader == null) {
+            System.err.println("No se pudo crear una instancia de TorrentDownloader");
+            return;
+        }
+
+        setTorrentDownloader(newDownloader);
+        ajustesUI.setTorrentDownloader(newDownloader);
+        applyColumnVisibilityConfig();
+
+        System.out.println("TorrentDownloader creado y configurado");
     }
 
     /**

@@ -164,11 +164,31 @@ public class TorrentStats {
         totalDownloaded = status.totalDone();
         totalUploaded = status.totalUpload();
         totalWanted = status.totalWanted();
-        totalWasted = status.totalWasted();
+        totalWasted = calculateTotalWasted(status);
         distributedCopies = status.distributedCopies();
 
         recalculateRates();
         recalculateEta(status);
+    }
+
+    private long calculateTotalWasted(TorrentStatus status) {
+        long failed = 0L;
+        long redundant = 0L;
+
+        try {
+            failed = status.totalFailedBytes();
+        } catch (NoSuchMethodError ignored) {
+            // Older libtorrent versions might not expose failed bytes
+        }
+
+        try {
+            redundant = status.totalRedundantBytes();
+        } catch (NoSuchMethodError ignored) {
+            // Older libtorrent versions might not expose redundant bytes
+        }
+
+        long total = failed + redundant;
+        return total >= 0 ? total : 0L;
     }
 
     private void recalculateRates() {
