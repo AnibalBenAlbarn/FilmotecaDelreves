@@ -728,7 +728,7 @@ public class TorrentDownloader {
                 StateChangedAlert stateAlert = (StateChangedAlert) alert;
                 ManagedTorrent managed = findManagedTorrent(stateAlert.handle());
                 if (managed != null && !managed.paused) {
-                    managed.state.setStatus(describeState(stateAlert.state()));
+                    managed.state.setStatus(describeState(stateAlert.getState()));
                 }
             } else if (alert instanceof StateUpdateAlert) {
                 StateUpdateAlert updateAlert = (StateUpdateAlert) alert;
