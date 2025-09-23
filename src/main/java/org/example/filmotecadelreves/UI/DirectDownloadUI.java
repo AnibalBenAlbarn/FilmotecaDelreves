@@ -9,6 +9,7 @@ import org.example.filmotecadelreves.downloaders.VideoStream;
 import org.example.filmotecadelreves.moviesad.ConnectDataBase;
 import org.example.filmotecadelreves.moviesad.DownloadBasketItem;
 import org.example.filmotecadelreves.moviesad.DownloadManager;
+import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import javafx.application.Platform;
 import javafx.beans.property.*;
@@ -24,6 +25,7 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -32,7 +34,9 @@ import java.net.URL;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -62,6 +66,7 @@ public class DirectDownloadUI {
     private MixdropDownloader mixdropDownloader;
     private VideoStream videoStream;
     private Map<String, DirectDownloader> downloaders = new HashMap<>();
+    private static final Consumer<Void> NO_OP_CONSUMER = value -> {};
 
     // ==================== CESTA DE DESCARGAS ====================
     private final ObservableList<DownloadBasketItem> downloadBasket = FXCollections.observableArrayList();
@@ -137,6 +142,52 @@ public class DirectDownloadUI {
         loadInitialData();
     }
 
+    private Window getWindow() {
+        if (tab != null && tab.getContent() != null && tab.getContent().getScene() != null) {
+            return tab.getContent().getScene().getWindow();
+        }
+        return null;
+    }
+
+    private <T> void runWithLoading(Callable<T> operation, Consumer<T> onSuccess, String loadingMessage, String errorMessage) {
+        Task<T> task = new Task<>() {
+            @Override
+            protected T call() throws Exception {
+                return operation.call();
+            }
+        };
+
+        DelayedLoadingDialog loadingDialog = new DelayedLoadingDialog(getWindow(), loadingMessage);
+
+        task.setOnSucceeded(event -> {
+            loadingDialog.stop();
+            if (onSuccess != null) {
+                onSuccess.accept(task.getValue());
+            }
+        });
+
+        task.setOnFailed(event -> {
+            loadingDialog.stop();
+            Throwable ex = task.getException();
+            if (ex != null) {
+                ex.printStackTrace();
+                String details = ex.getMessage();
+                String messageToShow = errorMessage;
+                if (details != null && !details.isBlank()) {
+                    messageToShow = errorMessage + "\n" + details;
+                }
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", messageToShow));
+            } else {
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", errorMessage));
+            }
+        });
+
+        Thread thread = new Thread(task);
+        thread.setDaemon(true);
+        thread.start();
+        loadingDialog.start();
+    }
+
     /**
      * Replace the active database connection with a new one. Called when the
      * user changes the database path in AjustesUI.
@@ -204,19 +255,31 @@ public class DirectDownloadUI {
      * Carga los datos iniciales para películas y series
      */
     private void loadInitialData() {
-        // Cargar películas recientes
-        ObservableList<Movie> latestMovies = connectDataBase.getLatestMovies(10);
-        if (moviesTable != null) {
-            moviesTable.setItems(latestMovies);
-        }
+        runWithLoading(() -> new InitialData(
+                        connectDataBase.getLatestMovies(10),
+                        connectDataBase.getLatestSeries(10, DirectDownloadUI.Series.class)
+                ),
+                data -> {
+                    if (moviesTable != null) {
+                        moviesTable.setItems(data.movies);
+                    }
+                    if (seriesTable != null) {
+                        seriesTable.setItems(data.series);
+                    }
+                    System.out.println("Initial data loaded: " + data.movies.size() + " movies, " + data.series.size() + " series");
+                },
+                "Cargando datos iniciales...",
+                "No se pudieron cargar los datos iniciales.");
+    }
 
-        // Cargar series recientes
-        ObservableList<Series> latestSeries = connectDataBase.getLatestSeries(10, DirectDownloadUI.Series.class);
-        if (seriesTable != null) {
-            seriesTable.setItems(latestSeries);
-        }
+    private static class InitialData {
+        private final ObservableList<Movie> movies;
+        private final ObservableList<Series> series;
 
-        System.out.println("Initial data loaded: " + latestMovies.size() + " movies, " + latestSeries.size() + " series");
+        private InitialData(ObservableList<Movie> movies, ObservableList<Series> series) {
+            this.movies = movies;
+            this.series = series;
+        }
     }
 
     // ==================== CESTA DE DESCARGAS ====================
@@ -499,28 +562,32 @@ public class DirectDownloadUI {
      * Abre el contenido en el navegador para streaming
      */
     private void streamContent(String url) {
-        try {
-            // Use our VideoStream class instead of the default browser
-            videoStream.stream(url);
-        } catch (Exception e) {
-            System.err.println("Error opening browser: " + e.getMessage());
-            e.printStackTrace();
-            showAlert(Alert.AlertType.ERROR, "Error", "Could not open browser: " + e.getMessage());
-        }
+        openStreamAsync(url, null);
     }
 
     /**
      * Abre el contenido en el navegador para streaming con un ID de servidor específico
      */
     private void streamContent(String url, int serverId) {
-        try {
-            // Use our VideoStream class with server ID
-            videoStream.stream(url, serverId);
-        } catch (Exception e) {
-            System.err.println("Error opening browser: " + e.getMessage());
-            e.printStackTrace();
-            showAlert(Alert.AlertType.ERROR, "Error", "Could not open browser: " + e.getMessage());
+        openStreamAsync(url, serverId);
+    }
+
+    private void openStreamAsync(String url, Integer serverId) {
+        if (url == null || url.isEmpty()) {
+            return;
         }
+
+        runWithLoading(() -> {
+                    if (serverId != null) {
+                        videoStream.stream(url, serverId);
+                    } else {
+                        videoStream.stream(url);
+                    }
+                    return null;
+                },
+                NO_OP_CONSUMER,
+                "Preparando streaming...",
+                "No se pudo iniciar el streaming.");
     }
 
     // ==================== PESTAÑA DE PELÍCULAS ====================
@@ -750,9 +817,6 @@ public class DirectDownloadUI {
         layout.getChildren().addAll(searchSection, resultsLabel, moviesTable);
         VBox.setVgrow(moviesTable, Priority.ALWAYS);
 
-        // Cargar datos iniciales
-        loadInitialMoviesData();
-
         moviesTab.setContent(layout);
         return moviesTab;
     }
@@ -815,61 +879,36 @@ public class DirectDownloadUI {
      * Realiza la búsqueda de películas con filtros
      */
     private void performSearch(String searchValue) {
-        String filterType = (String) filterComboBox.getValue();
-        String filterValue = (String) filterOptionsComboBox.getValue();
+        final String filterType = (String) filterComboBox.getValue();
+        final String filterValue = (String) filterOptionsComboBox.getValue();
 
-        // Realizar la búsqueda en un hilo en segundo plano para evitar bloquear el hilo de la UI.
-        Task<ObservableList<Movie>> searchTask = new Task<>() {
-            @Override
-            protected ObservableList<Movie> call() {
-                ObservableList<Movie> results;
-                if (filterValue != null && !filterValue.isEmpty()) {
-                    switch (filterType) {
-                        case "Year":
-                            results = connectDataBase.searchMoviesWithFilters(searchValue, filterValue, null, null, null);
-                            break;
-                        case "Genre":
-                            results = connectDataBase.searchMoviesWithFilters(searchValue, null, filterValue, null, null);
-                            break;
-                        case "Language":
-                            results = connectDataBase.searchMoviesWithFilters(searchValue, null, null, filterValue, null);
-                            break;
-                        case "Quality":
-                            results = connectDataBase.searchMoviesWithFilters(searchValue, null, null, null, filterValue);
-                            break;
-                        default:
-                            results = connectDataBase.searchMovies(searchValue);
+        runWithLoading(() -> {
+                    ObservableList<Movie> results;
+                    if (filterValue != null && !filterValue.isEmpty() && filterType != null) {
+                        switch (filterType) {
+                            case "Year":
+                                results = connectDataBase.searchMoviesWithFilters(searchValue, filterValue, null, null, null);
+                                break;
+                            case "Genre":
+                                results = connectDataBase.searchMoviesWithFilters(searchValue, null, filterValue, null, null);
+                                break;
+                            case "Language":
+                                results = connectDataBase.searchMoviesWithFilters(searchValue, null, null, filterValue, null);
+                                break;
+                            case "Quality":
+                                results = connectDataBase.searchMoviesWithFilters(searchValue, null, null, null, filterValue);
+                                break;
+                            default:
+                                results = connectDataBase.searchMovies(searchValue);
+                        }
+                    } else {
+                        results = connectDataBase.searchMovies(searchValue);
                     }
-                } else {
-                    results = connectDataBase.searchMovies(searchValue);
-                }
-                return results;
-            }
-        };
-
-        searchTask.setOnSucceeded(e -> {
-            ObservableList<Movie> results = searchTask.getValue();
-            moviesTable.setItems(results);
-        });
-        searchTask.setOnFailed(e -> {
-            // En caso de error, imprimir la excepción para depuración
-            Throwable ex = searchTask.getException();
-            if (ex != null) {
-                ex.printStackTrace();
-            }
-        });
-
-        Thread thread = new Thread(searchTask);
-        thread.setDaemon(true);
-        thread.start();
-    }
-
-    /**
-     * Carga los datos iniciales de películas
-     */
-    private void loadInitialMoviesData() {
-        ObservableList<Movie> movies = connectDataBase.getLatestMovies(10);
-        moviesTable.setItems(movies);
+                    return results;
+                },
+                results -> moviesTable.setItems(results),
+                "Buscando películas...",
+                "No se pudieron cargar los resultados de la búsqueda.");
     }
 
     /**
@@ -1071,10 +1110,6 @@ public class DirectDownloadUI {
 
         seriesTab.setContent(seriesLayout);
 
-        // Cargar datos iniciales
-        ObservableList<Series> latestSeries = connectDataBase.getLatestSeries(10, DirectDownloadUI.Series.class);
-        seriesTable.setItems(latestSeries);
-
         return seriesTab;
     }
 
@@ -1134,18 +1169,20 @@ public class DirectDownloadUI {
     private void searchSeries(String searchValue) {
         System.out.println("Searching series: " + searchValue);
 
-        ObservableList<Series> results = connectDataBase.searchSeries(searchValue);
-
-        // Eliminar duplicados basados en el ID
-        Map<Integer, Series> uniqueSeriesMap = new HashMap<>();
-        for (Series series : results) {
-            uniqueSeriesMap.put(series.getId(), series);
-        }
-
-        ObservableList<Series> uniqueResults = FXCollections.observableArrayList(uniqueSeriesMap.values());
-        seriesTable.setItems(uniqueResults);
-
-        System.out.println("Results found: " + uniqueResults.size());
+        runWithLoading(() -> {
+                    ObservableList<Series> results = connectDataBase.searchSeries(searchValue);
+                    Map<Integer, Series> uniqueSeriesMap = new HashMap<>();
+                    for (Series series : results) {
+                        uniqueSeriesMap.put(series.getId(), series);
+                    }
+                    return FXCollections.observableArrayList(uniqueSeriesMap.values());
+                },
+                results -> {
+                    seriesTable.setItems(results);
+                    System.out.println("Results found: " + results.size());
+                },
+                "Buscando series...",
+                "No se pudieron cargar las series.");
     }
 
     /**
@@ -1154,18 +1191,20 @@ public class DirectDownloadUI {
     private void searchSeries(String searchValue, String year, String genre, String language) {
         System.out.println("Searching series with filters: " + searchValue + ", " + year + ", " + genre + ", " + language);
 
-        ObservableList<Series> results = connectDataBase.searchSeriesWithFilters(searchValue, year, genre, language);
-
-        // Eliminar duplicados basados en el ID
-        Map<Integer, Series> uniqueSeriesMap = new HashMap<>();
-        for (Series series : results) {
-            uniqueSeriesMap.put(series.getId(), series);
-        }
-
-        ObservableList<Series> uniqueResults = FXCollections.observableArrayList(uniqueSeriesMap.values());
-        seriesTable.setItems(uniqueResults);
-
-        System.out.println("Results found: " + uniqueResults.size());
+        runWithLoading(() -> {
+                    ObservableList<Series> results = connectDataBase.searchSeriesWithFilters(searchValue, year, genre, language);
+                    Map<Integer, Series> uniqueSeriesMap = new HashMap<>();
+                    for (Series series : results) {
+                        uniqueSeriesMap.put(series.getId(), series);
+                    }
+                    return FXCollections.observableArrayList(uniqueSeriesMap.values());
+                },
+                results -> {
+                    seriesTable.setItems(results);
+                    System.out.println("Results found: " + results.size());
+                },
+                "Buscando series...",
+                "No se pudieron cargar las series.");
     }
 
     /**

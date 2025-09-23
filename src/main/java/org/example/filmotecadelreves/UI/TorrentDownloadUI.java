@@ -2,12 +2,14 @@ package org.example.filmotecadelreves.UI;
 
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 import org.example.filmotecadelreves.moviesad.ConnectDataBase;
+import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.example.filmotecadelreves.moviesad.TorrentState;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -15,6 +17,7 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.util.Callback;
 import org.jetbrains.annotations.NotNull;
 
@@ -31,7 +34,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class TorrentDownloadUI {
@@ -92,6 +97,52 @@ public class TorrentDownloadUI {
         Platform.runLater(this::loadInitialData);
     }
 
+    private Window getWindow() {
+        if (tab != null && tab.getContent() != null && tab.getContent().getScene() != null) {
+            return tab.getContent().getScene().getWindow();
+        }
+        return null;
+    }
+
+    private <T> void runWithLoading(Callable<T> operation, Consumer<T> onSuccess, String loadingMessage, String errorMessage) {
+        Task<T> task = new Task<>() {
+            @Override
+            protected T call() throws Exception {
+                return operation.call();
+            }
+        };
+
+        DelayedLoadingDialog loadingDialog = new DelayedLoadingDialog(getWindow(), loadingMessage);
+
+        task.setOnSucceeded(event -> {
+            loadingDialog.stop();
+            if (onSuccess != null) {
+                onSuccess.accept(task.getValue());
+            }
+        });
+
+        task.setOnFailed(event -> {
+            loadingDialog.stop();
+            Throwable ex = task.getException();
+            if (ex != null) {
+                ex.printStackTrace();
+                String details = ex.getMessage();
+                String messageToShow = errorMessage;
+                if (details != null && !details.isBlank()) {
+                    messageToShow = errorMessage + "\n" + details;
+                }
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", messageToShow));
+            } else {
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", errorMessage));
+            }
+        });
+
+        Thread thread = new Thread(task);
+        thread.setDaemon(true);
+        thread.start();
+        loadingDialog.start();
+    }
+
     /**
      * Método para actualizar la referencia al TorrentDownloader
      * @param torrentDownloader La instancia de TorrentDownloader a usar
@@ -131,24 +182,30 @@ public class TorrentDownloadUI {
     }
 
     private void loadInitialData() {
-        try {
-            // Cargar las últimas películas
-            ObservableList<Movie> latestMovies = connectDataBase.getLatestTorrentMovies(10, Movie.class);
-            if (peliculasTable != null) {
-                peliculasTable.setItems(latestMovies);
-            }
+        runWithLoading(() -> new InitialData(
+                        connectDataBase.getLatestTorrentMovies(10, Movie.class),
+                        connectDataBase.getLatestTorrentSeries(10, Series.class)
+                ),
+                data -> {
+                    if (peliculasTable != null) {
+                        peliculasTable.setItems(data.movies);
+                    }
+                    if (seriesTable != null) {
+                        seriesTable.setItems(data.series);
+                    }
+                    System.out.println("Datos iniciales cargados: " + data.movies.size() + " películas, " + data.series.size() + " series");
+                },
+                "Cargando datos iniciales...",
+                "No se pudieron cargar los datos iniciales.");
+    }
 
-            // Cargar las últimas series
-            ObservableList<Series> latestSeries = connectDataBase.getLatestTorrentSeries(10, Series.class);
-            if (seriesTable != null) {
-                seriesTable.setItems(latestSeries);
-            }
+    private static class InitialData {
+        private final ObservableList<Movie> movies;
+        private final ObservableList<Series> series;
 
-            System.out.println("Datos iniciales cargados: " + latestMovies.size() + " películas, " + latestSeries.size() + " series");
-        } catch (Exception e) {
-            System.err.println("Error al cargar datos iniciales: " + e.getMessage());
-            e.printStackTrace();
-            showAlert(Alert.AlertType.ERROR, "Error", "No se pudieron cargar los datos iniciales: " + e.getMessage());
+        private InitialData(ObservableList<Movie> movies, ObservableList<Series> series) {
+            this.movies = movies;
+            this.series = series;
         }
     }
 
@@ -949,37 +1006,46 @@ public class TorrentDownloadUI {
 
     private void buscarPelicula(String searchValue) {
         System.out.println("Buscando película: " + searchValue);
-
-        ObservableList<Movie> results = connectDataBase.searchTorrentMovies(searchValue);
-        peliculasTable.setItems(results);
-
-        System.out.println("Resultados encontrados: " + results.size());
+        runWithLoading(() -> connectDataBase.searchTorrentMovies(searchValue),
+                results -> {
+                    peliculasTable.setItems(results);
+                    System.out.println("Resultados encontrados: " + results.size());
+                },
+                "Buscando películas...",
+                "No se pudieron cargar las películas.");
     }
 
     private void buscarPelicula(String searchValue, String year, String genre, String director, String quality) {
         System.out.println("Buscando película con filtros: " + searchValue + ", " + year + ", " + genre + ", " + director + ", " + quality);
-
-        ObservableList<Movie> results = connectDataBase.searchTorrentMoviesWithFilters(searchValue, year, genre, director, quality);
-        peliculasTable.setItems(results);
-
-        System.out.println("Resultados encontrados: " + results.size());
+        runWithLoading(() -> connectDataBase.searchTorrentMoviesWithFilters(searchValue, year, genre, director, quality),
+                results -> {
+                    peliculasTable.setItems(results);
+                    System.out.println("Resultados encontrados: " + results.size());
+                },
+                "Buscando películas...",
+                "No se pudieron cargar las películas.");
     }
 
     private void buscarSerie(String searchValue) {
         System.out.println("Buscando serie: " + searchValue);
-
-        ObservableList<Series> results = connectDataBase.searchTorrentSeries(searchValue);
-        seriesTable.setItems(results);
-
-        System.out.println("Resultados encontrados: " + results.size());
+        runWithLoading(() -> connectDataBase.searchTorrentSeries(searchValue),
+                results -> {
+                    seriesTable.setItems(results);
+                    System.out.println("Resultados encontrados: " + results.size());
+                },
+                "Buscando series...",
+                "No se pudieron cargar las series.");
     }
 
     private void buscarSerie(String searchValue, String year, String genre, String director, String format) {
         System.out.println("Buscando serie con filtros: " + searchValue + ", " + year + ", " + genre + ", " + director + ", " + format);
-
-        ObservableList<Series> results = connectDataBase.searchTorrentSeriesWithFilters(searchValue, year, genre, director);
-        seriesTable.setItems(results);
-        System.out.println("Resultados encontrados: " + results.size());
+        runWithLoading(() -> connectDataBase.searchTorrentSeriesWithFilters(searchValue, year, genre, director),
+                results -> {
+                    seriesTable.setItems(results);
+                    System.out.println("Resultados encontrados: " + results.size());
+                },
+                "Buscando series...",
+                "No se pudieron cargar las series.");
     }
 
     private void showSeriesDetails(Series series) {
