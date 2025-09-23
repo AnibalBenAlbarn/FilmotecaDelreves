@@ -1,8 +1,8 @@
 package org.example.filmotecadelreves.downloaders;
 
-import com.frostwire.jlibtorrent.*;
-import com.frostwire.jlibtorrent.alerts.*;
-import com.frostwire.jlibtorrent.swig.*;
+import org.libtorrent4j.*;
+import org.libtorrent4j.alerts.*;
+import org.libtorrent4j.swig.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -1011,7 +1011,7 @@ public class TorrentDownloader {
     public void restoreSessionState(byte[] sessionState) {
         if (sessionManager != null && sessionState != null && sessionState.length > 0) {
             try {
-// En jlibtorrent 2.0.1.0, no existe loadState directamente
+// En libtorrent4j 2.x, no existe loadState directamente
 // En su lugar, debemos crear un SessionParams con los datos y reiniciar la sesión
 
 // Primero detenemos la sesión actual si está en ejecución
@@ -1193,9 +1193,9 @@ public class TorrentDownloader {
                             StateUpdateAlert stateAlert = (StateUpdateAlert) alert;
                             for (TorrentStatus ts : stateAlert.status()) {
                                 // 1. Get the native SWIG struct
-                                com.frostwire.jlibtorrent.swig.torrent_status raw = ts.swig();
+                                org.libtorrent4j.swig.torrent_status raw = ts.swig();
                                 // 2. Extract the raw torrent_handle
-                                com.frostwire.jlibtorrent.swig.torrent_handle rawHandle = raw.getHandle();
+                                org.libtorrent4j.swig.torrent_handle rawHandle = raw.getHandle();
                                 // 3. Wrap in the high‑level API
                                 TorrentHandle handle = new TorrentHandle(rawHandle);
                                 if (handle != null && handle.isValid()) {
@@ -2497,7 +2497,7 @@ public class TorrentDownloader {
     public void loadState(byte[] sessionState) {
         if (sessionManager != null && sessionState != null && sessionState.length > 0) {
             try {
-// En jlibtorrent 2.0.1.0, no existe loadState directamente
+// En libtorrent4j 2.x, no existe loadState directamente
 // En su lugar, debemos crear un SessionParams con los datos y reiniciar la sesión
 
 // Primero detenemos la sesión actual si está en ejecución

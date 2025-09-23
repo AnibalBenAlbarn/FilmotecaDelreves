@@ -18,7 +18,7 @@ module org.example.filmotecadelreves {
     requires eu.hansolo.tilesfx;
     requires com.almasb.fxgl.all;
     requires json.simple;
-    requires jlibtorrent;
+    requires libtorrent4j;
     requires org.jetbrains.annotations;
     requires org.apache.commons.compress;
     requires org.apache.commons.io;
