@@ -172,10 +172,9 @@ public class DirectDownloadUI {
             if (ex != null) {
                 ex.printStackTrace();
                 String details = ex.getMessage();
-                String messageToShow = errorMessage;
-                if (details != null && !details.isBlank()) {
-                    messageToShow = errorMessage + "\n" + details;
-                }
+                final String messageToShow = (details != null && !details.isBlank())
+                        ? errorMessage + "\n" + details
+                        : errorMessage;
                 Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", messageToShow));
             } else {
                 Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", errorMessage));
