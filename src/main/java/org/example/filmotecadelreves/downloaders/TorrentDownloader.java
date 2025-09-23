@@ -4,6 +4,7 @@ import org.example.filmotecadelreves.moviesad.TorrentState;
 import org.libtorrent4j.AddTorrentParams;
 import org.libtorrent4j.AlertListener;
 import org.libtorrent4j.InfoHash;
+import org.libtorrent4j.LibraryLoader;
 import org.libtorrent4j.SessionManager;
 import org.libtorrent4j.SessionParams;
 import org.libtorrent4j.SettingsPack;
@@ -72,6 +73,14 @@ public class TorrentDownloader {
     }
 
     private static final Logger LOGGER = Logger.getLogger(TorrentDownloader.class.getName());
+
+    static {
+        try {
+            LibraryLoader.load();
+        } catch (Throwable error) {
+            throw new IllegalStateException("No se pudo cargar la biblioteca nativa de libtorrent4j.", error);
+        }
+    }
 
     /** Minimum free disk space (in bytes) required to start a download. */
     private static final long MIN_DISK_SPACE = 500L * 1024L * 1024L; // 500 MB
