@@ -8,6 +8,7 @@ import com.frostwire.jlibtorrent.InfoHash;
 import com.frostwire.jlibtorrent.SessionHandle;
 import com.frostwire.jlibtorrent.SessionManager;
 import com.frostwire.jlibtorrent.SessionParams;
+import com.frostwire.jlibtorrent.SessionStats;
 import com.frostwire.jlibtorrent.SettingsPack;
 import com.frostwire.jlibtorrent.Sha1Hash;
 import com.frostwire.jlibtorrent.TorrentHandle;
@@ -34,8 +35,8 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,6 +48,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -81,19 +83,46 @@ public class TorrentDownloader {
     private static final long MIN_DISK_SPACE = 500L * 1024L * 1024L; // 500 MB
 
     private static final long STATUS_UPDATE_PERIOD_SECONDS = 1L;
+    private static final Duration SESSION_AUTOTUNE_INTERVAL = Duration.ofSeconds(15);
+    private static final Duration TRACKER_REANNOUNCE_INTERVAL = Duration.ofMinutes(2);
+    private static final Duration DHT_REANNOUNCE_INTERVAL = Duration.ofSeconds(45);
+    private static final Duration DHT_REBOOT_INTERVAL = Duration.ofMinutes(5);
+    private static final Duration BANDWIDTH_REBALANCE_INTERVAL = Duration.ofSeconds(10);
+    private static final Duration TORRENT_OPTIMIZATION_INTERVAL = Duration.ofSeconds(5);
+    private static final int MINIMUM_ACTIVE_PEERS = 6;
+    private static final int MINIMUM_ACTIVE_SEEDS = 1;
+    private static final long STALLED_DOWNLOAD_RATE_BYTES = 64L * 1024L;
+    private static final long STALLED_UPLOAD_RATE_BYTES = 16L * 1024L;
+    private static final int STALLED_CHECKS_THRESHOLD = 3;
+    private static final int LOW_DHT_NODE_THRESHOLD = 12;
+    private static final int MAX_DYNAMIC_CONNECTIONS = 2500;
+    private static final int MIN_DYNAMIC_REQUEST_QUEUE = 512;
+    private static final int MAX_DYNAMIC_REQUEST_QUEUE = 4000;
+    private static final int MIN_AUTO_DOWNLOAD_LIMIT = 128 * 1024;
+    private static final int MIN_AUTO_UPLOAD_LIMIT = 64 * 1024;
 
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
             "udp://tracker.openbittorrent.com:6969/announce",
-            "udp://tracker.coppersurfer.tk:6969/announce",
-            "udp://tracker.tiny-vps.com:6969/announce"
+            "udp://tracker.torrent.eu.org:451/announce",
+            "udp://open.stealth.si:80/announce",
+            "udp://exodus.desync.com:6969/announce",
+            "udp://tracker.dler.org:6969/announce",
+            "udp://tracker.ccp.ovh:6969/announce",
+            "udp://tracker1.bt.moack.co.kr:80/announce",
+            "udp://tracker.qu.ax:6969/announce",
+            "udp://opentracker.i2p.rocks:6969/announce",
+            "https://tracker.tamersunion.org:443/announce",
+            "https://tracker.nitrix.me:443/announce"
     };
 
     private static final String[] DEFAULT_DHT_NODES = {
             "router.bittorrent.com:6881",
             "router.utorrent.com:6881",
             "dht.transmissionbt.com:6881",
-            "dht.aelitis.com:6881"
+            "dht.aelitis.com:6881",
+            "router.bitcomet.com:6881",
+            "dht.libtorrent.org:25401"
     };
 
     private final SessionManager sessionManager;
@@ -116,6 +145,13 @@ public class TorrentDownloader {
     private int downloadSpeedLimit;
     private int uploadSpeedLimit;
     private boolean autoStartDownloads;
+    private volatile long lastSessionAutotuneNanos;
+    private volatile int lastAutoConnectionsLimit;
+    private volatile int lastAutoConnectionSpeed;
+    private volatile int lastAutoRequestQueue;
+    private final AtomicInteger consecutiveLowDhtSamples;
+    private volatile long lastDhtBootstrapTimeMs;
+    private volatile long lastBandwidthRebalanceNanos;
 
     /**
      * Primary constructor used in the application. Additional parameters for
@@ -144,6 +180,13 @@ public class TorrentDownloader {
         this.listeners = new CopyOnWriteArrayList<>();
         this.temporaryTorrentFiles = new CopyOnWriteArrayList<>();
         this.temporaryDirectory = createTemporaryDirectory();
+        this.lastSessionAutotuneNanos = 0L;
+        this.lastAutoConnectionsLimit = -1;
+        this.lastAutoConnectionSpeed = -1;
+        this.lastAutoRequestQueue = -1;
+        this.consecutiveLowDhtSamples = new AtomicInteger(0);
+        this.lastDhtBootstrapTimeMs = 0L;
+        this.lastBandwidthRebalanceNanos = 0L;
 
         startSession();
         this.running = true;
@@ -184,9 +227,55 @@ public class TorrentDownloader {
     }
 
     private void populatePerformanceSettings(SettingsPack settings) {
-        settings.setInteger(settings_pack.int_types.active_downloads.swigValue(), maxConcurrentDownloads);
-        settings.setInteger(settings_pack.int_types.active_seeds.swigValue(), maxConcurrentDownloads);
-        settings.setInteger(settings_pack.int_types.active_limit.swigValue(), maxConcurrentDownloads * 2);
+        if (settings == null) {
+            return;
+        }
+
+        int active = Math.max(1, maxConcurrentDownloads);
+        settings.setInteger(settings_pack.int_types.active_downloads.swigValue(), active);
+        settings.setInteger(settings_pack.int_types.active_seeds.swigValue(), active);
+        settings.setInteger(settings_pack.int_types.active_limit.swigValue(), Math.max(active * 3, 16));
+        settings.setInteger(settings_pack.int_types.connections_limit.swigValue(), computeConnectionsLimit());
+        settings.setInteger(settings_pack.int_types.max_peerlist_size.swigValue(), 5000);
+        settings.setInteger(settings_pack.int_types.max_paused_peerlist_size.swigValue(), 2000);
+        settings.setInteger(settings_pack.int_types.connection_speed.swigValue(), computeConnectionSpeed());
+        settings.setInteger(settings_pack.int_types.max_out_request_queue.swigValue(), 1500);
+        settings.setInteger(settings_pack.int_types.peer_connect_timeout.swigValue(), 15);
+
+        settings.setBoolean(settings_pack.bool_types.announce_to_all_trackers.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.announce_to_all_tiers.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.prefer_udp_trackers.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.ignore_limits_on_local_network.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.smooth_connects.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.allow_multiple_connections_per_ip.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true);
+    }
+
+    private int computeConnectionsLimit() {
+        int active = Math.max(1, maxConcurrentDownloads);
+        int base = active * 80;
+        if (downloadSpeedLimit > 0) {
+            base = Math.max(base, (downloadSpeedLimit / 64) * 40);
+        } else {
+            base = Math.max(base, 600);
+        }
+        return clamp(base, 150, 2000);
+    }
+
+    private int computeConnectionSpeed() {
+        int active = Math.max(1, maxConcurrentDownloads);
+        int base = active * 30;
+        if (downloadSpeedLimit > 0) {
+            base = Math.max(base, Math.min(400, downloadSpeedLimit / 16));
+        } else {
+            base = Math.max(base, 80);
+        }
+        return clamp(base, 30, 400);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void applyRateLimits() {
@@ -228,6 +317,7 @@ public class TorrentDownloader {
             this.autoStartDownloads = autoStartDownloads;
         }
         applySessionSettings();
+        lastBandwidthRebalanceNanos = 0L;
         if (autoStartDownloads) {
             startNextIfPossible();
         }
@@ -307,16 +397,19 @@ public class TorrentDownloader {
             try {
                 managed.handle.setDownloadLimit(downloadBytes);
                 managed.downloadLimitBytes = downloadBytes;
+                managed.lastAutoDownloadLimit = -1;
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo establecer el límite de descarga del torrent: " + t.getMessage());
             }
             try {
                 managed.handle.setUploadLimit(uploadBytes);
                 managed.uploadLimitBytes = uploadBytes;
+                managed.lastAutoUploadLimit = -1;
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo establecer el límite de subida del torrent: " + t.getMessage());
             }
         }
+        lastBandwidthRebalanceNanos = 0L;
     }
 
     /** Devuelve las estadísticas vivas asociadas a un torrent gestionado. */
@@ -400,6 +493,7 @@ public class TorrentDownloader {
                 }
             }
         }
+        lastBandwidthRebalanceNanos = 0L;
         startNextIfPossible();
     }
 
@@ -429,6 +523,7 @@ public class TorrentDownloader {
                 }
             }
         }
+        lastBandwidthRebalanceNanos = 0L;
         if (shouldStart || autoStartDownloads) {
             startNextIfPossible();
         }
@@ -458,6 +553,7 @@ public class TorrentDownloader {
             }
         }
         torrentState.setStatus("Eliminado");
+        lastBandwidthRebalanceNanos = 0L;
         startNextIfPossible();
     }
 
@@ -598,9 +694,8 @@ public class TorrentDownloader {
             if (params.name() == null || params.name().isBlank()) {
                 params.name(state.getName());
             }
-            if (params.trackers().isEmpty()) {
-                params.trackers(Arrays.asList(DEFAULT_TRACKERS));
-            }
+            applyDefaultTrackers(params);
+            applyPerformanceHints(params);
 
             TorrentHandle handle = addTorrentToSession(params);
             Sha1Hash bestHash = resolveInfoHash(handle, params);
@@ -632,6 +727,7 @@ public class TorrentDownloader {
                 managedByState.put(state, managed);
                 managedByHash.put(managed.infoHashKey, managed);
             }
+            lastBandwidthRebalanceNanos = 0L;
 
             state.setStatus("Descargando");
             state.setTorrentId(bestHash.toHex());
@@ -713,21 +809,29 @@ public class TorrentDownloader {
         synchronized (lock) {
             snapshot = new ArrayList<>(managedByState.values());
         }
+        int activeCount = countActiveTorrents(snapshot);
         for (ManagedTorrent managed : snapshot) {
             if (!managed.handle.isValid()) {
                 synchronized (lock) {
                     managedByState.remove(managed.state);
                     managedByHash.remove(managed.infoHashKey);
                 }
+                lastBandwidthRebalanceNanos = 0L;
                 continue;
             }
+            TorrentStatus status = null;
             try {
-                TorrentStatus status = managed.handle.status();
-                updateManagedTorrent(managed, status);
+                status = managed.handle.status();
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo actualizar el estado del torrent: " + t.getMessage());
             }
+            if (status != null) {
+                updateManagedTorrent(managed, status);
+                maybeOptimizeTorrentConnections(managed, status, activeCount);
+            }
         }
+        autoTuneSessionIfNeeded();
+        rebalanceActiveTorrentBandwidth(snapshot);
     }
 
     private void requestTorrentStatusUpdates() {
@@ -743,6 +847,11 @@ public class TorrentDownloader {
             sessionManager.postSessionStats();
         } catch (Throwable t) {
             log(Level.FINEST, "No se pudo solicitar las estadísticas de sesión: " + t.getMessage());
+        }
+        try {
+            sessionManager.postDhtStats();
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo solicitar las estadísticas de la DHT: " + t.getMessage());
         }
     }
 
@@ -775,12 +884,414 @@ public class TorrentDownloader {
             }
         }
 
+        improvePeerDiscovery(managed, status);
         notifyStatusUpdate(state, managed.stats);
+    }
+
+    private void improvePeerDiscovery(ManagedTorrent managed, TorrentStatus status) {
+        if (managed == null || status == null) {
+            return;
+        }
+        if (managed.completed || managed.paused || !sessionManager.isRunning()) {
+            managed.stalledPeerChecks.set(0);
+            return;
+        }
+
+        long downloadRate = status.downloadRate();
+        long uploadRate = status.uploadRate();
+        if (downloadRate >= STALLED_DOWNLOAD_RATE_BYTES || uploadRate >= STALLED_UPLOAD_RATE_BYTES) {
+            managed.stalledPeerChecks.set(0);
+            return;
+        }
+
+        int peers = Math.max(0, status.numPeers());
+        int seeds = Math.max(0, status.numSeeds());
+        if (peers >= MINIMUM_ACTIVE_PEERS || seeds >= MINIMUM_ACTIVE_SEEDS) {
+            managed.stalledPeerChecks.set(0);
+            return;
+        }
+
+        if (status.progress() >= 1.0) {
+            managed.stalledPeerChecks.set(0);
+            return;
+        }
+
+        int stalledChecks = managed.stalledPeerChecks.incrementAndGet();
+        if (stalledChecks < STALLED_CHECKS_THRESHOLD) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - managed.lastTrackerAnnounceMs >= TRACKER_REANNOUNCE_INTERVAL.toMillis() && managed.handle.isValid()) {
+            try {
+                managed.handle.forceReannounce();
+                managed.handle.scrapeTracker();
+                log(Level.FINE, "Reanunciando el torrent " + managed.state.getName() + " a los trackers por conectividad baja.");
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo reanunciar el torrent: " + t.getMessage());
+            }
+            managed.lastTrackerAnnounceMs = now;
+        }
+
+        if (now - managed.lastDhtAnnounceMs >= DHT_REANNOUNCE_INTERVAL.toMillis()) {
+            try {
+                sessionManager.dhtAnnounce(managed.infoHash);
+                log(Level.FINE, "Forzando anuncio DHT para " + managed.state.getName() + ".");
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo anunciar en la DHT: " + t.getMessage());
+            }
+            managed.lastDhtAnnounceMs = now;
+        }
+
+        managed.stalledPeerChecks.set(0);
+    }
+
+    private void maybeOptimizeTorrentConnections(ManagedTorrent managed, TorrentStatus status, int activeCount) {
+        if (managed == null || status == null) {
+            return;
+        }
+        if (!isTorrentActive(managed)) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - managed.lastPeerOptimizationMs < TORRENT_OPTIMIZATION_INTERVAL.toMillis()) {
+            return;
+        }
+        managed.lastPeerOptimizationMs = now;
+
+        int globalConnections = lastAutoConnectionsLimit > 0 ? lastAutoConnectionsLimit : computeConnectionsLimit();
+        globalConnections = clamp(globalConnections, 150, MAX_DYNAMIC_CONNECTIONS);
+
+        int baseline = globalConnections / Math.max(1, activeCount);
+        baseline = clamp(baseline, 80, globalConnections);
+
+        int peerCandidates = Math.max(status.listPeers(), status.numPeers());
+        int desiredConnections = Math.max(baseline, peerCandidates + MINIMUM_ACTIVE_PEERS);
+        desiredConnections = clamp(desiredConnections, baseline, globalConnections);
+
+        if (status.downloadRate() < STALLED_DOWNLOAD_RATE_BYTES && status.numPeers() < MINIMUM_ACTIVE_PEERS) {
+            desiredConnections = clamp(desiredConnections + 80, baseline, globalConnections);
+        }
+
+        if (desiredConnections > 0 && desiredConnections != managed.lastMaxConnections) {
+            try {
+                managed.handle.setMaxConnections(desiredConnections);
+                managed.lastMaxConnections = desiredConnections;
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo ajustar el número de conexiones del torrent: " + t.getMessage());
+            }
+        }
+
+        int desiredUploads = Math.max(MINIMUM_ACTIVE_SEEDS + 4, desiredConnections / 4);
+        desiredUploads = clamp(desiredUploads, MINIMUM_ACTIVE_SEEDS + 4, 128);
+        if (desiredUploads != managed.lastMaxUploads) {
+            try {
+                managed.handle.setMaxUploads(desiredUploads);
+                managed.lastMaxUploads = desiredUploads;
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo ajustar el número de subidas simultáneas: " + t.getMessage());
+            }
+        }
+    }
+
+    private int countActiveTorrents(List<ManagedTorrent> torrents) {
+        if (torrents == null || torrents.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (ManagedTorrent managed : torrents) {
+            if (isTorrentActive(managed)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean isTorrentActive(ManagedTorrent managed) {
+        return managed != null && managed.handle != null && managed.handle.isValid() && !managed.paused;
+    }
+
+    private void autoTuneSessionIfNeeded() {
+        if (!sessionManager.isRunning()) {
+            return;
+        }
+        long now = System.nanoTime();
+        if (now - lastSessionAutotuneNanos < SESSION_AUTOTUNE_INTERVAL.toNanos()) {
+            return;
+        }
+        lastSessionAutotuneNanos = now;
+
+        SessionStats stats = sessionManager.stats();
+        if (stats == null) {
+            return;
+        }
+
+        long downloadRate = stats.downloadRate();
+        long uploadRate = stats.uploadRate();
+        long dhtNodes = stats.dhtNodes();
+
+        int desiredConnections = clamp(Math.max(computeConnectionsLimit(),
+                dynamicConnectionsFromRate(downloadRate, uploadRate)), 150, MAX_DYNAMIC_CONNECTIONS);
+        int desiredConnectionSpeed = clamp(Math.max(computeConnectionSpeed(),
+                dynamicConnectionSpeed(downloadRate)), 30, 500);
+        int desiredRequestQueue = clamp(dynamicRequestQueue(downloadRate),
+                MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
+
+        SettingsPack dynamic = new SettingsPack();
+        boolean changed = false;
+        if (shouldUpdate(desiredConnections, lastAutoConnectionsLimit, 15)) {
+            dynamic.connectionsLimit(desiredConnections);
+            lastAutoConnectionsLimit = desiredConnections;
+            changed = true;
+        }
+        if (shouldUpdate(desiredConnectionSpeed, lastAutoConnectionSpeed, 5)) {
+            dynamic.setInteger(settings_pack.int_types.connection_speed.swigValue(), desiredConnectionSpeed);
+            lastAutoConnectionSpeed = desiredConnectionSpeed;
+            changed = true;
+        }
+        if (shouldUpdate(desiredRequestQueue, lastAutoRequestQueue, 100)) {
+            dynamic.setInteger(settings_pack.int_types.max_out_request_queue.swigValue(), desiredRequestQueue);
+            lastAutoRequestQueue = desiredRequestQueue;
+            changed = true;
+        }
+
+        if (changed) {
+            try {
+                sessionManager.applySettings(dynamic);
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo ajustar dinámicamente la sesión: " + t.getMessage());
+            }
+        }
+
+        rebootstrapDhtIfNeeded(dhtNodes);
+    }
+
+    private void rebalanceActiveTorrentBandwidth(List<ManagedTorrent> snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            return;
+        }
+        long now = System.nanoTime();
+        if (now - lastBandwidthRebalanceNanos < BANDWIDTH_REBALANCE_INTERVAL.toNanos()) {
+            return;
+        }
+        lastBandwidthRebalanceNanos = now;
+
+        List<ManagedTorrent> active = new ArrayList<>();
+        for (ManagedTorrent managed : snapshot) {
+            if (isTorrentActive(managed)) {
+                active.add(managed);
+            }
+        }
+        if (active.isEmpty()) {
+            return;
+        }
+
+        int downloadBudget = downloadSpeedLimit > 0 ? downloadSpeedLimit * 1024 : -1;
+        int uploadBudget = uploadSpeedLimit > 0 ? uploadSpeedLimit * 1024 : -1;
+
+        if (downloadBudget > 0) {
+            double totalDemand = 0.0;
+            for (ManagedTorrent managed : active) {
+                if (managed.downloadLimitBytes >= 0) {
+                    continue;
+                }
+                totalDemand += computeDownloadDemand(managed);
+            }
+            if (totalDemand > 0.0) {
+                int minShare = Math.min(MIN_AUTO_DOWNLOAD_LIMIT,
+                        Math.max(1, downloadBudget / Math.max(1, active.size())));
+                for (ManagedTorrent managed : active) {
+                    if (managed.downloadLimitBytes >= 0) {
+                        continue;
+                    }
+                    double demand = computeDownloadDemand(managed);
+                    int share = (int) Math.round(downloadBudget * (demand / totalDemand));
+                    if (share < minShare) {
+                        share = minShare;
+                    }
+                    if (share > downloadBudget) {
+                        share = downloadBudget;
+                    }
+                    if (managed.lastAutoDownloadLimit != share) {
+                        try {
+                            managed.handle.setDownloadLimit(share);
+                            managed.lastAutoDownloadLimit = share;
+                        } catch (Throwable t) {
+                            log(Level.FINEST, "No se pudo ajustar el límite dinámico de descarga: " + t.getMessage());
+                        }
+                    }
+                }
+            }
+        } else {
+            for (ManagedTorrent managed : active) {
+                if (managed.downloadLimitBytes >= 0) {
+                    continue;
+                }
+                if (managed.lastAutoDownloadLimit != -1) {
+                    try {
+                        managed.handle.setDownloadLimit(-1);
+                    } catch (Throwable t) {
+                        log(Level.FINEST, "No se pudo restablecer el límite de descarga: " + t.getMessage());
+                    }
+                    managed.lastAutoDownloadLimit = -1;
+                }
+            }
+        }
+
+        if (uploadBudget > 0) {
+            double totalDemand = 0.0;
+            for (ManagedTorrent managed : active) {
+                if (managed.uploadLimitBytes >= 0) {
+                    continue;
+                }
+                totalDemand += computeUploadDemand(managed);
+            }
+            if (totalDemand > 0.0) {
+                int minShare = Math.min(MIN_AUTO_UPLOAD_LIMIT,
+                        Math.max(1, uploadBudget / Math.max(1, active.size())));
+                for (ManagedTorrent managed : active) {
+                    if (managed.uploadLimitBytes >= 0) {
+                        continue;
+                    }
+                    double demand = computeUploadDemand(managed);
+                    int share = (int) Math.round(uploadBudget * (demand / totalDemand));
+                    if (share < minShare) {
+                        share = minShare;
+                    }
+                    if (share > uploadBudget) {
+                        share = uploadBudget;
+                    }
+                    if (managed.lastAutoUploadLimit != share) {
+                        try {
+                            managed.handle.setUploadLimit(share);
+                            managed.lastAutoUploadLimit = share;
+                        } catch (Throwable t) {
+                            log(Level.FINEST, "No se pudo ajustar el límite dinámico de subida: " + t.getMessage());
+                        }
+                    }
+                }
+            }
+        } else {
+            for (ManagedTorrent managed : active) {
+                if (managed.uploadLimitBytes >= 0) {
+                    continue;
+                }
+                if (managed.lastAutoUploadLimit != -1) {
+                    try {
+                        managed.handle.setUploadLimit(-1);
+                    } catch (Throwable t) {
+                        log(Level.FINEST, "No se pudo restablecer el límite de subida: " + t.getMessage());
+                    }
+                    managed.lastAutoUploadLimit = -1;
+                }
+            }
+        }
+    }
+
+    private double computeDownloadDemand(ManagedTorrent managed) {
+        long remaining = Math.max(1L, managed.stats.totalWanted() - managed.stats.totalWantedDone());
+        double backlog = Math.log1p(remaining / (1024.0 * 1024.0));
+        double liveRate = Math.log1p(Math.max(0, managed.stats.downloadRate()) / 1024.0);
+        return Math.max(1.0, backlog + liveRate);
+    }
+
+    private double computeUploadDemand(ManagedTorrent managed) {
+        double liveRate = Math.log1p(Math.max(0, managed.stats.uploadRate()) / 1024.0);
+        double peers = Math.log1p(Math.max(1, managed.stats.numPeers()));
+        return Math.max(1.0, liveRate + (peers * 0.5));
+    }
+
+    private int dynamicConnectionsFromRate(long downloadRate, long uploadRate) {
+        long basis = Math.max(downloadRate, uploadRate);
+        if (downloadSpeedLimit > 0) {
+            basis = Math.max(basis, downloadSpeedLimit * 1024L);
+        }
+        if (basis <= 0) {
+            return computeConnectionsLimit();
+        }
+        long scaled = basis / (64L * 1024L);
+        int dynamic = (int) (300 + scaled * 4);
+        return clamp(dynamic, 150, MAX_DYNAMIC_CONNECTIONS);
+    }
+
+    private int dynamicConnectionSpeed(long downloadRate) {
+        long basis = downloadRate;
+        if (downloadSpeedLimit > 0) {
+            basis = Math.max(basis, downloadSpeedLimit * 1024L);
+        }
+        if (basis <= 0) {
+            return computeConnectionSpeed();
+        }
+        long scaled = Math.max(1, basis / (128L * 1024L));
+        int dynamic = (int) Math.min(500, 30 + scaled * 5);
+        return clamp(dynamic, 30, 500);
+    }
+
+    private int dynamicRequestQueue(long downloadRate) {
+        long basis = downloadRate;
+        if (downloadSpeedLimit > 0) {
+            basis = Math.max(basis, downloadSpeedLimit * 1024L);
+        }
+        basis = Math.max(basis, 512L * 1024L);
+        int queue = (int) (basis / 1024L);
+        return clamp(queue, MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
+    }
+
+    private boolean shouldUpdate(int desired, int last, int tolerance) {
+        if (desired <= 0) {
+            return false;
+        }
+        if (last < 0) {
+            return true;
+        }
+        return Math.abs(desired - last) >= tolerance;
+    }
+
+    private void rebootstrapDhtIfNeeded(long dhtNodes) {
+        if (dhtNodes >= LOW_DHT_NODE_THRESHOLD) {
+            consecutiveLowDhtSamples.set(0);
+            return;
+        }
+
+        int samples = consecutiveLowDhtSamples.incrementAndGet();
+        if (samples < 3) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - lastDhtBootstrapTimeMs < DHT_REBOOT_INTERVAL.toMillis()) {
+            return;
+        }
+
+        lastDhtBootstrapTimeMs = now;
+        consecutiveLowDhtSamples.set(0);
+
+        workerExecutor.submit(() -> {
+            if (!sessionManager.isRunning()) {
+                return;
+            }
+            try {
+                log(Level.INFO, "Reiniciando la DHT para mejorar la conexión de pares (" + dhtNodes + " nodos detectados).");
+                if (sessionManager.isDhtRunning()) {
+                    sessionManager.stopDht();
+                }
+                SettingsPack reset = new SettingsPack();
+                reset.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), String.join(",", DEFAULT_DHT_NODES));
+                sessionManager.applySettings(reset);
+                sessionManager.startDht();
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo reiniciar la DHT: " + t.getMessage());
+            }
+        });
     }
 
     private void completeTorrent(ManagedTorrent managed) {
         managed.completed = true;
         managed.paused = false;
+        managed.stalledPeerChecks.set(0);
+        managed.lastAutoDownloadLimit = -1;
+        managed.lastAutoUploadLimit = -1;
         TorrentState state = managed.state;
         state.setProgress(100);
         state.setDownloadSpeed(0);
@@ -791,6 +1302,7 @@ public class TorrentDownloader {
         if (extractArchives) {
             log(Level.INFO, "Extracción automática no implementada: " + state.getName());
         }
+        lastBandwidthRebalanceNanos = 0L;
         startNextIfPossible();
     }
 
@@ -881,12 +1393,58 @@ public class TorrentDownloader {
         return destination;
     }
 
+    private void applyDefaultTrackers(AddTorrentParams params) {
+        if (params == null) {
+            return;
+        }
+        List<String> mergedTrackers = mergeTrackers(params.trackers());
+        if (!mergedTrackers.isEmpty()) {
+            params.trackers(mergedTrackers);
+        }
+    }
+
+    private void applyPerformanceHints(AddTorrentParams params) {
+        if (params == null) {
+            return;
+        }
+        int active = Math.max(1, maxConcurrentDownloads);
+        int perTorrentConnections = clamp(computeConnectionsLimit() / active, 80, 800);
+        params.maxConnections(perTorrentConnections);
+        params.maxUploads(Math.max(MINIMUM_ACTIVE_SEEDS + 4, perTorrentConnections / 4));
+
+        if (downloadSpeedLimit > 0 && params.downloadLimit() <= 0) {
+            int share = Math.max(MIN_AUTO_DOWNLOAD_LIMIT, (downloadSpeedLimit * 1024) / active);
+            params.downloadLimit(share);
+        }
+        if (uploadSpeedLimit > 0 && params.uploadLimit() <= 0) {
+            int share = Math.max(MIN_AUTO_UPLOAD_LIMIT, (uploadSpeedLimit * 1024) / active);
+            params.uploadLimit(share);
+        }
+    }
+
+    private List<String> mergeTrackers(List<String> current) {
+        Set<String> merged = new LinkedHashSet<>();
+        if (current != null) {
+            for (String tracker : current) {
+                if (tracker != null && !tracker.isBlank()) {
+                    merged.add(tracker.trim());
+                }
+            }
+        }
+        for (String tracker : DEFAULT_TRACKERS) {
+            if (tracker != null && !tracker.isBlank()) {
+                merged.add(tracker);
+            }
+        }
+        return new ArrayList<>(merged);
+    }
+
     private AddTorrentParams buildParamsFromFile(Path file, TorrentState state) {
         TorrentInfo info = new TorrentInfo(file.toFile());
         AddTorrentParams params = new AddTorrentParams();
         params.torrentInfo(info);
         params.name(info.name());
-        params.trackers(Arrays.asList(DEFAULT_TRACKERS));
+        applyDefaultTrackers(params);
         if (state != null) {
             state.setFileSize(info.totalSize());
             state.setFileName(info.name());
@@ -898,7 +1456,7 @@ public class TorrentDownloader {
     private AddTorrentParams buildParamsFromMagnet(String magnet, TorrentState state) {
         AddTorrentParams params = AddTorrentParams.parseMagnetUri(magnet);
         params.name(state.getName());
-        params.trackers(Arrays.asList(DEFAULT_TRACKERS));
+        applyDefaultTrackers(params);
         return params;
     }
 
@@ -1173,6 +1731,14 @@ public class TorrentDownloader {
         private volatile boolean sequentialDownload;
         private volatile int downloadLimitBytes = -1;
         private volatile int uploadLimitBytes = -1;
+        private volatile int lastMaxConnections;
+        private volatile int lastMaxUploads;
+        private volatile int lastAutoDownloadLimit;
+        private volatile int lastAutoUploadLimit;
+        private volatile long lastPeerOptimizationMs;
+        private final AtomicInteger stalledPeerChecks;
+        private volatile long lastTrackerAnnounceMs;
+        private volatile long lastDhtAnnounceMs;
 
         private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
@@ -1183,6 +1749,14 @@ public class TorrentDownloader {
             this.paused = false;
             this.completed = false;
             this.sequentialDownload = false;
+            this.lastMaxConnections = -1;
+            this.lastMaxUploads = -1;
+            this.lastAutoDownloadLimit = -1;
+            this.lastAutoUploadLimit = -1;
+            this.lastPeerOptimizationMs = 0L;
+            this.stalledPeerChecks = new AtomicInteger();
+            this.lastTrackerAnnounceMs = 0L;
+            this.lastDhtAnnounceMs = 0L;
         }
     }
 }
