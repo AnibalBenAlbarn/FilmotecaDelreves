@@ -42,11 +42,13 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -55,7 +57,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Set;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -110,6 +111,9 @@ public class TorrentDownloader {
     private static final int MIN_AUTO_DOWNLOAD_LIMIT = 128 * 1024;
     private static final int MIN_AUTO_UPLOAD_LIMIT = 64 * 1024;
     private static final int MAX_EXTRA_DHT_CONNECTIONS = 12;
+    private static final int MIN_PEER_SAMPLE_SPEED_BYTES = 8 * 1024;
+    private static final int MIN_PEER_SAMPLE_COUNT = 2;
+    private static final double PEAK_RATE_DECAY = 0.85;
 
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
@@ -162,6 +166,8 @@ public class TorrentDownloader {
     private final AtomicInteger consecutiveLowDhtSamples;
     private volatile long lastDhtBootstrapTimeMs;
     private volatile long lastBandwidthRebalanceNanos;
+    private volatile long lastObservedDownloadRate;
+    private volatile long peakObservedDownloadRate;
 
     /**
      * Primary constructor used in the application. Additional parameters for
@@ -197,6 +203,8 @@ public class TorrentDownloader {
         this.consecutiveLowDhtSamples = new AtomicInteger(0);
         this.lastDhtBootstrapTimeMs = 0L;
         this.lastBandwidthRebalanceNanos = 0L;
+        this.lastObservedDownloadRate = 0L;
+        this.peakObservedDownloadRate = 0L;
 
         startSession();
         this.running = true;
@@ -1050,22 +1058,8 @@ public class TorrentDownloader {
                 return;
             }
             try {
-                try {
-                    List<PeerInfo> currentPeers = managed.handle.peerInfo();
-                    if (currentPeers != null) {
-                        for (PeerInfo peer : currentPeers) {
-                            if (peer == null) {
-                                continue;
-                            }
-                            String endpoint = peer.ip();
-                            if (endpoint != null && !endpoint.isBlank()) {
-                                managed.contactedPeers.add(endpoint);
-                            }
-                        }
-                    }
-                } catch (Throwable t) {
-                    log(Level.FINEST, "No se pudieron leer los peers actuales: " + t.getMessage());
-                }
+                List<PeerSample> peerSamples = snapshotPeers(managed);
+                rememberContactedPeers(managed, peerSamples);
 
                 List<TcpEndpoint> dhtPeers = sessionManager.dhtGetPeers(managed.infoHash, 6);
                 if (dhtPeers == null || dhtPeers.isEmpty()) {
@@ -1110,6 +1104,55 @@ public class TorrentDownloader {
         });
     }
 
+    private List<PeerSample> snapshotPeers(ManagedTorrent managed) {
+        if (managed == null || managed.handle == null || !managed.handle.isValid()) {
+            if (managed != null) {
+                managed.lastPeerSamples = Collections.emptyList();
+            }
+            return Collections.emptyList();
+        }
+        try {
+            List<PeerInfo> peers = managed.handle.peerInfo();
+            if (peers == null || peers.isEmpty()) {
+                managed.lastPeerSamples = Collections.emptyList();
+                return managed.lastPeerSamples;
+            }
+            List<PeerSample> samples = new ArrayList<>(peers.size());
+            for (PeerInfo peer : peers) {
+                if (peer == null) {
+                    continue;
+                }
+                String endpoint = peer.ip();
+                if (endpoint == null || endpoint.isBlank()) {
+                    continue;
+                }
+                samples.add(new PeerSample(endpoint, peer.downSpeed(), peer.upSpeed(), peer.progress()));
+            }
+            if (samples.isEmpty()) {
+                managed.lastPeerSamples = Collections.emptyList();
+            } else {
+                managed.lastPeerSamples = samples;
+            }
+            return managed.lastPeerSamples;
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudieron capturar los peers actuales: " + t.getMessage());
+            managed.lastPeerSamples = Collections.emptyList();
+            return managed.lastPeerSamples;
+        }
+    }
+
+    private void rememberContactedPeers(ManagedTorrent managed, List<PeerSample> peerSamples) {
+        if (managed == null || peerSamples == null || peerSamples.isEmpty()) {
+            return;
+        }
+        for (PeerSample sample : peerSamples) {
+            if (sample == null || sample.endpoint == null || sample.endpoint.isBlank()) {
+                continue;
+            }
+            managed.contactedPeers.add(sample.endpoint);
+        }
+    }
+
     private void maybeOptimizeTorrentConnections(ManagedTorrent managed, TorrentStatus status, int activeCount) {
         if (managed == null || status == null) {
             return;
@@ -1133,6 +1176,17 @@ public class TorrentDownloader {
         int peerCandidates = Math.max(status.listPeers(), status.numPeers());
         int desiredConnections = Math.max(baseline, peerCandidates + MINIMUM_ACTIVE_PEERS);
         desiredConnections = clamp(desiredConnections, baseline, globalConnections);
+
+        long sessionTargetRate = Math.max(expectedSessionDownloadRate(), Math.max(status.downloadRate(), 0));
+        List<PeerSample> peerSamples = managed.lastPeerSamples != null ? managed.lastPeerSamples : Collections.emptyList();
+        if (peerSamples.isEmpty()) {
+            peerSamples = snapshotPeers(managed);
+        }
+        int sampleSuggestedSlots = estimateSlotsForTargetRate(peerSamples, sessionTargetRate);
+        if (sampleSuggestedSlots > 0) {
+            desiredConnections = clamp(Math.max(desiredConnections, sampleSuggestedSlots + MINIMUM_ACTIVE_PEERS),
+                    baseline, globalConnections);
+        }
 
         if (status.downloadRate() < STALLED_DOWNLOAD_RATE_BYTES && status.numPeers() < MINIMUM_ACTIVE_PEERS) {
             desiredConnections = clamp(desiredConnections + 80, baseline, globalConnections);
@@ -1195,11 +1249,16 @@ public class TorrentDownloader {
         long uploadRate = stats.uploadRate();
         long dhtNodes = stats.dhtNodes();
 
+        lastObservedDownloadRate = downloadRate;
+        updatePeakDownloadRate(downloadRate);
+        long expectedRate = expectedSessionDownloadRate();
+
         int desiredConnections = clamp(Math.max(computeConnectionsLimit(),
-                dynamicConnectionsFromRate(downloadRate, uploadRate)), 150, MAX_DYNAMIC_CONNECTIONS);
+                dynamicConnectionsFromRate(Math.max(downloadRate, expectedRate), uploadRate)),
+                150, MAX_DYNAMIC_CONNECTIONS);
         int desiredConnectionSpeed = clamp(Math.max(computeConnectionSpeed(),
-                dynamicConnectionSpeed(downloadRate)), 30, 500);
-        int desiredRequestQueue = clamp(dynamicRequestQueue(downloadRate),
+                dynamicConnectionSpeed(Math.max(downloadRate, expectedRate))), 30, 500);
+        int desiredRequestQueue = clamp(dynamicRequestQueue(Math.max(downloadRate, expectedRate)),
                 MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
 
         SettingsPack dynamic = new SettingsPack();
@@ -1229,6 +1288,28 @@ public class TorrentDownloader {
         }
 
         rebootstrapDhtIfNeeded(dhtNodes);
+    }
+
+    private void updatePeakDownloadRate(long downloadRate) {
+        if (downloadRate <= 0) {
+            peakObservedDownloadRate = (long) (peakObservedDownloadRate * PEAK_RATE_DECAY);
+            return;
+        }
+        if (peakObservedDownloadRate <= 0) {
+            peakObservedDownloadRate = downloadRate;
+        } else {
+            peakObservedDownloadRate = (long) (peakObservedDownloadRate * PEAK_RATE_DECAY
+                    + downloadRate * (1.0 - PEAK_RATE_DECAY));
+        }
+    }
+
+    private long expectedSessionDownloadRate() {
+        long limit = downloadSpeedLimit > 0 ? downloadSpeedLimit * 1024L : 0L;
+        long observed = Math.max(lastObservedDownloadRate, peakObservedDownloadRate);
+        if (limit > 0) {
+            return Math.max(limit, observed);
+        }
+        return observed;
     }
 
     private void rebalanceActiveTorrentBandwidth(List<ManagedTorrent> snapshot) {
@@ -1400,6 +1481,30 @@ public class TorrentDownloader {
         basis = Math.max(basis, 512L * 1024L);
         int queue = (int) (basis / 1024L);
         return clamp(queue, MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
+    }
+
+    private int estimateSlotsForTargetRate(List<PeerSample> peers, long targetRate) {
+        if (peers == null || peers.isEmpty() || targetRate <= 0) {
+            return 0;
+        }
+        long aggregate = 0;
+        int counted = 0;
+        for (PeerSample sample : peers) {
+            if (sample == null) {
+                continue;
+            }
+            int observed = Math.max(sample.downSpeed, sample.upSpeed);
+            if (observed <= MIN_PEER_SAMPLE_SPEED_BYTES) {
+                continue;
+            }
+            aggregate += observed;
+            counted++;
+        }
+        if (counted < MIN_PEER_SAMPLE_COUNT) {
+            return 0;
+        }
+        long average = Math.max(MIN_PEER_SAMPLE_SPEED_BYTES, aggregate / counted);
+        return (int) Math.ceil(targetRate / (double) average);
     }
 
     private boolean shouldUpdate(int desired, int last, int tolerance) {
@@ -1883,6 +1988,21 @@ public class TorrentDownloader {
         }
     }
 
+    private static final class PeerSample {
+        private final String endpoint;
+        private final int downSpeed;
+        private final int upSpeed;
+        @SuppressWarnings("unused")
+        private final float progress;
+
+        private PeerSample(String endpoint, int downSpeed, int upSpeed, float progress) {
+            this.endpoint = endpoint;
+            this.downSpeed = downSpeed;
+            this.upSpeed = upSpeed;
+            this.progress = progress;
+        }
+    }
+
     /** Holds runtime information of an active torrent. */
     private static final class ManagedTorrent {
         private final TorrentState state;
@@ -1906,6 +2026,7 @@ public class TorrentDownloader {
         private volatile long lastTrackerInjectionMs;
         private volatile long lastPeerFetchMs;
         private final Set<String> contactedPeers;
+        private volatile List<PeerSample> lastPeerSamples;
 
         private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
@@ -1927,6 +2048,7 @@ public class TorrentDownloader {
             this.lastTrackerInjectionMs = 0L;
             this.lastPeerFetchMs = 0L;
             this.contactedPeers = ConcurrentHashMap.newKeySet();
+            this.lastPeerSamples = Collections.emptyList();
         }
     }
 }
