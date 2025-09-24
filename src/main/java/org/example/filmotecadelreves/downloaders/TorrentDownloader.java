@@ -87,8 +87,10 @@ public class TorrentDownloader {
     private static final Duration TRACKER_REANNOUNCE_INTERVAL = Duration.ofMinutes(2);
     private static final Duration DHT_REANNOUNCE_INTERVAL = Duration.ofSeconds(45);
     private static final Duration DHT_REBOOT_INTERVAL = Duration.ofMinutes(5);
+
     private static final Duration BANDWIDTH_REBALANCE_INTERVAL = Duration.ofSeconds(10);
     private static final Duration TORRENT_OPTIMIZATION_INTERVAL = Duration.ofSeconds(5);
+
     private static final int MINIMUM_ACTIVE_PEERS = 6;
     private static final int MINIMUM_ACTIVE_SEEDS = 1;
     private static final long STALLED_DOWNLOAD_RATE_BYTES = 64L * 1024L;
@@ -100,6 +102,7 @@ public class TorrentDownloader {
     private static final int MAX_DYNAMIC_REQUEST_QUEUE = 4000;
     private static final int MIN_AUTO_DOWNLOAD_LIMIT = 128 * 1024;
     private static final int MIN_AUTO_UPLOAD_LIMIT = 64 * 1024;
+
 
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
@@ -153,6 +156,7 @@ public class TorrentDownloader {
     private volatile long lastDhtBootstrapTimeMs;
     private volatile long lastBandwidthRebalanceNanos;
 
+
     /**
      * Primary constructor used in the application. Additional parameters for
      * verbose or console logging are kept for backwards compatibility, but the
@@ -186,7 +190,9 @@ public class TorrentDownloader {
         this.lastAutoRequestQueue = -1;
         this.consecutiveLowDhtSamples = new AtomicInteger(0);
         this.lastDhtBootstrapTimeMs = 0L;
+
         this.lastBandwidthRebalanceNanos = 0L;
+
 
         startSession();
         this.running = true;
@@ -695,7 +701,9 @@ public class TorrentDownloader {
                 params.name(state.getName());
             }
             applyDefaultTrackers(params);
+
             applyPerformanceHints(params);
+
 
             TorrentHandle handle = addTorrentToSession(params);
             Sha1Hash bestHash = resolveInfoHash(handle, params);
@@ -832,6 +840,7 @@ public class TorrentDownloader {
         }
         autoTuneSessionIfNeeded();
         rebalanceActiveTorrentBandwidth(snapshot);
+
     }
 
     private void requestTorrentStatusUpdates() {
@@ -1012,6 +1021,7 @@ public class TorrentDownloader {
         return managed != null && managed.handle != null && managed.handle.isValid() && !managed.paused;
     }
 
+
     private void autoTuneSessionIfNeeded() {
         if (!sessionManager.isRunning()) {
             return;
@@ -1066,7 +1076,6 @@ public class TorrentDownloader {
 
         rebootstrapDhtIfNeeded(dhtNodes);
     }
-
     private void rebalanceActiveTorrentBandwidth(List<ManagedTorrent> snapshot) {
         if (snapshot == null || snapshot.isEmpty()) {
             return;
@@ -1290,6 +1299,7 @@ public class TorrentDownloader {
         managed.completed = true;
         managed.paused = false;
         managed.stalledPeerChecks.set(0);
+
         managed.lastAutoDownloadLimit = -1;
         managed.lastAutoUploadLimit = -1;
         TorrentState state = managed.state;
@@ -1403,6 +1413,7 @@ public class TorrentDownloader {
         }
     }
 
+
     private void applyPerformanceHints(AddTorrentParams params) {
         if (params == null) {
             return;
@@ -1421,6 +1432,7 @@ public class TorrentDownloader {
             params.uploadLimit(share);
         }
     }
+
 
     private List<String> mergeTrackers(List<String> current) {
         Set<String> merged = new LinkedHashSet<>();
@@ -1736,6 +1748,7 @@ public class TorrentDownloader {
         private volatile int lastAutoDownloadLimit;
         private volatile int lastAutoUploadLimit;
         private volatile long lastPeerOptimizationMs;
+
         private final AtomicInteger stalledPeerChecks;
         private volatile long lastTrackerAnnounceMs;
         private volatile long lastDhtAnnounceMs;
@@ -1754,6 +1767,7 @@ public class TorrentDownloader {
             this.lastAutoDownloadLimit = -1;
             this.lastAutoUploadLimit = -1;
             this.lastPeerOptimizationMs = 0L;
+
             this.stalledPeerChecks = new AtomicInteger();
             this.lastTrackerAnnounceMs = 0L;
             this.lastDhtAnnounceMs = 0L;
