@@ -24,6 +24,7 @@ public class TorrentState implements Serializable {
     // Source information
     private String torrentSource;
     private String destinationPath;
+    private transient StringProperty destinationPathProperty;
 
     // Download statistics
     private final long bytesDownloaded;
@@ -64,6 +65,7 @@ public class TorrentState implements Serializable {
     public TorrentState(String torrentSource, String destinationPath, long bytesDownloaded, int piecesComplete, int piecesTotal) {
         this.torrentSource = torrentSource;
         this.destinationPath = destinationPath;
+        this.destinationPathProperty = new SimpleStringProperty(destinationPath != null ? destinationPath : "");
         this.bytesDownloaded = bytesDownloaded;
         this.piecesComplete = piecesComplete;
         this.piecesTotal = piecesTotal;
@@ -157,14 +159,25 @@ public class TorrentState implements Serializable {
     /**
      *Get destination path*/
     public String getDestinationPath() {
-        return destinationPath;
+        return destinationPathProperty().get();
     }
 
     /**
      *Set destination path*/
     public void setDestinationPath(String destinationPath) {
         this.destinationPath = destinationPath;
+        destinationPathProperty().set(destinationPath != null ? destinationPath : "");
         updateLastUpdated();
+    }
+
+    /**
+     * Destination path property for UI bindings
+     */
+    public StringProperty destinationPathProperty() {
+        if (destinationPathProperty == null) {
+            destinationPathProperty = new SimpleStringProperty(destinationPath != null ? destinationPath : "");
+        }
+        return destinationPathProperty;
     }
 
     /**
