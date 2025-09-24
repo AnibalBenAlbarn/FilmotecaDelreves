@@ -1,23 +1,25 @@
 package org.example.filmotecadelreves.downloaders;
 
 import org.example.filmotecadelreves.moviesad.TorrentState;
-import org.libtorrent4j.AddTorrentParams;
-import org.libtorrent4j.AlertListener;
-import org.libtorrent4j.InfoHash;
-import org.libtorrent4j.SessionManager;
-import org.libtorrent4j.SessionParams;
-import org.libtorrent4j.SettingsPack;
-import org.libtorrent4j.Sha1Hash;
-import org.libtorrent4j.TorrentHandle;
-import org.libtorrent4j.TorrentInfo;
-import org.libtorrent4j.TorrentStatus;
-import org.libtorrent4j.alerts.Alert;
-import org.libtorrent4j.alerts.MetadataReceivedAlert;
-import org.libtorrent4j.alerts.StateChangedAlert;
-import org.libtorrent4j.alerts.StateUpdateAlert;
-import org.libtorrent4j.alerts.TorrentErrorAlert;
-import org.libtorrent4j.alerts.TorrentFinishedAlert;
-import org.libtorrent4j.swig.settings_pack;
+
+import com.frostwire.jlibtorrent.AddTorrentParams;
+import com.frostwire.jlibtorrent.AlertListener;
+import com.frostwire.jlibtorrent.InfoHash;
+import com.frostwire.jlibtorrent.SessionHandle;
+import com.frostwire.jlibtorrent.SessionManager;
+import com.frostwire.jlibtorrent.SessionParams;
+import com.frostwire.jlibtorrent.SettingsPack;
+import com.frostwire.jlibtorrent.Sha1Hash;
+import com.frostwire.jlibtorrent.TorrentHandle;
+import com.frostwire.jlibtorrent.TorrentInfo;
+import com.frostwire.jlibtorrent.TorrentStatus;
+import com.frostwire.jlibtorrent.alerts.Alert;
+import com.frostwire.jlibtorrent.alerts.MetadataReceivedAlert;
+import com.frostwire.jlibtorrent.alerts.StateChangedAlert;
+import com.frostwire.jlibtorrent.alerts.StateUpdateAlert;
+import com.frostwire.jlibtorrent.alerts.TorrentErrorAlert;
+import com.frostwire.jlibtorrent.alerts.TorrentFinishedAlert;
+import com.frostwire.jlibtorrent.swig.settings_pack;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,7 +50,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Minimal torrent downloader built on top of libtorrent4j.
+ * Minimal torrent downloader built on top of jlibtorrent.
  * <p>
  * The original class had grown to thousands of lines and mixed many
  * responsibilities.  This implementation focuses on providing a reliable
@@ -453,7 +455,7 @@ public class TorrentDownloader {
         }
         if (managed != null && managed.handle.isValid()) {
             if (deleteFiles) {
-                sessionManager.remove(managed.handle, org.libtorrent4j.SessionHandle.DELETE_FILES);
+                sessionManager.remove(managed.handle, SessionHandle.DELETE_FILES);
             } else {
                 sessionManager.remove(managed.handle);
             }
@@ -462,7 +464,7 @@ public class TorrentDownloader {
         startNextIfPossible();
     }
 
-    /** Gracefully shutdown libtorrent and background executors. */
+    /** Gracefully shutdown jlibtorrent and background executors. */
     public void shutdown() {
         running = false;
         scheduler.shutdownNow();
@@ -991,7 +993,7 @@ public class TorrentDownloader {
         };
     }
 
-    /** Wraps a queued torrent prior to being added to libtorrent. */
+    /** Wraps a queued torrent prior to being added to jlibtorrent. */
     private static final class PendingTorrent {
         private final TorrentState state;
         private final Supplier<AddTorrentParams> paramsSupplier;
