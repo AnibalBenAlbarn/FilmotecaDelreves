@@ -4,6 +4,7 @@ import org.example.filmotecadelreves.moviesad.TorrentState;
 
 import com.frostwire.jlibtorrent.AddTorrentParams;
 import com.frostwire.jlibtorrent.AlertListener;
+import com.frostwire.jlibtorrent.AnnounceEntry;
 import com.frostwire.jlibtorrent.InfoHash;
 import com.frostwire.jlibtorrent.SessionHandle;
 import com.frostwire.jlibtorrent.SessionManager;
@@ -11,6 +12,8 @@ import com.frostwire.jlibtorrent.SessionParams;
 import com.frostwire.jlibtorrent.SessionStats;
 import com.frostwire.jlibtorrent.SettingsPack;
 import com.frostwire.jlibtorrent.Sha1Hash;
+import com.frostwire.jlibtorrent.PeerInfo;
+import com.frostwire.jlibtorrent.TcpEndpoint;
 import com.frostwire.jlibtorrent.TorrentHandle;
 import com.frostwire.jlibtorrent.TorrentFlags;
 import com.frostwire.jlibtorrent.TorrentInfo;
@@ -22,6 +25,10 @@ import com.frostwire.jlibtorrent.alerts.StateUpdateAlert;
 import com.frostwire.jlibtorrent.alerts.TorrentErrorAlert;
 import com.frostwire.jlibtorrent.alerts.TorrentFinishedAlert;
 import com.frostwire.jlibtorrent.swig.settings_pack;
+import com.frostwire.jlibtorrent.swig.settings_pack.bandwidth_mixed_algo_t;
+import com.frostwire.jlibtorrent.swig.settings_pack.choking_algorithm_t;
+import com.frostwire.jlibtorrent.swig.settings_pack.seed_choking_algorithm_t;
+import com.frostwire.jlibtorrent.swig.settings_pack.suggest_mode_t;
 import com.frostwire.jlibtorrent.swig.error_code;
 
 import java.io.IOException;
@@ -35,11 +42,13 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -87,9 +96,10 @@ public class TorrentDownloader {
     private static final Duration TRACKER_REANNOUNCE_INTERVAL = Duration.ofMinutes(2);
     private static final Duration DHT_REANNOUNCE_INTERVAL = Duration.ofSeconds(45);
     private static final Duration DHT_REBOOT_INTERVAL = Duration.ofMinutes(5);
-
     private static final Duration BANDWIDTH_REBALANCE_INTERVAL = Duration.ofSeconds(10);
     private static final Duration TORRENT_OPTIMIZATION_INTERVAL = Duration.ofSeconds(5);
+    private static final Duration TRACKER_REFRESH_INTERVAL = Duration.ofMinutes(3);
+    private static final Duration DHT_PEER_FETCH_INTERVAL = Duration.ofSeconds(40);
 
     private static final int MINIMUM_ACTIVE_PEERS = 6;
     private static final int MINIMUM_ACTIVE_SEEDS = 1;
@@ -103,7 +113,10 @@ public class TorrentDownloader {
     private static final int MIN_AUTO_DOWNLOAD_LIMIT = 128 * 1024;
     private static final int MIN_AUTO_UPLOAD_LIMIT = 64 * 1024;
 
-
+    private static final int MAX_EXTRA_DHT_CONNECTIONS = 12;
+    private static final int MIN_PEER_SAMPLE_SPEED_BYTES = 8 * 1024;
+    private static final int MIN_PEER_SAMPLE_COUNT = 2;
+    private static final double PEAK_RATE_DECAY = 0.85;
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
             "udp://tracker.openbittorrent.com:6969/announce",
@@ -155,6 +168,8 @@ public class TorrentDownloader {
     private final AtomicInteger consecutiveLowDhtSamples;
     private volatile long lastDhtBootstrapTimeMs;
     private volatile long lastBandwidthRebalanceNanos;
+    private volatile long lastObservedDownloadRate;
+    private volatile long peakObservedDownloadRate;
 
 
     /**
@@ -190,9 +205,9 @@ public class TorrentDownloader {
         this.lastAutoRequestQueue = -1;
         this.consecutiveLowDhtSamples = new AtomicInteger(0);
         this.lastDhtBootstrapTimeMs = 0L;
-
         this.lastBandwidthRebalanceNanos = 0L;
-
+        this.lastObservedDownloadRate = 0L;
+        this.peakObservedDownloadRate = 0L;
 
         startSession();
         this.running = true;
@@ -256,6 +271,20 @@ public class TorrentDownloader {
         settings.setBoolean(settings_pack.bool_types.allow_multiple_connections_per_ip.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.prioritize_partial_pieces.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.strict_end_game_mode.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.send_redundant_have.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.auto_manage_prefer_seeds.swigValue(), true);
+
+        settings.setInteger(settings_pack.int_types.choking_algorithm.swigValue(),
+                choking_algorithm_t.rate_based_choker.swigValue());
+        settings.setInteger(settings_pack.int_types.seed_choking_algorithm.swigValue(),
+                seed_choking_algorithm_t.fastest_upload.swigValue());
+        settings.setInteger(settings_pack.int_types.suggest_mode.swigValue(),
+                suggest_mode_t.suggest_read_cache.swigValue());
+        settings.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(),
+                bandwidth_mixed_algo_t.peer_proportional.swigValue());
+        settings.setInteger(settings_pack.int_types.num_optimistic_unchoke_slots.swigValue(), Math.max(2, active));
     }
 
     private int computeConnectionsLimit() {
@@ -701,10 +730,7 @@ public class TorrentDownloader {
                 params.name(state.getName());
             }
             applyDefaultTrackers(params);
-
             applyPerformanceHints(params);
-
-
             TorrentHandle handle = addTorrentToSession(params);
             Sha1Hash bestHash = resolveInfoHash(handle, params);
             ManagedTorrent managed = new ManagedTorrent(state, handle, bestHash);
@@ -926,11 +952,13 @@ public class TorrentDownloader {
         }
 
         int stalledChecks = managed.stalledPeerChecks.incrementAndGet();
+        long now = System.currentTimeMillis();
+        maybeRefreshTrackers(managed, status, now);
+        requestAdditionalPeers(managed, status, now);
         if (stalledChecks < STALLED_CHECKS_THRESHOLD) {
             return;
         }
 
-        long now = System.currentTimeMillis();
         if (now - managed.lastTrackerAnnounceMs >= TRACKER_REANNOUNCE_INTERVAL.toMillis() && managed.handle.isValid()) {
             try {
                 managed.handle.forceReannounce();
@@ -953,6 +981,178 @@ public class TorrentDownloader {
         }
 
         managed.stalledPeerChecks.set(0);
+    }
+    private void maybeRefreshTrackers(ManagedTorrent managed, TorrentStatus status, long now) {
+        if (managed == null || status == null) {
+            return;
+        }
+        if (status.numPeers() >= MINIMUM_ACTIVE_PEERS) {
+            return;
+        }
+        if (managed.handle == null || !managed.handle.isValid()) {
+            return;
+        }
+        if (now - managed.lastTrackerInjectionMs < TRACKER_REFRESH_INTERVAL.toMillis()) {
+            return;
+        }
+
+        managed.lastTrackerInjectionMs = now;
+        workerExecutor.submit(() -> {
+            if (!managed.handle.isValid()) {
+                return;
+            }
+            try {
+                List<AnnounceEntry> existing = managed.handle.trackers();
+                Set<String> urls = new LinkedHashSet<>();
+                if (existing != null) {
+                    for (AnnounceEntry entry : existing) {
+                        if (entry == null) {
+                            continue;
+                        }
+                        String url = entry.url();
+                        if (url != null && !url.isBlank()) {
+                            urls.add(url.trim());
+                        }
+                    }
+                }
+
+                List<AnnounceEntry> toAdd = new ArrayList<>();
+                for (String tracker : DEFAULT_TRACKERS) {
+                    if (tracker == null || tracker.isBlank()) {
+                        continue;
+                    }
+                    if (!urls.contains(tracker)) {
+                        toAdd.add(new AnnounceEntry(tracker));
+                        urls.add(tracker);
+                    }
+                }
+
+                for (AnnounceEntry entry : toAdd) {
+                    try {
+                        managed.handle.addTracker(entry);
+                    } catch (Throwable t) {
+                        log(Level.FINEST, "No se pudo añadir el tracker " + entry.url() + ": " + t.getMessage());
+                    }
+                }
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudieron refrescar los trackers: " + t.getMessage());
+            }
+        });
+    }
+
+    private void requestAdditionalPeers(ManagedTorrent managed, TorrentStatus status, long now) {
+        if (managed == null || status == null) {
+            return;
+        }
+        if (status.numPeers() >= MINIMUM_ACTIVE_PEERS) {
+            return;
+        }
+        if (!sessionManager.isRunning() || managed.handle == null || !managed.handle.isValid()) {
+            return;
+        }
+        if (now - managed.lastPeerFetchMs < DHT_PEER_FETCH_INTERVAL.toMillis()) {
+            return;
+        }
+
+        managed.lastPeerFetchMs = now;
+        workerExecutor.submit(() -> {
+            if (!sessionManager.isRunning() || !managed.handle.isValid()) {
+                return;
+            }
+            try {
+                List<PeerSample> peerSamples = snapshotPeers(managed);
+                rememberContactedPeers(managed, peerSamples);
+
+                List<TcpEndpoint> dhtPeers = sessionManager.dhtGetPeers(managed.infoHash, 6);
+                if (dhtPeers == null || dhtPeers.isEmpty()) {
+                    sessionManager.dhtAnnounce(managed.infoHash);
+                    return;
+                }
+
+                int connected = 0;
+                for (TcpEndpoint endpoint : dhtPeers) {
+                    if (endpoint == null) {
+                        continue;
+                    }
+                    String key = endpoint.toString();
+                    if (key == null || key.isBlank()) {
+                        continue;
+                    }
+                    if (!managed.contactedPeers.add(key)) {
+                        continue;
+                    }
+                    try {
+                        managed.handle.connectPeer(endpoint);
+                        connected++;
+                    } catch (Throwable t) {
+                        managed.contactedPeers.remove(key);
+                        log(Level.FINEST, "No se pudo conectar al peer " + key + ": " + t.getMessage());
+                    }
+                    if (connected >= MAX_EXTRA_DHT_CONNECTIONS) {
+                        break;
+                    }
+                }
+
+                if (connected == 0) {
+                    sessionManager.dhtAnnounce(managed.infoHash);
+                }
+
+                if (managed.contactedPeers.size() > 512) {
+                    managed.contactedPeers.clear();
+                }
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudieron obtener peers adicionales desde la DHT: " + t.getMessage());
+            }
+        });
+    }
+
+    private List<PeerSample> snapshotPeers(ManagedTorrent managed) {
+        if (managed == null || managed.handle == null || !managed.handle.isValid()) {
+            if (managed != null) {
+                managed.lastPeerSamples = Collections.emptyList();
+            }
+            return Collections.emptyList();
+        }
+        try {
+            List<PeerInfo> peers = managed.handle.peerInfo();
+            if (peers == null || peers.isEmpty()) {
+                managed.lastPeerSamples = Collections.emptyList();
+                return managed.lastPeerSamples;
+            }
+            List<PeerSample> samples = new ArrayList<>(peers.size());
+            for (PeerInfo peer : peers) {
+                if (peer == null) {
+                    continue;
+                }
+                String endpoint = peer.ip();
+                if (endpoint == null || endpoint.isBlank()) {
+                    continue;
+                }
+                samples.add(new PeerSample(endpoint, peer.downSpeed(), peer.upSpeed(), peer.progress()));
+            }
+            if (samples.isEmpty()) {
+                managed.lastPeerSamples = Collections.emptyList();
+            } else {
+                managed.lastPeerSamples = samples;
+            }
+            return managed.lastPeerSamples;
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudieron capturar los peers actuales: " + t.getMessage());
+            managed.lastPeerSamples = Collections.emptyList();
+            return managed.lastPeerSamples;
+        }
+    }
+
+    private void rememberContactedPeers(ManagedTorrent managed, List<PeerSample> peerSamples) {
+        if (managed == null || peerSamples == null || peerSamples.isEmpty()) {
+            return;
+        }
+        for (PeerSample sample : peerSamples) {
+            if (sample == null || sample.endpoint == null || sample.endpoint.isBlank()) {
+                continue;
+            }
+            managed.contactedPeers.add(sample.endpoint);
+        }
     }
 
     private void maybeOptimizeTorrentConnections(ManagedTorrent managed, TorrentStatus status, int activeCount) {
@@ -978,6 +1178,17 @@ public class TorrentDownloader {
         int peerCandidates = Math.max(status.listPeers(), status.numPeers());
         int desiredConnections = Math.max(baseline, peerCandidates + MINIMUM_ACTIVE_PEERS);
         desiredConnections = clamp(desiredConnections, baseline, globalConnections);
+
+        long sessionTargetRate = Math.max(expectedSessionDownloadRate(), Math.max(status.downloadRate(), 0));
+        List<PeerSample> peerSamples = managed.lastPeerSamples != null ? managed.lastPeerSamples : Collections.emptyList();
+        if (peerSamples.isEmpty()) {
+            peerSamples = snapshotPeers(managed);
+        }
+        int sampleSuggestedSlots = estimateSlotsForTargetRate(peerSamples, sessionTargetRate);
+        if (sampleSuggestedSlots > 0) {
+            desiredConnections = clamp(Math.max(desiredConnections, sampleSuggestedSlots + MINIMUM_ACTIVE_PEERS),
+                    baseline, globalConnections);
+        }
 
         if (status.downloadRate() < STALLED_DOWNLOAD_RATE_BYTES && status.numPeers() < MINIMUM_ACTIVE_PEERS) {
             desiredConnections = clamp(desiredConnections + 80, baseline, globalConnections);
@@ -1021,7 +1232,6 @@ public class TorrentDownloader {
         return managed != null && managed.handle != null && managed.handle.isValid() && !managed.paused;
     }
 
-
     private void autoTuneSessionIfNeeded() {
         if (!sessionManager.isRunning()) {
             return;
@@ -1040,12 +1250,17 @@ public class TorrentDownloader {
         long downloadRate = stats.downloadRate();
         long uploadRate = stats.uploadRate();
         long dhtNodes = stats.dhtNodes();
+        lastObservedDownloadRate = downloadRate;
+        updatePeakDownloadRate(downloadRate);
+        long expectedRate = expectedSessionDownloadRate();
 
         int desiredConnections = clamp(Math.max(computeConnectionsLimit(),
-                dynamicConnectionsFromRate(downloadRate, uploadRate)), 150, MAX_DYNAMIC_CONNECTIONS);
+                dynamicConnectionsFromRate(Math.max(downloadRate, expectedRate), uploadRate)),
+                150, MAX_DYNAMIC_CONNECTIONS);
         int desiredConnectionSpeed = clamp(Math.max(computeConnectionSpeed(),
-                dynamicConnectionSpeed(downloadRate)), 30, 500);
-        int desiredRequestQueue = clamp(dynamicRequestQueue(downloadRate),
+                dynamicConnectionSpeed(Math.max(downloadRate, expectedRate))), 30, 500);
+        int desiredRequestQueue = clamp(dynamicRequestQueue(Math.max(downloadRate, expectedRate)),
+
                 MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
 
         SettingsPack dynamic = new SettingsPack();
@@ -1076,6 +1291,30 @@ public class TorrentDownloader {
 
         rebootstrapDhtIfNeeded(dhtNodes);
     }
+
+
+    private void updatePeakDownloadRate(long downloadRate) {
+        if (downloadRate <= 0) {
+            peakObservedDownloadRate = (long) (peakObservedDownloadRate * PEAK_RATE_DECAY);
+            return;
+        }
+        if (peakObservedDownloadRate <= 0) {
+            peakObservedDownloadRate = downloadRate;
+        } else {
+            peakObservedDownloadRate = (long) (peakObservedDownloadRate * PEAK_RATE_DECAY
+                    + downloadRate * (1.0 - PEAK_RATE_DECAY));
+        }
+    }
+
+    private long expectedSessionDownloadRate() {
+        long limit = downloadSpeedLimit > 0 ? downloadSpeedLimit * 1024L : 0L;
+        long observed = Math.max(lastObservedDownloadRate, peakObservedDownloadRate);
+        if (limit > 0) {
+            return Math.max(limit, observed);
+        }
+        return observed;
+    }
+
     private void rebalanceActiveTorrentBandwidth(List<ManagedTorrent> snapshot) {
         if (snapshot == null || snapshot.isEmpty()) {
             return;
@@ -1247,6 +1486,32 @@ public class TorrentDownloader {
         return clamp(queue, MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
     }
 
+
+    private int estimateSlotsForTargetRate(List<PeerSample> peers, long targetRate) {
+        if (peers == null || peers.isEmpty() || targetRate <= 0) {
+            return 0;
+        }
+        long aggregate = 0;
+        int counted = 0;
+        for (PeerSample sample : peers) {
+            if (sample == null) {
+                continue;
+            }
+            int observed = Math.max(sample.downSpeed, sample.upSpeed);
+            if (observed <= MIN_PEER_SAMPLE_SPEED_BYTES) {
+                continue;
+            }
+            aggregate += observed;
+            counted++;
+        }
+        if (counted < MIN_PEER_SAMPLE_COUNT) {
+            return 0;
+        }
+        long average = Math.max(MIN_PEER_SAMPLE_SPEED_BYTES, aggregate / counted);
+        return (int) Math.ceil(targetRate / (double) average);
+    }
+
+
     private boolean shouldUpdate(int desired, int last, int tolerance) {
         if (desired <= 0) {
             return false;
@@ -1299,7 +1564,6 @@ public class TorrentDownloader {
         managed.completed = true;
         managed.paused = false;
         managed.stalledPeerChecks.set(0);
-
         managed.lastAutoDownloadLimit = -1;
         managed.lastAutoUploadLimit = -1;
         TorrentState state = managed.state;
@@ -1412,8 +1676,6 @@ public class TorrentDownloader {
             params.trackers(mergedTrackers);
         }
     }
-
-
     private void applyPerformanceHints(AddTorrentParams params) {
         if (params == null) {
             return;
@@ -1432,8 +1694,6 @@ public class TorrentDownloader {
             params.uploadLimit(share);
         }
     }
-
-
     private List<String> mergeTrackers(List<String> current) {
         Set<String> merged = new LinkedHashSet<>();
         if (current != null) {
@@ -1731,6 +1991,21 @@ public class TorrentDownloader {
         }
     }
 
+    private static final class PeerSample {
+        private final String endpoint;
+        private final int downSpeed;
+        private final int upSpeed;
+        @SuppressWarnings("unused")
+        private final float progress;
+
+        private PeerSample(String endpoint, int downSpeed, int upSpeed, float progress) {
+            this.endpoint = endpoint;
+            this.downSpeed = downSpeed;
+            this.upSpeed = upSpeed;
+            this.progress = progress;
+        }
+    }
+
     /** Holds runtime information of an active torrent. */
     private static final class ManagedTorrent {
         private final TorrentState state;
@@ -1748,10 +2023,14 @@ public class TorrentDownloader {
         private volatile int lastAutoDownloadLimit;
         private volatile int lastAutoUploadLimit;
         private volatile long lastPeerOptimizationMs;
-
         private final AtomicInteger stalledPeerChecks;
         private volatile long lastTrackerAnnounceMs;
         private volatile long lastDhtAnnounceMs;
+        private volatile long lastTrackerInjectionMs;
+        private volatile long lastPeerFetchMs;
+        private final Set<String> contactedPeers;
+        private volatile List<PeerSample> lastPeerSamples;
+
 
         private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
@@ -1767,10 +2046,14 @@ public class TorrentDownloader {
             this.lastAutoDownloadLimit = -1;
             this.lastAutoUploadLimit = -1;
             this.lastPeerOptimizationMs = 0L;
-
             this.stalledPeerChecks = new AtomicInteger();
             this.lastTrackerAnnounceMs = 0L;
             this.lastDhtAnnounceMs = 0L;
+            this.lastTrackerInjectionMs = 0L;
+            this.lastPeerFetchMs = 0L;
+            this.contactedPeers = ConcurrentHashMap.newKeySet();
+            this.lastPeerSamples = Collections.emptyList();
+
         }
     }
 }
