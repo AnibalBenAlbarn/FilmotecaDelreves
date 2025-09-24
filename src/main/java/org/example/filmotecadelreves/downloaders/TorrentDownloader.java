@@ -20,6 +20,7 @@ import com.frostwire.jlibtorrent.alerts.StateUpdateAlert;
 import com.frostwire.jlibtorrent.alerts.TorrentErrorAlert;
 import com.frostwire.jlibtorrent.alerts.TorrentFinishedAlert;
 import com.frostwire.jlibtorrent.swig.settings_pack;
+import com.frostwire.jlibtorrent.swig.error_code;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -605,17 +606,8 @@ public class TorrentDownloader {
                 params.setTrackers(Arrays.asList(DEFAULT_TRACKERS));
             }
 
-            TorrentHandle handle = sessionManager.addTorrent(params);
-            if (handle == null || !handle.isValid()) {
-                throw new IllegalStateException("No se pudo registrar el torrent en la sesión activa.");
-            }
-
-            InfoHash infoHash = handle.infoHash();
-            if (infoHash == null || infoHash.getBest() == null) {
-                throw new IllegalStateException("El torrent no proporcionó un infohash válido.");
-            }
-
-            Sha1Hash bestHash = infoHash.getBest();
+            TorrentHandle handle = addTorrentToSession(params);
+            Sha1Hash bestHash = resolveInfoHash(handle, params);
             ManagedTorrent managed = new ManagedTorrent(state, handle, bestHash);
             managed.sequentialDownload = pending.isSequentialDownload();
             if (managed.sequentialDownload) {
@@ -650,7 +642,7 @@ public class TorrentDownloader {
             }
 
             state.setStatus("Descargando");
-            state.setTorrentId(infoHash.toString());
+            state.setTorrentId(bestHash.toHex());
             state.setHash(bestHash.toHex());
             updateStateFromHandle(managed);
             notifyStatusUpdate(state, managed.stats);
@@ -664,6 +656,60 @@ public class TorrentDownloader {
                 pendingByState.remove(state);
             }
         }
+    }
+
+    private TorrentHandle addTorrentToSession(AddTorrentParams params) {
+        if (!sessionManager.isRunning()) {
+            throw new IllegalStateException("La sesión de BitTorrent no está activa.");
+        }
+        if (params == null) {
+            throw new IllegalArgumentException("Los parámetros del torrent no pueden ser nulos.");
+        }
+
+        error_code nativeError = new error_code();
+        TorrentHandle handle;
+        try {
+            handle = new TorrentHandle(sessionManager.swig().add_torrent(params.swig(), nativeError));
+        } catch (Throwable t) {
+            throw new IllegalStateException("No se pudo registrar el torrent en la sesión activa: " + t.getMessage(), t);
+        }
+
+        if (nativeError.value() != 0) {
+            throw new IllegalStateException("No se pudo registrar el torrent en la sesión activa: " + nativeError.message());
+        }
+        if (handle == null || !handle.isValid()) {
+            throw new IllegalStateException("El manejador del torrent devuelto no es válido.");
+        }
+        return handle;
+    }
+
+    private Sha1Hash resolveInfoHash(TorrentHandle handle, AddTorrentParams params) {
+        Sha1Hash hash = null;
+        if (handle != null && handle.isValid()) {
+            try {
+                hash = handle.infoHash();
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo obtener el hash desde el manejador: " + t.getMessage());
+            }
+        }
+        if (hash == null || hash.isAllZeros()) {
+            InfoHash infoHashes = null;
+            try {
+                infoHashes = params != null ? params.getInfoHashes() : null;
+            } catch (Throwable t) {
+                log(Level.FINEST, "No se pudo obtener el hash desde los parámetros: " + t.getMessage());
+            }
+            if (infoHashes != null) {
+                Sha1Hash best = infoHashes.getBest();
+                if (best != null && !best.isAllZeros()) {
+                    hash = best;
+                }
+            }
+        }
+        if (hash == null || hash.isAllZeros()) {
+            throw new IllegalStateException("El torrent no proporcionó un infohash válido.");
+        }
+        return hash;
     }
 
     private void refreshStatuses() {
@@ -950,7 +996,7 @@ public class TorrentDownloader {
             } else if (alert instanceof StateUpdateAlert) {
                 StateUpdateAlert updateAlert = (StateUpdateAlert) alert;
                 for (TorrentStatus status : updateAlert.status()) {
-                    ManagedTorrent managed = findManagedTorrent(status.getInfoHashes().getBest());
+                    ManagedTorrent managed = findManagedTorrent(status);
                     if (managed != null) {
                         updateManagedTorrent(managed, status);
                     }
@@ -958,6 +1004,47 @@ public class TorrentDownloader {
             }
         }
     };
+
+    private ManagedTorrent findManagedTorrent(TorrentStatus status) {
+        if (status == null) {
+            return null;
+        }
+        Sha1Hash hash = safeStatusHash(status);
+        if (hash != null) {
+            ManagedTorrent managed = findManagedTorrent(hash);
+            if (managed != null) {
+                return managed;
+            }
+        }
+
+        String statusName = status.name();
+        if (statusName != null && !statusName.isBlank()) {
+            synchronized (lock) {
+                for (ManagedTorrent candidate : managedByState.values()) {
+                    String candidateName = candidate.state.getName();
+                    if (candidateName != null && candidateName.equals(statusName)) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Sha1Hash safeStatusHash(TorrentStatus status) {
+        if (status == null) {
+            return null;
+        }
+        try {
+            Sha1Hash hash = status.infoHash();
+            if (hash != null && !hash.isAllZeros()) {
+                return hash;
+            }
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo leer el hash del estado del torrent: " + t.getMessage());
+        }
+        return null;
+    }
 
     private ManagedTorrent findManagedTorrent(TorrentHandle handle) {
         if (handle == null || !handle.isValid()) {
