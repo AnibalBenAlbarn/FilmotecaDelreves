@@ -11,6 +11,7 @@ import com.frostwire.jlibtorrent.SessionParams;
 import com.frostwire.jlibtorrent.SettingsPack;
 import com.frostwire.jlibtorrent.Sha1Hash;
 import com.frostwire.jlibtorrent.TorrentHandle;
+import com.frostwire.jlibtorrent.TorrentFlags;
 import com.frostwire.jlibtorrent.TorrentInfo;
 import com.frostwire.jlibtorrent.TorrentStatus;
 import com.frostwire.jlibtorrent.alerts.Alert;
@@ -278,13 +279,8 @@ public class TorrentDownloader {
             }
             managed = managedByState.get(torrentState);
         }
-        if (managed != null && managed.handle.isValid()) {
-            try {
-                managed.handle.setSequentialDownload(sequential);
-                managed.sequentialDownload = sequential;
-            } catch (Throwable t) {
-                log(Level.FINEST, "No se pudo actualizar la descarga secuencial: " + t.getMessage());
-            }
+        if (managed != null) {
+            updateSequentialDownload(managed, sequential);
         }
     }
 
@@ -598,12 +594,12 @@ public class TorrentDownloader {
                 return;
             }
 
-            params.setSavePath(destination.toAbsolutePath().toString());
-            if (params.getName() == null || params.getName().isBlank()) {
-                params.setName(state.getName());
+            params.savePath(destination.toAbsolutePath().toString());
+            if (params.name() == null || params.name().isBlank()) {
+                params.name(state.getName());
             }
-            if (params.getTrackers().isEmpty()) {
-                params.setTrackers(Arrays.asList(DEFAULT_TRACKERS));
+            if (params.trackers().isEmpty()) {
+                params.trackers(Arrays.asList(DEFAULT_TRACKERS));
             }
 
             TorrentHandle handle = addTorrentToSession(params);
@@ -611,11 +607,7 @@ public class TorrentDownloader {
             ManagedTorrent managed = new ManagedTorrent(state, handle, bestHash);
             managed.sequentialDownload = pending.isSequentialDownload();
             if (managed.sequentialDownload) {
-                try {
-                    handle.setSequentialDownload(true);
-                } catch (Throwable t) {
-                    log(Level.FINEST, "No se pudo activar la descarga secuencial: " + t.getMessage());
-                }
+                applySequentialDownloadFlag(handle, true);
             }
             if (pending.hasCustomDownloadLimit()) {
                 int limitBytes = pending.getDownloadLimitBytes();
@@ -811,6 +803,32 @@ public class TorrentDownloader {
         return Duration.ofSeconds(remaining / Math.max(1, rate)).getSeconds();
     }
 
+    private void updateSequentialDownload(ManagedTorrent managed, boolean sequential) {
+        if (managed == null || managed.handle == null || !managed.handle.isValid()) {
+            return;
+        }
+        if (applySequentialDownloadFlag(managed.handle, sequential)) {
+            managed.sequentialDownload = sequential;
+        }
+    }
+
+    private boolean applySequentialDownloadFlag(TorrentHandle handle, boolean sequential) {
+        if (handle == null || !handle.isValid()) {
+            return false;
+        }
+        try {
+            if (sequential) {
+                handle.setFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD);
+            } else {
+                handle.unsetFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD);
+            }
+            return true;
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo actualizar la descarga secuencial: " + t.getMessage());
+            return false;
+        }
+    }
+
     private long calculateRequiredSpace(TorrentState state) {
         if (state == null) {
             return MIN_DISK_SPACE;
@@ -866,9 +884,9 @@ public class TorrentDownloader {
     private AddTorrentParams buildParamsFromFile(Path file, TorrentState state) {
         TorrentInfo info = new TorrentInfo(file.toFile());
         AddTorrentParams params = new AddTorrentParams();
-        params.setTorrentInfo(info);
-        params.setName(info.name());
-        params.setTrackers(Arrays.asList(DEFAULT_TRACKERS));
+        params.torrentInfo(info);
+        params.name(info.name());
+        params.trackers(Arrays.asList(DEFAULT_TRACKERS));
         if (state != null) {
             state.setFileSize(info.totalSize());
             state.setFileName(info.name());
@@ -879,8 +897,8 @@ public class TorrentDownloader {
 
     private AddTorrentParams buildParamsFromMagnet(String magnet, TorrentState state) {
         AddTorrentParams params = AddTorrentParams.parseMagnetUri(magnet);
-        params.setName(state.getName());
-        params.setTrackers(Arrays.asList(DEFAULT_TRACKERS));
+        params.name(state.getName());
+        params.trackers(Arrays.asList(DEFAULT_TRACKERS));
         return params;
     }
 
