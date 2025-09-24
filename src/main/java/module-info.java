@@ -27,6 +27,7 @@ module org.example.filmotecadelreves {
 
     opens org.example.filmotecadelreves to javafx.fxml;
     opens org.example.filmotecadelreves.UI to javafx.fxml;
+    opens org.example.filmotecadelreves.moviesad to javafx.base;
     exports org.example.filmotecadelreves;
     exports org.example.filmotecadelreves.UI;
 }

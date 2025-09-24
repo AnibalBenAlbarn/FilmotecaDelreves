@@ -364,7 +364,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
      */
     private void setupTorrentsTable() {
         torrentsTable = new TableView<>();
-        torrentsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        torrentsTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
 
         // Configurar para que las columnas se ajusten automáticamente al contenido
         torrentsTable.setTableMenuButtonVisible(true);
@@ -579,7 +579,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         // Columna de destino
         TableColumn<TorrentState, String> torrentDestinationCol = new TableColumn<>("Destino");
-        torrentDestinationCol.setCellValueFactory(new PropertyValueFactory<>("destinationPath"));
+        torrentDestinationCol.setCellValueFactory(cellData -> cellData.getValue().destinationPathProperty());
         torrentDestinationCol.setPrefWidth(200);
 
         // Columna de acciones
@@ -604,20 +604,6 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         );
 
         torrentsTable.setItems(filteredTorrentDownloads);
-
-        // Ajustar automáticamente el ancho de las columnas al contenido
-        torrentsTable.widthProperty().addListener((source, oldWidth, newWidth) -> {
-            double totalWidth = newWidth.doubleValue();
-            double totalPrefWidth = 0;
-
-            for (TableColumn<TorrentState, ?> column : torrentsTable.getColumns()) {
-                totalPrefWidth += column.getPrefWidth();
-            }
-
-            for (TableColumn<TorrentState, ?> column : torrentsTable.getColumns()) {
-                column.setPrefWidth(column.getPrefWidth() / totalPrefWidth * totalWidth);
-            }
-        });
     }
 
     /**
