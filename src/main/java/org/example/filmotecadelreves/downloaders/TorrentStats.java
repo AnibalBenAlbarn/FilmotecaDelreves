@@ -1,7 +1,7 @@
 package org.example.filmotecadelreves.downloaders;
 
-import org.libtorrent4j.Sha1Hash;
-import org.libtorrent4j.TorrentStatus;
+import com.frostwire.jlibtorrent.Sha1Hash;
+import com.frostwire.jlibtorrent.TorrentStatus;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -11,9 +11,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Maintains a rolling window of statistics for a torrent managed by libtorrent.
+ * Maintains a rolling window of statistics for a torrent managed by jlibtorrent.
  * <p>
- * libtorrent4j exposes a rich {@link TorrentStatus} object with the raw figures
+ * jlibtorrent exposes a rich {@link TorrentStatus} object with the raw figures
  * (download/upload rates, amount of data transferred, swarm information, etc.).
  * The JavaFX UI, however, needs derived values such as average rates, historical
  * samples for charts and human friendly metadata like the current state or the
@@ -134,7 +134,7 @@ public class TorrentStats {
     /**
      * Update the rolling statistics with the latest {@link TorrentStatus}.
      *
-     * @param status current libtorrent status
+     * @param status current jlibtorrent status
      */
     public synchronized void update(TorrentStatus status) {
         if (status == null) {
@@ -178,13 +178,13 @@ public class TorrentStats {
         try {
             failed = status.totalFailedBytes();
         } catch (NoSuchMethodError ignored) {
-            // Older libtorrent versions might not expose failed bytes
+            // Older jlibtorrent builds might not expose failed bytes
         }
 
         try {
             redundant = status.totalRedundantBytes();
         } catch (NoSuchMethodError ignored) {
-            // Older libtorrent versions might not expose redundant bytes
+            // Older jlibtorrent builds might not expose redundant bytes
         }
 
         long total = failed + redundant;

@@ -73,7 +73,7 @@ public class MainUI extends Application {
         // 2. Inicializar TorrentDownloader de forma diferida. En lugar de crear
         // automáticamente una instancia al inicio, se cargará cuando el usuario
         // seleccione la pestaña de descargas torrent por primera vez. Esto
-        // reduce notablemente el tiempo de arranque al evitar cargar libtorrent4j.
+        // reduce notablemente el tiempo de arranque al evitar cargar jlibtorrent.
         this.torrentDownloader = null;
 
         // 3. Establecer el TorrentDownloader (nulo inicialmente) en AjustesUI y

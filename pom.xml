@@ -12,7 +12,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>5.10.2</junit.version>
-    <libtorrent4j.version>2.1.0-38</libtorrent4j.version>
+    <jlibtorrent.version>2.0.12.5</jlibtorrent.version>
     <app.version>1.0.0</app.version>
     <!-- por si quieres cambiar el binario de jpackage -->
     <jpackage.bin>jpackage</jpackage.bin>
@@ -136,45 +136,11 @@
 
     <!-- Torrent / P2P -->
     <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j</artifactId>
-      <version>${libtorrent4j.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j-windows</artifactId>
-      <version>${libtorrent4j.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j-linux</artifactId>
-      <version>${libtorrent4j.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j-linux-arm</artifactId>
-      <version>${libtorrent4j.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j-linux-arm64</artifactId>
-      <version>${libtorrent4j.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j-macos</artifactId>
-      <version>${libtorrent4j.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.libtorrent4j</groupId>
-      <artifactId>libtorrent4j-macos-arm64</artifactId>
-      <version>${libtorrent4j.version}</version>
-      <scope>runtime</scope>
+      <groupId>com.frostwire</groupId>
+      <artifactId>jlibtorrent</artifactId>
+      <version>${jlibtorrent.version}</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/libs/jlibtorrent-${jlibtorrent.version}.jar</systemPath>
     </dependency>
     <!-- Logging -->
     <dependency>
@@ -291,6 +257,22 @@
                                     <directory>${project.build.directory}</directory>
                                     <includes>
                                         <include>${project.build.finalName}.jar</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-jlibtorrent</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/app/lib</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/libs</directory>
+                                    <includes>
+                                        <include>jlibtorrent-${jlibtorrent.version}.jar</include>
                                     </includes>
                                 </resource>
                             </resources>
