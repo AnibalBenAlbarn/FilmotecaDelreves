@@ -34,8 +34,8 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,6 +47,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -85,15 +86,25 @@ public class TorrentDownloader {
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
             "udp://tracker.openbittorrent.com:6969/announce",
-            "udp://tracker.coppersurfer.tk:6969/announce",
-            "udp://tracker.tiny-vps.com:6969/announce"
+            "udp://tracker.torrent.eu.org:451/announce",
+            "udp://open.stealth.si:80/announce",
+            "udp://exodus.desync.com:6969/announce",
+            "udp://tracker.dler.org:6969/announce",
+            "udp://tracker.ccp.ovh:6969/announce",
+            "udp://tracker1.bt.moack.co.kr:80/announce",
+            "udp://tracker.qu.ax:6969/announce",
+            "udp://opentracker.i2p.rocks:6969/announce",
+            "https://tracker.tamersunion.org:443/announce",
+            "https://tracker.nitrix.me:443/announce"
     };
 
     private static final String[] DEFAULT_DHT_NODES = {
             "router.bittorrent.com:6881",
             "router.utorrent.com:6881",
             "dht.transmissionbt.com:6881",
-            "dht.aelitis.com:6881"
+            "dht.aelitis.com:6881",
+            "router.bitcomet.com:6881",
+            "dht.libtorrent.org:25401"
     };
 
     private final SessionManager sessionManager;
@@ -184,9 +195,55 @@ public class TorrentDownloader {
     }
 
     private void populatePerformanceSettings(SettingsPack settings) {
-        settings.setInteger(settings_pack.int_types.active_downloads.swigValue(), maxConcurrentDownloads);
-        settings.setInteger(settings_pack.int_types.active_seeds.swigValue(), maxConcurrentDownloads);
-        settings.setInteger(settings_pack.int_types.active_limit.swigValue(), maxConcurrentDownloads * 2);
+        if (settings == null) {
+            return;
+        }
+
+        int active = Math.max(1, maxConcurrentDownloads);
+        settings.setInteger(settings_pack.int_types.active_downloads.swigValue(), active);
+        settings.setInteger(settings_pack.int_types.active_seeds.swigValue(), active);
+        settings.setInteger(settings_pack.int_types.active_limit.swigValue(), Math.max(active * 3, 16));
+        settings.setInteger(settings_pack.int_types.connections_limit.swigValue(), computeConnectionsLimit());
+        settings.setInteger(settings_pack.int_types.max_peerlist_size.swigValue(), 5000);
+        settings.setInteger(settings_pack.int_types.max_paused_peerlist_size.swigValue(), 2000);
+        settings.setInteger(settings_pack.int_types.connection_speed.swigValue(), computeConnectionSpeed());
+        settings.setInteger(settings_pack.int_types.max_out_request_queue.swigValue(), 1500);
+        settings.setInteger(settings_pack.int_types.peer_connect_timeout.swigValue(), 15);
+
+        settings.setBoolean(settings_pack.bool_types.announce_to_all_trackers.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.announce_to_all_tiers.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.prefer_udp_trackers.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.ignore_limits_on_local_network.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.smooth_connects.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.allow_multiple_connections_per_ip.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true);
+    }
+
+    private int computeConnectionsLimit() {
+        int active = Math.max(1, maxConcurrentDownloads);
+        int base = active * 80;
+        if (downloadSpeedLimit > 0) {
+            base = Math.max(base, (downloadSpeedLimit / 64) * 40);
+        } else {
+            base = Math.max(base, 600);
+        }
+        return clamp(base, 150, 2000);
+    }
+
+    private int computeConnectionSpeed() {
+        int active = Math.max(1, maxConcurrentDownloads);
+        int base = active * 30;
+        if (downloadSpeedLimit > 0) {
+            base = Math.max(base, Math.min(400, downloadSpeedLimit / 16));
+        } else {
+            base = Math.max(base, 80);
+        }
+        return clamp(base, 30, 400);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void applyRateLimits() {
@@ -598,9 +655,7 @@ public class TorrentDownloader {
             if (params.name() == null || params.name().isBlank()) {
                 params.name(state.getName());
             }
-            if (params.trackers().isEmpty()) {
-                params.trackers(Arrays.asList(DEFAULT_TRACKERS));
-            }
+            applyDefaultTrackers(params);
 
             TorrentHandle handle = addTorrentToSession(params);
             Sha1Hash bestHash = resolveInfoHash(handle, params);
@@ -744,6 +799,11 @@ public class TorrentDownloader {
         } catch (Throwable t) {
             log(Level.FINEST, "No se pudo solicitar las estadísticas de sesión: " + t.getMessage());
         }
+        try {
+            sessionManager.postDhtStats();
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo solicitar las estadísticas de la DHT: " + t.getMessage());
+        }
     }
 
     private void updateManagedTorrent(ManagedTorrent managed, TorrentStatus status) {
@@ -881,12 +941,39 @@ public class TorrentDownloader {
         return destination;
     }
 
+    private void applyDefaultTrackers(AddTorrentParams params) {
+        if (params == null) {
+            return;
+        }
+        List<String> mergedTrackers = mergeTrackers(params.trackers());
+        if (!mergedTrackers.isEmpty()) {
+            params.trackers(mergedTrackers);
+        }
+    }
+
+    private List<String> mergeTrackers(List<String> current) {
+        Set<String> merged = new LinkedHashSet<>();
+        if (current != null) {
+            for (String tracker : current) {
+                if (tracker != null && !tracker.isBlank()) {
+                    merged.add(tracker.trim());
+                }
+            }
+        }
+        for (String tracker : DEFAULT_TRACKERS) {
+            if (tracker != null && !tracker.isBlank()) {
+                merged.add(tracker);
+            }
+        }
+        return new ArrayList<>(merged);
+    }
+
     private AddTorrentParams buildParamsFromFile(Path file, TorrentState state) {
         TorrentInfo info = new TorrentInfo(file.toFile());
         AddTorrentParams params = new AddTorrentParams();
         params.torrentInfo(info);
         params.name(info.name());
-        params.trackers(Arrays.asList(DEFAULT_TRACKERS));
+        applyDefaultTrackers(params);
         if (state != null) {
             state.setFileSize(info.totalSize());
             state.setFileName(info.name());
@@ -898,7 +985,7 @@ public class TorrentDownloader {
     private AddTorrentParams buildParamsFromMagnet(String magnet, TorrentState state) {
         AddTorrentParams params = AddTorrentParams.parseMagnetUri(magnet);
         params.name(state.getName());
-        params.trackers(Arrays.asList(DEFAULT_TRACKERS));
+        applyDefaultTrackers(params);
         return params;
     }
 
