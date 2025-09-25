@@ -296,7 +296,6 @@ public class TorrentDownloader {
         settings.setBoolean(settings_pack.bool_types.announce_to_all_trackers.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.announce_to_all_tiers.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.prefer_udp_trackers.swigValue(), true);
-        settings.setBoolean(settings_pack.bool_types.ignore_limits_on_local_network.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.smooth_connects.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.allow_multiple_connections_per_ip.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true);
@@ -1122,7 +1121,9 @@ public class TorrentDownloader {
                         continue;
                     }
                     try {
-                        managed.handle.connectPeer(endpoint);
+                        if (managed.handle != null) {
+                            managed.handle.swig().connect_peer(endpoint.swig());
+                        }
                         connected++;
                     } catch (Throwable t) {
                         managed.contactedPeers.remove(key);
@@ -1271,7 +1272,9 @@ public class TorrentDownloader {
 
         if (desiredConnections > 0 && desiredConnections != managed.lastMaxConnections) {
             try {
-                managed.handle.setMaxConnections(desiredConnections);
+                if (managed.handle != null) {
+                    managed.handle.swig().set_max_connections(desiredConnections);
+                }
                 managed.lastMaxConnections = desiredConnections;
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo ajustar el número de conexiones del torrent: " + t.getMessage());
@@ -1282,7 +1285,9 @@ public class TorrentDownloader {
         desiredUploads = clamp(desiredUploads, MINIMUM_ACTIVE_SEEDS + 4, 128);
         if (desiredUploads != managed.lastMaxUploads) {
             try {
-                managed.handle.setMaxUploads(desiredUploads);
+                if (managed.handle != null) {
+                    managed.handle.swig().set_max_uploads(desiredUploads);
+                }
                 managed.lastMaxUploads = desiredUploads;
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo ajustar el número de subidas simultáneas: " + t.getMessage());
@@ -1818,14 +1823,18 @@ public class TorrentDownloader {
         }
         connectionBudget = clamp(connectionBudget, 120, MAX_DYNAMIC_CONNECTIONS);
         try {
-            handle.setMaxConnections(connectionBudget);
+            if (handle != null) {
+                handle.swig().set_max_connections(connectionBudget);
+            }
             managed.lastMaxConnections = connectionBudget;
         } catch (Throwable t) {
             log(Level.FINEST, "No se pudo preparar el número inicial de conexiones: " + t.getMessage());
         }
         int uploads = Math.max(MINIMUM_ACTIVE_SEEDS + 4, connectionBudget / 4);
         try {
-            handle.setMaxUploads(uploads);
+            if (handle != null) {
+                handle.swig().set_max_uploads(uploads);
+            }
             managed.lastMaxUploads = uploads;
         } catch (Throwable t) {
             log(Level.FINEST, "No se pudo preparar el número inicial de subidas: " + t.getMessage());
