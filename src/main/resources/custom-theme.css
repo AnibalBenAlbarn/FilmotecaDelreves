@@ -1,0 +1,119 @@
+/* Estilos generados por MovieDownloader */
+.root {
+  -fx-background-color: #999999;
+  -fx-text-fill: #FFFFFF;
+  -fx-font-family: "System";
+}
+
+/* Texto en etiquetas, campos de texto y celdas */
+.label, .text, .text-area, .text-field, .combo-box-base, .table-view, .list-cell, .check-box .text, .radio-button .text {
+  -fx-text-fill: #FFFFFF;
+}
+
+/* Botones */
+.button {
+  -fx-background-color: #80B380;
+  -fx-text-fill: white;
+  -fx-background-radius: 4;
+  -fx-font-weight: bold;
+  -fx-padding: 6 12;
+}
+
+.button:hover {
+  -fx-background-color: derive(#80B380, 20%);
+}
+
+/* Pestañas */
+.tab-pane .tab-header-area .tab-header-background {
+  -fx-background-color: #1A4D4D;
+}
+
+.tab-pane .tab {
+  -fx-background-color: #999999;
+  -fx-border-color: #1A4D4D;
+  -fx-padding: 4 8;
+}
+
+.tab-pane .tab:selected {
+  -fx-background-color: #1A4D4D;
+  -fx-border-color: #1A4D4D;
+  -fx-text-fill: white;
+}
+
+.tab-pane .tab .tab-label {
+  -fx-text-fill: #FFFFFF;
+}
+
+/* Campos de texto, cajas de combinación y similares */
+.text-field, .combo-box, .combo-box-base, .choice-box, .spinner {
+  -fx-background-color: #999999;
+  -fx-border-color: #1A4D4D;
+  -fx-border-radius: 3;
+  -fx-background-radius: 3;
+  -fx-text-fill: #FFFFFF;
+}
+
+.text-field:focused, .combo-box-base:focused, .choice-box:focused, .spinner:focused {
+  -fx-border-color: #80B380;
+}
+
+/* Checkbox y radio */
+.check-box .box, .radio-button .radio {
+  -fx-background-color: #999999;
+  -fx-border-color: #1A4D4D;
+  -fx-border-radius: 3;
+}
+
+.check-box:selected .mark, .radio-button:selected .radio {
+  -fx-background-color: #80B380;
+}
+
+/* Panelemos desplegables */
+.titled-pane > .title {
+  -fx-background-color: #1A4D4D;
+  -fx-text-fill: white;
+}
+
+.titled-pane > .content {
+  -fx-background-color: #999999;
+  -fx-border-color: #1A4D4D;
+}
+
+/* TableView */
+.table-view {
+  -fx-background-color: #999999;
+  -fx-table-cell-border-color: #1A4D4D;
+  -fx-table-header-border-color: #1A4D4D;
+  -fx-control-inner-background: #999999;
+}
+
+.table-view .column-header-background {
+  -fx-background-color: #1A4D4D;
+}
+
+.table-view .column-header .label {
+  -fx-text-fill: #FFFFFF;
+  -fx-font-weight: bold;
+}
+
+.table-row-cell:odd {
+  -fx-background-color: derive(#999999, -5%);
+}
+
+.table-row-cell:even {
+  -fx-background-color: #999999;
+}
+
+.table-row-cell:selected {
+  -fx-background-color: #1A4D4D;
+  -fx-text-fill: white;
+}
+
+/* Hipervínculos */
+.hyperlink {
+  -fx-text-fill: #1A4D4D;
+}
+
+.hyperlink:hover {
+  -fx-text-fill: derive(#1A4D4D, 20%);
+}
