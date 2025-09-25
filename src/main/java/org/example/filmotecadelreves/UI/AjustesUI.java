@@ -942,6 +942,10 @@ public class AjustesUI {
                 System.out.println("Configuración guardada en: " + CONFIG_FILE);
             }
 
+            if (mainUI != null) {
+                mainUI.updateConfig(config);
+            }
+
             // Generar y aplicar el archivo CSS solo si el tema seleccionado es "Personalizado".
             String selectedTheme = themeComboBox.getValue();
             if ("Personalizado".equals(selectedTheme)) {
