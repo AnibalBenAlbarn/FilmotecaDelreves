@@ -58,6 +58,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -115,7 +116,6 @@ public class TorrentDownloader {
     private static final int MIN_PEER_SAMPLE_SPEED_BYTES = 8 * 1024;
     private static final int MIN_PEER_SAMPLE_COUNT = 2;
     private static final double PEAK_RATE_DECAY = 0.85;
-
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
             "udp://tracker.openbittorrent.com:6969/announce",
@@ -169,7 +169,6 @@ public class TorrentDownloader {
     private volatile long lastBandwidthRebalanceNanos;
     private volatile long lastObservedDownloadRate;
     private volatile long peakObservedDownloadRate;
-
     /**
      * Primary constructor used in the application. Additional parameters for
      * verbose or console logging are kept for backwards compatibility, but the
@@ -750,7 +749,6 @@ public class TorrentDownloader {
             }
             applyDefaultTrackers(params);
             applyPerformanceHints(params);
-
             TorrentHandle handle = addTorrentToSession(params);
             Sha1Hash bestHash = resolveInfoHash(handle, params);
             ManagedTorrent managed = new ManagedTorrent(state, handle, bestHash);
@@ -1001,7 +999,6 @@ public class TorrentDownloader {
 
         managed.stalledPeerChecks.set(0);
     }
-
     private void maybeRefreshTrackers(ManagedTorrent managed, TorrentStatus status, long now) {
         if (managed == null || status == null) {
             return;
@@ -1281,6 +1278,7 @@ public class TorrentDownloader {
         int desiredConnectionSpeed = clamp(Math.max(computeConnectionSpeed(),
                 dynamicConnectionSpeed(Math.max(downloadRate, expectedRate))), 30, 500);
         int desiredRequestQueue = clamp(dynamicRequestQueue(Math.max(downloadRate, expectedRate)),
+
                 MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
 
         SettingsPack dynamic = new SettingsPack();
@@ -1311,6 +1309,7 @@ public class TorrentDownloader {
 
         rebootstrapDhtIfNeeded(dhtNodes);
     }
+
 
     private void updatePeakDownloadRate(long downloadRate) {
         if (downloadRate <= 0) {
@@ -1504,7 +1503,6 @@ public class TorrentDownloader {
         int queue = (int) (basis / 1024L);
         return clamp(queue, MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
     }
-
     private int estimateSlotsForTargetRate(List<PeerSample> peers, long targetRate) {
         if (peers == null || peers.isEmpty() || targetRate <= 0) {
             return 0;
@@ -1528,6 +1526,7 @@ public class TorrentDownloader {
         long average = Math.max(MIN_PEER_SAMPLE_SPEED_BYTES, aggregate / counted);
         return (int) Math.ceil(targetRate / (double) average);
     }
+
 
     private boolean shouldUpdate(int desired, int last, int tolerance) {
         if (desired <= 0) {
@@ -1691,6 +1690,7 @@ public class TorrentDownloader {
         List<String> mergedTrackers = mergeTrackers(params.trackers());
         if (!mergedTrackers.isEmpty()) {
             params.trackers(mergedTrackers);
+
             List<Integer> tiers = new ArrayList<>(mergedTrackers.size());
             for (int i = 0; i < mergedTrackers.size(); i++) {
                 tiers.add(i < DEFAULT_TRACKERS.length ? i : DEFAULT_TRACKERS.length);
@@ -1708,6 +1708,7 @@ public class TorrentDownloader {
             return;
         }
         int active = Math.max(1, maxConcurrentDownloads);
+
         int globalConnections = clamp(computeConnectionsLimit(), 300, MAX_DYNAMIC_CONNECTIONS);
         int perTorrentConnections = globalConnections / Math.max(1, Math.min(active, 4));
         perTorrentConnections = clamp(perTorrentConnections, 120, globalConnections);
@@ -1723,6 +1724,7 @@ public class TorrentDownloader {
             params.uploadLimit(share);
         }
 
+
         try {
             torrent_flags_t flags = params.flags();
             if (flags != null) {
@@ -1735,7 +1737,6 @@ public class TorrentDownloader {
             // Algunos builds de libtorrent pueden no exponer las banderas, ignoramos el fallo.
         }
     }
-
     private List<String> mergeTrackers(List<String> current) {
         Set<String> merged = new LinkedHashSet<>();
         if (current != null) {
@@ -2072,7 +2073,7 @@ public class TorrentDownloader {
         private volatile long lastPeerFetchMs;
         private final Set<String> contactedPeers;
         private volatile List<PeerSample> lastPeerSamples;
-
+      
         private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
             this.handle = handle;
