@@ -101,6 +101,10 @@ public class TorrentDownloader {
     private static final Duration TORRENT_OPTIMIZATION_INTERVAL = Duration.ofSeconds(5);
     private static final Duration TRACKER_REFRESH_INTERVAL = Duration.ofMinutes(3);
     private static final Duration DHT_PEER_FETCH_INTERVAL = Duration.ofSeconds(40);
+
+    private static final long SLOW_PEER_SAMPLE_GRACE_MS = Duration.ofSeconds(30).toMillis();
+    private static final long SLOW_PEER_BACKOFF_MS = Duration.ofMinutes(5).toMillis();
+
     private static final int MINIMUM_ACTIVE_PEERS = 6;
     private static final int MINIMUM_ACTIVE_SEEDS = 1;
     private static final long STALLED_DOWNLOAD_RATE_BYTES = 64L * 1024L;
@@ -169,6 +173,7 @@ public class TorrentDownloader {
     private volatile long lastBandwidthRebalanceNanos;
     private volatile long lastObservedDownloadRate;
     private volatile long peakObservedDownloadRate;
+
     /**
      * Primary constructor used in the application. Additional parameters for
      * verbose or console logging are kept for backwards compatibility, but the
@@ -256,10 +261,13 @@ public class TorrentDownloader {
         settings.setBoolean(settings_pack.bool_types.report_true_downloaded.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.report_redundant_bytes.swigValue(), true);
         settings.setBoolean(settings_pack.bool_types.close_redundant_connections.swigValue(), false);
-        settings.setInteger(settings_pack.int_types.send_buffer_low_watermark.swigValue(), 512 * 1024);
-        settings.setInteger(settings_pack.int_types.send_buffer_watermark.swigValue(), 3 * 1024 * 1024);
+        settings.setInteger(settings_pack.int_types.send_buffer_low_watermark.swigValue(), 1 * 1024 * 1024);
+        settings.setInteger(settings_pack.int_types.send_buffer_watermark.swigValue(), 8 * 1024 * 1024);
         settings.setInteger(settings_pack.int_types.send_buffer_watermark_factor.swigValue(), 200);
-        settings.setInteger(settings_pack.int_types.max_queued_disk_bytes.swigValue(), 512 * 1024);
+        settings.setInteger(settings_pack.int_types.max_queued_disk_bytes.swigValue(), 32 * 1024 * 1024);
+        settings.setInteger(settings_pack.int_types.max_peer_recv_buffer_size.swigValue(), 4 * 1024 * 1024);
+        settings.setInteger(settings_pack.int_types.recv_socket_buffer_size.swigValue(), 2 * 1024 * 1024);
+        settings.setInteger(settings_pack.int_types.send_socket_buffer_size.swigValue(), 2 * 1024 * 1024);
         settings.setInteger(settings_pack.int_types.handshake_timeout.swigValue(), 10);
         settings.setInteger(settings_pack.int_types.inactivity_timeout.swigValue(), 180);
         settings.setInteger(settings_pack.int_types.unchoke_slots_limit.swigValue(), 0);
@@ -1077,6 +1085,7 @@ public class TorrentDownloader {
                 return;
             }
             try {
+                purgeExpiredSlowPeers(managed);
                 List<PeerSample> peerSamples = snapshotPeers(managed);
                 rememberContactedPeers(managed, peerSamples);
 
@@ -1087,6 +1096,7 @@ public class TorrentDownloader {
                 }
 
                 int connected = 0;
+                long iterationStart = System.currentTimeMillis();
                 for (TcpEndpoint endpoint : dhtPeers) {
                     if (endpoint == null) {
                         continue;
@@ -1094,6 +1104,14 @@ public class TorrentDownloader {
                     String key = endpoint.toString();
                     if (key == null || key.isBlank()) {
                         continue;
+                    }
+                    SlowPeerRecord slowRecord = managed.slowPeers.get(key);
+                    if (slowRecord != null) {
+                        if (slowRecord.isExpired(iterationStart)) {
+                            managed.slowPeers.remove(key);
+                        } else if (slowRecord.isConfirmed(iterationStart)) {
+                            continue;
+                        }
                     }
                     if (!managed.contactedPeers.add(key)) {
                         continue;
@@ -1147,6 +1165,7 @@ public class TorrentDownloader {
                 }
                 samples.add(new PeerSample(endpoint, peer.downSpeed(), peer.upSpeed(), peer.progress()));
             }
+            updatePeerSpeedRecords(managed, peers);
             if (samples.isEmpty()) {
                 managed.lastPeerSamples = Collections.emptyList();
             } else {
@@ -1172,6 +1191,39 @@ public class TorrentDownloader {
         }
     }
 
+    private void updatePeerSpeedRecords(ManagedTorrent managed, List<PeerInfo> peers) {
+        if (managed == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (peers != null && !peers.isEmpty()) {
+            for (PeerInfo peer : peers) {
+                if (peer == null) {
+                    continue;
+                }
+                String endpoint = peer.ip();
+                if (endpoint == null || endpoint.isBlank()) {
+                    continue;
+                }
+                int throughput = Math.max(peer.downSpeed(), peer.upSpeed());
+                if (throughput >= MIN_PEER_SAMPLE_SPEED_BYTES) {
+                    managed.slowPeers.remove(endpoint);
+                } else {
+                    SlowPeerRecord record = managed.slowPeers.computeIfAbsent(endpoint, key -> new SlowPeerRecord(now));
+                    record.markSeen(now);
+                }
+            }
+        }
+        managed.slowPeers.entrySet().removeIf(entry -> entry.getValue().isExpired(now));
+    }
+
+    private void purgeExpiredSlowPeers(ManagedTorrent managed) {
+        if (managed == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        managed.slowPeers.entrySet().removeIf(entry -> entry.getValue().isExpired(now));
+    }
     private void maybeOptimizeTorrentConnections(ManagedTorrent managed, TorrentStatus status, int activeCount) {
         if (managed == null || status == null) {
             return;
@@ -1278,7 +1330,6 @@ public class TorrentDownloader {
         int desiredConnectionSpeed = clamp(Math.max(computeConnectionSpeed(),
                 dynamicConnectionSpeed(Math.max(downloadRate, expectedRate))), 30, 500);
         int desiredRequestQueue = clamp(dynamicRequestQueue(Math.max(downloadRate, expectedRate)),
-
                 MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
 
         SettingsPack dynamic = new SettingsPack();
@@ -1309,8 +1360,6 @@ public class TorrentDownloader {
 
         rebootstrapDhtIfNeeded(dhtNodes);
     }
-
-
     private void updatePeakDownloadRate(long downloadRate) {
         if (downloadRate <= 0) {
             peakObservedDownloadRate = (long) (peakObservedDownloadRate * PEAK_RATE_DECAY);
@@ -1526,8 +1575,6 @@ public class TorrentDownloader {
         long average = Math.max(MIN_PEER_SAMPLE_SPEED_BYTES, aggregate / counted);
         return (int) Math.ceil(targetRate / (double) average);
     }
-
-
     private boolean shouldUpdate(int desired, int last, int tolerance) {
         if (desired <= 0) {
             return false;
@@ -1708,7 +1755,6 @@ public class TorrentDownloader {
             return;
         }
         int active = Math.max(1, maxConcurrentDownloads);
-
         int globalConnections = clamp(computeConnectionsLimit(), 300, MAX_DYNAMIC_CONNECTIONS);
         int perTorrentConnections = globalConnections / Math.max(1, Math.min(active, 4));
         perTorrentConnections = clamp(perTorrentConnections, 120, globalConnections);
@@ -1723,8 +1769,6 @@ public class TorrentDownloader {
             int share = Math.max(MIN_AUTO_UPLOAD_LIMIT, (uploadSpeedLimit * 1024) / active);
             params.uploadLimit(share);
         }
-
-
         try {
             torrent_flags_t flags = params.flags();
             if (flags != null) {
@@ -2048,7 +2092,27 @@ public class TorrentDownloader {
             this.progress = progress;
         }
     }
+    private static final class SlowPeerRecord {
+        private final long firstSlow;
+        private volatile long lastSlow;
 
+        private SlowPeerRecord(long timestamp) {
+            this.firstSlow = timestamp;
+            this.lastSlow = timestamp;
+        }
+
+        private void markSeen(long timestamp) {
+            this.lastSlow = timestamp;
+        }
+
+        private boolean isConfirmed(long timestamp) {
+            return timestamp - firstSlow >= SLOW_PEER_SAMPLE_GRACE_MS;
+        }
+
+        private boolean isExpired(long timestamp) {
+            return timestamp - lastSlow > SLOW_PEER_BACKOFF_MS;
+        }
+    }
     /** Holds runtime information of an active torrent. */
     private static final class ManagedTorrent {
         private final TorrentState state;
@@ -2072,8 +2136,8 @@ public class TorrentDownloader {
         private volatile long lastTrackerInjectionMs;
         private volatile long lastPeerFetchMs;
         private final Set<String> contactedPeers;
+        private final ConcurrentHashMap<String, SlowPeerRecord> slowPeers;
         private volatile List<PeerSample> lastPeerSamples;
-      
         private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
             this.handle = handle;
@@ -2094,6 +2158,7 @@ public class TorrentDownloader {
             this.lastTrackerInjectionMs = 0L;
             this.lastPeerFetchMs = 0L;
             this.contactedPeers = ConcurrentHashMap.newKeySet();
+            this.slowPeers = new ConcurrentHashMap<>();
             this.lastPeerSamples = Collections.emptyList();
         }
     }
