@@ -569,7 +569,7 @@ public class TorrentDownloader {
                 torrentSourceOk,
                 torrentSourceOk ? "Archivo disponible." : "No se encontró el archivo .torrent."));
 
-        boolean trackersOk = status != null && status.errc().value() == 0;
+        boolean trackersOk = status != null && status.errorCode().value() == 0;
         checks.add(new TorrentHealthReport.Check(
                 "Trackers",
                 trackersOk,
