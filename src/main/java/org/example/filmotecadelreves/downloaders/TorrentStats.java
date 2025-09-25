@@ -270,6 +270,14 @@ public class TorrentStats {
         return totalWanted;
     }
 
+    public synchronized long totalWanted() {
+        return getTotalWanted();
+    }
+
+    public synchronized long totalWantedDone() {
+        return getTotalDownloaded();
+    }
+
     public synchronized long getTotalWasted() {
         return totalWasted;
     }
@@ -288,6 +296,21 @@ public class TorrentStats {
 
     public synchronized Sample getLatestSample() {
         return samples.peekLast();
+    }
+
+    public synchronized int downloadRate() {
+        Sample latest = samples.peekLast();
+        return latest != null ? latest.getDownloadRate() : 0;
+    }
+
+    public synchronized int uploadRate() {
+        Sample latest = samples.peekLast();
+        return latest != null ? latest.getUploadRate() : 0;
+    }
+
+    public synchronized int numPeers() {
+        Sample latest = samples.peekLast();
+        return latest != null ? latest.getPeers() : 0;
     }
 
     public synchronized List<Sample> getSamples() {
