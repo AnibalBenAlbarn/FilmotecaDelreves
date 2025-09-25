@@ -1796,6 +1796,7 @@ public class TorrentDownloader {
                 flags = flags.and_(TorrentFlags.AUTO_MANAGED.inv());
                 flags = flags.and_(TorrentFlags.STOP_WHEN_READY.inv());
                 flags = flags.and_(TorrentFlags.UPLOAD_MODE.inv());
+                flags = flags.and_(TorrentFlags.PAUSED.inv());
                 params.flags(flags);
             }
         } catch (Throwable ignored) {
