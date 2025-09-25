@@ -30,6 +30,7 @@ import com.frostwire.jlibtorrent.swig.settings_pack.choking_algorithm_t;
 import com.frostwire.jlibtorrent.swig.settings_pack.seed_choking_algorithm_t;
 import com.frostwire.jlibtorrent.swig.settings_pack.suggest_mode_t;
 import com.frostwire.jlibtorrent.swig.error_code;
+import com.frostwire.jlibtorrent.swig.torrent_flags_t;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -100,7 +101,6 @@ public class TorrentDownloader {
     private static final Duration TORRENT_OPTIMIZATION_INTERVAL = Duration.ofSeconds(5);
     private static final Duration TRACKER_REFRESH_INTERVAL = Duration.ofMinutes(3);
     private static final Duration DHT_PEER_FETCH_INTERVAL = Duration.ofSeconds(40);
-
     private static final int MINIMUM_ACTIVE_PEERS = 6;
     private static final int MINIMUM_ACTIVE_SEEDS = 1;
     private static final long STALLED_DOWNLOAD_RATE_BYTES = 64L * 1024L;
@@ -112,7 +112,6 @@ public class TorrentDownloader {
     private static final int MAX_DYNAMIC_REQUEST_QUEUE = 4000;
     private static final int MIN_AUTO_DOWNLOAD_LIMIT = 128 * 1024;
     private static final int MIN_AUTO_UPLOAD_LIMIT = 64 * 1024;
-
     private static final int MAX_EXTRA_DHT_CONNECTIONS = 12;
     private static final int MIN_PEER_SAMPLE_SPEED_BYTES = 8 * 1024;
     private static final int MIN_PEER_SAMPLE_COUNT = 2;
@@ -170,8 +169,6 @@ public class TorrentDownloader {
     private volatile long lastBandwidthRebalanceNanos;
     private volatile long lastObservedDownloadRate;
     private volatile long peakObservedDownloadRate;
-
-
     /**
      * Primary constructor used in the application. Additional parameters for
      * verbose or console logging are kept for backwards compatibility, but the
@@ -231,6 +228,12 @@ public class TorrentDownloader {
         SettingsPack settings = buildDefaultSettings();
         sessionManager.addListener(alertListener);
         sessionManager.start(new SessionParams(settings));
+        sessionManager.resume();
+        try {
+            sessionManager.startDht();
+        } catch (Throwable t) {
+            log(Level.FINEST, "No se pudo iniciar la DHT: " + t.getMessage());
+        }
         applyRateLimits();
         requestTorrentStatusUpdates();
     }
@@ -244,7 +247,22 @@ public class TorrentDownloader {
         settings.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true);
         populatePerformanceSettings(settings);
         settings.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), String.join(",", DEFAULT_DHT_NODES));
+        applyAggressiveNetworking(settings);
         return settings;
+    }
+
+    private void applyAggressiveNetworking(SettingsPack settings) {
+        settings.setBoolean(settings_pack.bool_types.rate_limit_ip_overhead.swigValue(), false);
+        settings.setBoolean(settings_pack.bool_types.report_true_downloaded.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.report_redundant_bytes.swigValue(), true);
+        settings.setBoolean(settings_pack.bool_types.close_redundant_connections.swigValue(), false);
+        settings.setInteger(settings_pack.int_types.send_buffer_low_watermark.swigValue(), 512 * 1024);
+        settings.setInteger(settings_pack.int_types.send_buffer_watermark.swigValue(), 3 * 1024 * 1024);
+        settings.setInteger(settings_pack.int_types.send_buffer_watermark_factor.swigValue(), 200);
+        settings.setInteger(settings_pack.int_types.max_queued_disk_bytes.swigValue(), 512 * 1024);
+        settings.setInteger(settings_pack.int_types.handshake_timeout.swigValue(), 10);
+        settings.setInteger(settings_pack.int_types.inactivity_timeout.swigValue(), 180);
+        settings.setInteger(settings_pack.int_types.unchoke_slots_limit.swigValue(), 0);
     }
 
     private void populatePerformanceSettings(SettingsPack settings) {
@@ -866,7 +884,6 @@ public class TorrentDownloader {
         }
         autoTuneSessionIfNeeded();
         rebalanceActiveTorrentBandwidth(snapshot);
-
     }
 
     private void requestTorrentStatusUpdates() {
@@ -1250,6 +1267,7 @@ public class TorrentDownloader {
         long downloadRate = stats.downloadRate();
         long uploadRate = stats.uploadRate();
         long dhtNodes = stats.dhtNodes();
+
         lastObservedDownloadRate = downloadRate;
         updatePeakDownloadRate(downloadRate);
         long expectedRate = expectedSessionDownloadRate();
@@ -1485,8 +1503,6 @@ public class TorrentDownloader {
         int queue = (int) (basis / 1024L);
         return clamp(queue, MIN_DYNAMIC_REQUEST_QUEUE, MAX_DYNAMIC_REQUEST_QUEUE);
     }
-
-
     private int estimateSlotsForTargetRate(List<PeerSample> peers, long targetRate) {
         if (peers == null || peers.isEmpty() || targetRate <= 0) {
             return 0;
@@ -1674,14 +1690,28 @@ public class TorrentDownloader {
         List<String> mergedTrackers = mergeTrackers(params.trackers());
         if (!mergedTrackers.isEmpty()) {
             params.trackers(mergedTrackers);
+
+            List<Integer> tiers = new ArrayList<>(mergedTrackers.size());
+            for (int i = 0; i < mergedTrackers.size(); i++) {
+                tiers.add(i < DEFAULT_TRACKERS.length ? i : DEFAULT_TRACKERS.length);
+            }
+            try {
+                params.trackerTiers(tiers);
+            } catch (Throwable ignored) {
+                // Algunos builds pueden no permitir modificar los tiers, ignoramos el error.
+            }
         }
     }
+
     private void applyPerformanceHints(AddTorrentParams params) {
         if (params == null) {
             return;
         }
         int active = Math.max(1, maxConcurrentDownloads);
-        int perTorrentConnections = clamp(computeConnectionsLimit() / active, 80, 800);
+
+        int globalConnections = clamp(computeConnectionsLimit(), 300, MAX_DYNAMIC_CONNECTIONS);
+        int perTorrentConnections = globalConnections / Math.max(1, Math.min(active, 4));
+        perTorrentConnections = clamp(perTorrentConnections, 120, globalConnections);
         params.maxConnections(perTorrentConnections);
         params.maxUploads(Math.max(MINIMUM_ACTIVE_SEEDS + 4, perTorrentConnections / 4));
 
@@ -1692,6 +1722,19 @@ public class TorrentDownloader {
         if (uploadSpeedLimit > 0 && params.uploadLimit() <= 0) {
             int share = Math.max(MIN_AUTO_UPLOAD_LIMIT, (uploadSpeedLimit * 1024) / active);
             params.uploadLimit(share);
+        }
+
+
+        try {
+            torrent_flags_t flags = params.flags();
+            if (flags != null) {
+                flags = flags.and_(TorrentFlags.AUTO_MANAGED.inv());
+                flags = flags.and_(TorrentFlags.STOP_WHEN_READY.inv());
+                flags = flags.and_(TorrentFlags.UPLOAD_MODE.inv());
+                params.flags(flags);
+            }
+        } catch (Throwable ignored) {
+            // Algunos builds de libtorrent pueden no exponer las banderas, ignoramos el fallo.
         }
     }
     private List<String> mergeTrackers(List<String> current) {
@@ -2030,8 +2073,7 @@ public class TorrentDownloader {
         private volatile long lastPeerFetchMs;
         private final Set<String> contactedPeers;
         private volatile List<PeerSample> lastPeerSamples;
-
-
+      
         private ManagedTorrent(TorrentState state, TorrentHandle handle, Sha1Hash infoHash) {
             this.state = state;
             this.handle = handle;
@@ -2053,7 +2095,6 @@ public class TorrentDownloader {
             this.lastPeerFetchMs = 0L;
             this.contactedPeers = ConcurrentHashMap.newKeySet();
             this.lastPeerSamples = Collections.emptyList();
-
         }
     }
 }
