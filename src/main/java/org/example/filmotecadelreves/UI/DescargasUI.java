@@ -1,6 +1,8 @@
 package org.example.filmotecadelreves.UI;
 //ver1.3
 
+import org.example.filmotecadelreves.downloaders.TorrentHealthReport;
+import org.example.filmotecadelreves.downloaders.TorrentLogEntry;
 import org.example.filmotecadelreves.downloaders.TorrentStats;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -33,6 +35,7 @@ import java.awt.Desktop;
 import java.io.File;
 import java.text.DecimalFormat;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Timer;
@@ -1232,6 +1235,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                     private final Button removeButton = new Button("Eliminar");
                     private final Button retryButton = new Button("Reintentar");
                     private final Button openLocationButton = new Button("Abrir ubicación");
+                    private final Button logButton = new Button("Ver registro");
+                    private final Button healthCheckButton = new Button("Diagnóstico");
                     private final HBox pane = new HBox(5);
 
                     {
@@ -1241,6 +1246,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         removeButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
                         retryButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
                         openLocationButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white;");
+                        logButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white;");
+                        healthCheckButton.setStyle("-fx-background-color: #1abc9c; -fx-text-fill: white;");
 
                         // Hacer que los botones ocupen todo el espacio disponible
                         pauseButton.setMaxWidth(Double.MAX_VALUE);
@@ -1248,6 +1255,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         removeButton.setMaxWidth(Double.MAX_VALUE);
                         retryButton.setMaxWidth(Double.MAX_VALUE);
                         openLocationButton.setMaxWidth(Double.MAX_VALUE);
+                        logButton.setMaxWidth(Double.MAX_VALUE);
+                        healthCheckButton.setMaxWidth(Double.MAX_VALUE);
 
                         // Asegurar que los botones tengan un tamaño mínimo
                         pauseButton.setMinWidth(80);
@@ -1255,12 +1264,16 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         removeButton.setMinWidth(80);
                         retryButton.setMinWidth(80);
                         openLocationButton.setMinWidth(80);
+                        logButton.setMinWidth(100);
+                        healthCheckButton.setMinWidth(100);
 
                         HBox.setHgrow(pauseButton, Priority.ALWAYS);
                         HBox.setHgrow(resumeButton, Priority.ALWAYS);
                         HBox.setHgrow(removeButton, Priority.ALWAYS);
                         HBox.setHgrow(retryButton, Priority.ALWAYS);
                         HBox.setHgrow(openLocationButton, Priority.ALWAYS);
+                        HBox.setHgrow(logButton, Priority.ALWAYS);
+                        HBox.setHgrow(healthCheckButton, Priority.ALWAYS);
 
                         pauseButton.setOnAction(event -> {
                             TorrentState torrentState = getTableView().getItems().get(getIndex());
@@ -1287,10 +1300,21 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                             openFileLocation(torrentState);
                         });
 
+                        logButton.setOnAction(event -> {
+                            TorrentState torrentState = getTableView().getItems().get(getIndex());
+                            showTorrentLogDialog(torrentState);
+                        });
+
+                        healthCheckButton.setOnAction(event -> {
+                            TorrentState torrentState = getTableView().getItems().get(getIndex());
+                            runTorrentHealthCheck(torrentState);
+                        });
+
                         pane.setAlignment(Pos.CENTER);
                         pane.setPadding(new Insets(2));
                         pane.setSpacing(5);
-                        pane.getChildren().addAll(pauseButton, resumeButton, removeButton, retryButton, openLocationButton);
+                        pane.getChildren().addAll(pauseButton, resumeButton, removeButton, retryButton,
+                                openLocationButton, logButton, healthCheckButton);
                     }
 
                     @Override
@@ -1334,6 +1358,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                             // Estos botones siempre se muestran
                             pane.getChildren().add(removeButton);
                             pane.getChildren().add(openLocationButton);
+                            pane.getChildren().add(logButton);
+                            pane.getChildren().add(healthCheckButton);
 
                             setGraphic(pane);
                         }
@@ -1662,6 +1688,81 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             e.printStackTrace();
             showErrorAlert("Error", "No se pudo abrir la ubicación del archivo: " + e.getMessage());
         }
+    }
+
+    private void showTorrentLogDialog(TorrentState torrentState) {
+        if (torrentDownloader == null) {
+            showErrorAlert("Cliente torrent no disponible",
+                    "Inicializa el cliente de torrents desde los ajustes antes de revisar el registro.");
+            return;
+        }
+        List<TorrentLogEntry> entries = torrentDownloader.getTorrentLog(torrentState);
+        if (entries.isEmpty()) {
+            showInfoAlert("Registro vacío",
+                    "Todavía no hay eventos registrados para esta descarga.");
+            return;
+        }
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Registro de " + torrentState.getName());
+        dialog.setHeaderText("Eventos de la descarga");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        TableView<TorrentLogEntry> tableView = new TableView<>();
+        tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        tableView.setItems(FXCollections.observableArrayList(entries));
+
+        TableColumn<TorrentLogEntry, String> timeColumn = new TableColumn<>("Hora");
+        timeColumn.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getFormattedTimestamp()));
+
+        TableColumn<TorrentLogEntry, String> stepColumn = new TableColumn<>("Paso");
+        stepColumn.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getStep().getDisplayName()));
+
+        TableColumn<TorrentLogEntry, String> levelColumn = new TableColumn<>("Nivel");
+        levelColumn.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getLevel().getLocalizedName()));
+
+        TableColumn<TorrentLogEntry, String> messageColumn = new TableColumn<>("Mensaje");
+        messageColumn.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getMessage()));
+
+        tableView.getColumns().setAll(timeColumn, stepColumn, levelColumn, messageColumn);
+        tableView.setPrefSize(720, 360);
+
+        dialog.getDialogPane().setContent(tableView);
+        dialog.showAndWait();
+    }
+
+    private void runTorrentHealthCheck(TorrentState torrentState) {
+        if (torrentDownloader == null) {
+            showErrorAlert("Diagnóstico no disponible",
+                    "Inicializa el cliente de torrents desde los ajustes antes de ejecutar el diagnóstico.");
+            return;
+        }
+        TorrentHealthReport report = torrentDownloader.runHealthCheck(torrentState);
+        if (report == null) {
+            showErrorAlert("Diagnóstico no disponible",
+                    "No se pudo obtener información de esta descarga. Asegúrate de que el torrent esté activo.");
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (TorrentHealthReport.Check check : report.getChecks()) {
+            builder.append(check.isPassed() ? "✅ " : "⚠️ ")
+                    .append(check.getName()).append(": ")
+                    .append(check.getDetails()).append('\n');
+        }
+        if (report.getInfoHash() != null) {
+            builder.append('\n').append("Infohash: ").append(report.getInfoHash());
+        }
+
+        Alert.AlertType type = report.isHealthy() ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING;
+        Alert alert = new Alert(type);
+        alert.setTitle("Diagnóstico de " + torrentState.getName());
+        alert.setHeaderText(report.isHealthy()
+                ? "El torrent funciona correctamente"
+                : "Se detectaron incidencias en la descarga");
+        alert.setContentText(builder.toString());
+        alert.getDialogPane().setMinHeight(Region.USE_PREF_SIZE);
+        alert.showAndWait();
     }
 
     /**
