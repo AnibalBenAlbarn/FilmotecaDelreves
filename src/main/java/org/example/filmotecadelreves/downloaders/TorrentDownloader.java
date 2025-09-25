@@ -47,6 +47,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -58,7 +59,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Set;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -119,6 +119,7 @@ public class TorrentDownloader {
     private static final int MIN_PEER_SAMPLE_SPEED_BYTES = 8 * 1024;
     private static final int MIN_PEER_SAMPLE_COUNT = 2;
     private static final double PEAK_RATE_DECAY = 0.85;
+    private static final int MAX_LOG_ENTRIES_PER_TORRENT = 250;
     private static final String[] DEFAULT_TRACKERS = {
             "udp://tracker.opentrackr.org:1337/announce",
             "udp://tracker.openbittorrent.com:6969/announce",
@@ -150,6 +151,7 @@ public class TorrentDownloader {
     private final Map<TorrentState, PendingTorrent> pendingByState;
     private final Map<TorrentState, ManagedTorrent> managedByState;
     private final ConcurrentHashMap<String, ManagedTorrent> managedByHash;
+    private final ConcurrentHashMap<TorrentState, TorrentLogBook> logsByState;
     private final List<TorrentNotificationListener> listeners;
     private final List<Path> temporaryTorrentFiles;
     private final Path temporaryDirectory;
@@ -200,6 +202,7 @@ public class TorrentDownloader {
         this.pendingByState = new java.util.HashMap<>();
         this.managedByState = new java.util.HashMap<>();
         this.managedByHash = new ConcurrentHashMap<>();
+        this.logsByState = new ConcurrentHashMap<>();
         this.listeners = new CopyOnWriteArrayList<>();
         this.temporaryTorrentFiles = new CopyOnWriteArrayList<>();
         this.temporaryDirectory = createTemporaryDirectory();
@@ -487,6 +490,130 @@ public class TorrentDownloader {
         }
     }
 
+    public List<TorrentLogEntry> getTorrentLog(TorrentState torrentState) {
+        if (torrentState == null) {
+            return Collections.emptyList();
+        }
+        TorrentLogBook book = logsByState.get(torrentState);
+        return book != null ? book.snapshot() : Collections.emptyList();
+    }
+
+    public TorrentHealthReport runHealthCheck(TorrentState torrentState) {
+        if (torrentState == null) {
+            return null;
+        }
+
+        ManagedTorrent managed;
+        synchronized (lock) {
+            managed = managedByState.get(torrentState);
+        }
+
+        List<TorrentHealthReport.Check> checks = new ArrayList<>();
+        boolean sessionActive = sessionManager.isRunning();
+        checks.add(new TorrentHealthReport.Check(
+                "Sesión BitTorrent",
+                sessionActive,
+                sessionActive ? "La sesión está activa." : "La sesión no está en ejecución."));
+
+        boolean handleValid = managed != null && managed.handle != null && managed.handle.isValid();
+        checks.add(new TorrentHealthReport.Check(
+                "Manejador del torrent",
+                handleValid,
+                handleValid ? "Se puede interactuar con el torrent." : "El torrent no está activo."));
+
+        TorrentStatus status = null;
+        if (handleValid) {
+            try {
+                status = managed.handle.status();
+            } catch (Throwable t) {
+                checks.add(new TorrentHealthReport.Check(
+                        "Estado del torrent",
+                        false,
+                        "No se pudo leer el estado actual: " + t.getMessage()));
+            }
+        }
+
+        boolean hasMetadata = status != null && status.hasMetadata();
+        checks.add(new TorrentHealthReport.Check(
+                "Metadatos",
+                hasMetadata,
+                hasMetadata ? "Se recibieron los metadatos del torrent." : "Aún no se han recibido los metadatos."));
+
+        boolean destinationOk = false;
+        String destinationPath = torrentState.getDestinationPath();
+        if (destinationPath != null && !destinationPath.isBlank()) {
+            try {
+                Path destination = Paths.get(destinationPath);
+                Path parent = destination.getParent();
+                destinationOk = Files.exists(destination) || (parent != null && Files.exists(parent));
+            } catch (Exception ignored) {
+                destinationOk = false;
+            }
+        }
+        checks.add(new TorrentHealthReport.Check(
+                "Ruta de descarga",
+                destinationOk,
+                destinationOk ? "La ruta de destino es accesible." : "No se pudo comprobar la ruta de destino."));
+
+        boolean torrentSourceOk = true;
+        String source = torrentState.getTorrentSource();
+        if (source != null && source.toLowerCase().endsWith(".torrent")) {
+            try {
+                torrentSourceOk = Files.exists(Paths.get(source));
+            } catch (Exception ignored) {
+                torrentSourceOk = false;
+            }
+        }
+        checks.add(new TorrentHealthReport.Check(
+                "Archivo torrent",
+                torrentSourceOk,
+                torrentSourceOk ? "Archivo disponible." : "No se encontró el archivo .torrent."));
+
+        boolean trackersOk = status != null && status.errc().value() == 0;
+        checks.add(new TorrentHealthReport.Check(
+                "Trackers",
+                trackersOk,
+                trackersOk ? "Los trackers responden correctamente." : "Los trackers informan errores."));
+
+        SessionStats sessionStats = sessionManager.stats();
+        long dhtNodes = sessionStats != null ? sessionStats.dhtNodes() : 0L;
+        boolean dhtOk = sessionManager.isDhtRunning() && dhtNodes > 0;
+        checks.add(new TorrentHealthReport.Check(
+                "DHT",
+                dhtOk,
+                dhtOk ? "Nodos detectados: " + dhtNodes : "No se detectan nodos DHT."));
+
+        boolean hasPeers = status != null && status.numPeers() > 0;
+        checks.add(new TorrentHealthReport.Check(
+                "Peers",
+                hasPeers,
+                hasPeers ? "Conectado a " + status.numPeers() + " peers." : "Sin peers conectados."));
+
+        boolean downloadingData = status != null && (status.downloadRate() > 0 || status.totalDone() > 0);
+        checks.add(new TorrentHealthReport.Check(
+                "Transferencia",
+                downloadingData,
+                downloadingData ? "Se están recibiendo datos." : "No se detecta tráfico de descarga."));
+
+        TorrentHealthReport report = new TorrentHealthReport(
+                managed != null ? managed.infoHash.toHex() : null,
+                checks,
+                System.currentTimeMillis());
+
+        for (TorrentHealthReport.Check check : checks) {
+            Level level = check.isPassed() ? Level.INFO : Level.WARNING;
+            recordEvent(torrentState, TorrentLogEntry.Step.HEALTHCHECK, level,
+                    check.getName() + ": " + check.getDetails(), true);
+        }
+
+        Level summaryLevel = report.isHealthy() ? Level.INFO : Level.WARNING;
+        recordEvent(torrentState, TorrentLogEntry.Step.HEALTHCHECK, summaryLevel,
+                report.isHealthy() ? "Diagnóstico completado sin incidencias." : "Se detectaron incidencias en el diagnóstico.",
+                true);
+
+        return report;
+    }
+
     public void addNotificationListener(TorrentNotificationListener listener) {
         if (listener != null) {
             listeners.add(listener);
@@ -548,12 +675,16 @@ public class TorrentDownloader {
                     managed.handle.pause();
                     managed.paused = true;
                     torrentState.setStatus("Pausado");
+                    recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                            "Descarga pausada por el usuario.");
                 }
             } else {
                 PendingTorrent pending = pendingByState.get(torrentState);
                 if (pending != null) {
                     pendingQueue.remove(pending);
                     torrentState.setStatus("Pausado");
+                    recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                            "Descarga retirada de la cola de inicio automático.");
                 }
             }
         }
@@ -577,12 +708,16 @@ public class TorrentDownloader {
                     managed.handle.resume();
                     managed.paused = false;
                     torrentState.setStatus("Descargando");
+                    recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                            "Descarga reanudada.");
                 }
             } else {
                 PendingTorrent pending = pendingByState.get(torrentState);
                 if (pending != null && !pendingQueue.contains(pending)) {
                     pendingQueue.offerFirst(pending);
                     torrentState.setStatus("En espera");
+                    recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                            "Descarga priorizada para inicio inmediato.");
                     shouldStart = true;
                 }
             }
@@ -617,6 +752,9 @@ public class TorrentDownloader {
             }
         }
         torrentState.setStatus("Eliminado");
+        recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                deleteFiles ? "Descarga eliminada y datos borrados." : "Descarga eliminada conservando los archivos.");
+        logsByState.remove(torrentState);
         lastBandwidthRebalanceNanos = 0L;
         startNextIfPossible();
     }
@@ -661,7 +799,8 @@ public class TorrentDownloader {
         TorrentState state = pendingTorrent.state;
         synchronized (lock) {
             if (managedByState.containsKey(state)) {
-                log(Level.WARNING, "El torrent ya se está descargando: " + state.getName());
+                recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.WARNING,
+                        "El torrent ya se está descargando: " + state.getName());
                 return;
             }
             PendingTorrent previous = pendingByState.put(state, pendingTorrent);
@@ -671,8 +810,12 @@ public class TorrentDownloader {
             if (autoStartDownloads) {
                 pendingQueue.offerLast(pendingTorrent);
                 state.setStatus("En espera");
+                recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.INFO,
+                        "Torrent añadido a la cola con prioridad " + pendingTorrent.getPriority() + '.');
             } else {
                 state.setStatus("Pausado");
+                recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.INFO,
+                        "Torrent en pausa manual hasta que se inicie desde la interfaz.");
             }
         }
         if (autoStartDownloads) {
@@ -746,13 +889,22 @@ public class TorrentDownloader {
                 throw new IllegalStateException("La ruta de descarga no está configurada.");
             }
 
+            recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.INFO,
+                    "Preparando descarga en " + destinationPath);
+
             Path destination = ensureDestinationDirectory(destinationPath);
+            recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.INFO,
+                    "Directorio de destino verificado: " + destination.toAbsolutePath());
             long requiredSpace = calculateRequiredSpace(state);
             if (!hasEnoughDiskSpace(destination, requiredSpace)) {
                 state.setStatus("Pausado (Espacio insuficiente)");
+                recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.WARNING,
+                        "Espacio insuficiente en el destino. Se requieren " + formatSize(requiredSpace) + '.');
                 notifyDiskSpace(destination, requiredSpace);
                 return;
             }
+            recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.INFO,
+                    "Espacio disponible suficiente para la descarga (" + formatSize(requiredSpace) + ").");
 
             params.savePath(destination.toAbsolutePath().toString());
             if (params.name() == null || params.name().isBlank()) {
@@ -763,6 +915,8 @@ public class TorrentDownloader {
             TorrentHandle handle = addTorrentToSession(params);
             Sha1Hash bestHash = resolveInfoHash(handle, params);
             ManagedTorrent managed = new ManagedTorrent(state, handle, bestHash);
+            recordEvent(state, TorrentLogEntry.Step.PREPARATION, Level.INFO,
+                    "Torrent registrado en la sesión con hash " + bestHash.toHex());
             managed.sequentialDownload = pending.isSequentialDownload();
             if (managed.sequentialDownload) {
                 applySequentialDownloadFlag(handle, true);
@@ -798,12 +952,12 @@ public class TorrentDownloader {
             state.setHash(bestHash.toHex());
             updateStateFromHandle(managed);
             notifyStatusUpdate(state, managed.stats);
-            log(Level.INFO, "Torrent iniciado: " + state.getName());
+            recordEvent(state, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                    "Descarga iniciada para " + state.getName());
             requestTorrentStatusUpdates();
         } catch (Exception e) {
             state.setStatus("Error");
-            log(Level.SEVERE, "Error al iniciar el torrent " + state.getName() + ": " + e.getMessage());
-            notifyError(state, e.getMessage());
+            notifyError(state, "Error al iniciar el torrent: " + e.getMessage());
             synchronized (lock) {
                 pendingByState.remove(state);
             }
@@ -1657,6 +1811,8 @@ public class TorrentDownloader {
         state.setUploadSpeed(0);
         state.setRemainingTime(0);
         state.setStatus("Completado");
+        recordEvent(state, TorrentLogEntry.Step.COMPLETED, Level.INFO,
+                "Descarga completada. El torrent ha pasado a estado de compartición.");
         notifyComplete(state);
         if (extractArchives) {
             log(Level.INFO, "Extracción automática no implementada: " + state.getName());
@@ -1733,6 +1889,17 @@ public class TorrentDownloader {
             log(Level.WARNING, "No se pudo comprobar el espacio en disco: " + e.getMessage());
             return true;
         }
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes <= 0) {
+            return "0 B";
+        }
+        final String[] units = {"B", "KB", "MB", "GB", "TB"};
+        int digitGroups = (int) (Math.log10(bytes) / Math.log10(1024));
+        digitGroups = Math.min(digitGroups, units.length - 1);
+        double size = bytes / Math.pow(1024, digitGroups);
+        return String.format(Locale.ROOT, "%.2f %s", size, units[digitGroups]);
     }
 
     private void notifyDiskSpace(Path destination, long requiredSpace) {
@@ -1960,6 +2127,8 @@ public class TorrentDownloader {
     private void notifyError(TorrentState state, String error) {
         if (state != null) {
             state.setStatus("Error");
+            recordEvent(state, TorrentLogEntry.Step.ERROR, Level.SEVERE,
+                    error != null ? error : "Se produjo un error no especificado.");
         }
         for (TorrentNotificationListener listener : listeners) {
             listener.onTorrentError(state, error);
@@ -1970,6 +2139,29 @@ public class TorrentDownloader {
         for (TorrentNotificationListener listener : listeners) {
             listener.onTorrentStatusUpdate(state, stats);
         }
+    }
+
+    private TorrentLogBook logBookForState(TorrentState state) {
+        return logsByState.computeIfAbsent(state, ignored -> new TorrentLogBook(MAX_LOG_ENTRIES_PER_TORRENT));
+    }
+
+    private void recordEvent(TorrentState state,
+                             TorrentLogEntry.Step step,
+                             Level level,
+                             String message) {
+        recordEvent(state, step, level, message, false);
+    }
+
+    private void recordEvent(TorrentState state,
+                             TorrentLogEntry.Step step,
+                             Level level,
+                             String message,
+                             boolean fromHealthCheck) {
+        if (state != null) {
+            TorrentLogBook book = logBookForState(state);
+            book.add(new TorrentLogEntry(System.currentTimeMillis(), level, step, message, fromHealthCheck));
+        }
+        log(level, '[' + step.getDisplayName() + "] " + message);
     }
 
     private void log(Level level, String message) {
@@ -2004,6 +2196,8 @@ public class TorrentDownloader {
                 MetadataReceivedAlert metadataAlert = (MetadataReceivedAlert) alert;
                 ManagedTorrent managed = findManagedTorrent(metadataAlert.handle());
                 if (managed != null) {
+                    recordEvent(managed.state, TorrentLogEntry.Step.VALIDATION, Level.INFO,
+                            "Metadatos recibidos correctamente.");
                     updateStateFromHandle(managed);
                 }
             } else if (alert instanceof StateChangedAlert) {
