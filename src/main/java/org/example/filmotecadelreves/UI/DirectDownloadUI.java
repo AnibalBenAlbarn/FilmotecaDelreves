@@ -14,7 +14,6 @@ import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
-import javafx.beans.binding.StringBinding;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -242,8 +241,6 @@ public class DirectDownloadUI {
         VBox layout = new VBox(10);
         layout.setPadding(new Insets(10));
 
-        layout.getChildren().add(createScraperProgressSection());
-
         // Crear cesta de descargas
         HBox basketSection = createDownloadBasket();
         layout.getChildren().add(basketSection);
@@ -255,43 +252,6 @@ public class DirectDownloadUI {
 
         layout.getChildren().add(subTabs);
         tab.setContent(layout);
-    }
-
-    private VBox createScraperProgressSection() {
-        VBox section = new VBox(4);
-        section.setPadding(new Insets(10));
-        section.setStyle("-fx-border-color: #3498db; -fx-border-width: 1; -fx-border-radius: 5; -fx-background-color: #f8f9fa;");
-
-        Label title = new Label("Progreso de scrapers directos");
-        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
-
-        Label moviesLabel = new Label();
-        Label seriesLabel = new Label();
-
-        if (scraperProgressTracker != null) {
-            moviesLabel.textProperty().bind(createScraperStatusBinding("Películas", scraperProgressTracker.directMoviesLastPageProperty()));
-            seriesLabel.textProperty().bind(createScraperStatusBinding("Series", scraperProgressTracker.directSeriesLastPageProperty()));
-        } else {
-            moviesLabel.setText("Películas - última página: N/A");
-            seriesLabel.setText("Series - última página: N/A");
-        }
-
-        Label hintLabel = new Label("Los valores indican la última página procesada por los scripts externos.");
-        hintLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #7f8c8d;");
-
-        section.getChildren().addAll(title, moviesLabel, seriesLabel, hintLabel);
-        return section;
-    }
-
-    private StringBinding createScraperStatusBinding(String label, IntegerProperty property) {
-        return Bindings.createStringBinding(
-                () -> formatScraperStatus(label, property.get()),
-                property);
-    }
-
-    private String formatScraperStatus(String label, int page) {
-        String pageValue = page > 0 ? String.valueOf(page) : "N/A";
-        return label + " - última página: " + pageValue;
     }
 
     /**

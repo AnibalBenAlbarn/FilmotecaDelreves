@@ -158,6 +158,28 @@ public class MainUI extends Application {
         }
     }
 
+    /**
+     * Reemplaza el contenido actual de la configuración en memoria con los
+     * valores más recientes guardados desde la vista de ajustes. Esto evita
+     * que los cambios escritos en disco (por ejemplo, los ajustes de interfaz)
+     * se pierdan cuando MainUI vuelva a persistir config.json al cerrar.
+     *
+     * @param updatedConfig Configuración completa obtenida tras guardar ajustes
+     */
+    public void updateConfig(JSONObject updatedConfig) {
+        if (updatedConfig == null) {
+            return;
+        }
+
+        if (this.configJson == null) {
+            this.configJson = new JSONObject();
+        } else {
+            this.configJson.clear();
+        }
+
+        this.configJson.putAll(updatedConfig);
+    }
+
     private void ensureTorrentDownloaderInitialized(AjustesUI ajustesUI) {
         if (this.torrentDownloader != null) {
             return;
