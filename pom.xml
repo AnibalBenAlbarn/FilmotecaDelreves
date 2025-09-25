@@ -135,13 +135,18 @@
     </dependency>
 
     <!-- Torrent / P2P -->
-    <dependency>
-      <groupId>com.frostwire</groupId>
-      <artifactId>jlibtorrent</artifactId>
-      <version>${jlibtorrent.version}</version>
-      <scope>system</scope>
-      <systemPath>${project.basedir}/libs/jlibtorrent-${jlibtorrent.version}.jar</systemPath>
-    </dependency>
+
+      <dependency>
+          <groupId>com.frostwire</groupId>
+          <artifactId>jlibtorrent</artifactId>
+          <version>2.0.12.5</version>
+      </dependency>
+      <dependency>
+          <groupId>com.frostwire</groupId>
+          <artifactId>jlibtorrent</artifactId>
+          <version>2.0.12.5</version>
+          <classifier>windows</classifier>
+      </dependency>
     <!-- Logging -->
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
