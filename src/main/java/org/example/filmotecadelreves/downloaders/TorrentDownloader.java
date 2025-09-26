@@ -146,6 +146,21 @@ public class TorrentDownloader {
             "dht.libtorrent.org:25401"
     };
 
+    private static final Map<String, String> TORRENT_STATE_DESCRIPTIONS = Map.ofEntries(
+            Map.entry("CHECKING_FILES", "Verificando"),
+            Map.entry("CHECKING_RESUME_DATA", "Verificando"),
+            Map.entry("VALIDATING_RESUME_DATA", "Verificando"),
+            Map.entry("DOWNLOADING_METADATA", "Obteniendo metadatos"),
+            Map.entry("DOWNLOADING", "Descargando"),
+            Map.entry("FINISHED", "Completado"),
+            Map.entry("SEEDING", "Completado"),
+            Map.entry("PAUSED", "Pausado"),
+            Map.entry("QUEUED_FOR_CHECKING", "En cola"),
+            Map.entry("ALLOCATING", "Preparando"),
+            Map.entry("STOPPED", "Detenido"),
+            Map.entry("ERROR", "Error"),
+            Map.entry("UNKNOWN", "Desconocido"));
+
     private final SessionManager sessionManager;
     private final ScheduledExecutorService scheduler;
     private final ExecutorService workerExecutor;
@@ -2148,49 +2163,8 @@ public class TorrentDownloader {
             return "Desconocido";
         }
 
-        if (state == TorrentStatus.State.CHECKING_FILES
-                || state == TorrentStatus.State.CHECKING_RESUME_DATA
-                || state == TorrentStatus.State.VALIDATING_RESUME_DATA) {
-            return "Verificando";
-        }
+        return TORRENT_STATE_DESCRIPTIONS.getOrDefault(state.name(), state.name());
 
-        if (state == TorrentStatus.State.DOWNLOADING_METADATA) {
-            return "Obteniendo metadatos";
-        }
-
-        if (state == TorrentStatus.State.DOWNLOADING) {
-            return "Descargando";
-        }
-
-        if (state == TorrentStatus.State.FINISHED || state == TorrentStatus.State.SEEDING) {
-            return "Completado";
-        }
-
-        if (state == TorrentStatus.State.PAUSED) {
-            return "Pausado";
-        }
-
-        if (state == TorrentStatus.State.QUEUED_FOR_CHECKING) {
-            return "En cola";
-        }
-
-        if (state == TorrentStatus.State.ALLOCATING) {
-            return "Preparando";
-        }
-
-        if (state == TorrentStatus.State.STOPPED) {
-            return "Detenido";
-        }
-
-        if (state == TorrentStatus.State.ERROR) {
-            return "Error";
-        }
-
-        if (state == TorrentStatus.State.UNKNOWN) {
-            return "Desconocido";
-        }
-
-        return state.name();
     }
 
     private void notifyComplete(TorrentState state) {
