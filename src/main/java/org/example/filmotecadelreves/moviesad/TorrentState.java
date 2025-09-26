@@ -59,6 +59,9 @@ public class TorrentState implements Serializable {
     private String comment;
     private String createdBy;
     private int priority = 5; // 1-10, default is 5
+    private boolean sequentialDownload;
+    private int downloadLimitKiB = -1;
+    private int uploadLimitKiB = -1;
 
     /**
      *Constructor for TorrentState*/
@@ -518,6 +521,49 @@ public class TorrentState implements Serializable {
         if (priority < 1) priority = 1;
         if (priority > 10) priority = 10;
         this.priority = priority;
+    }
+
+    /**
+     *Returns whether sequential download mode is enabled*/
+    public boolean isSequentialDownload() {
+        return sequentialDownload;
+    }
+
+    /**
+     *Enable or disable sequential download mode*/
+    public void setSequentialDownload(boolean sequentialDownload) {
+        this.sequentialDownload = sequentialDownload;
+    }
+
+    /**
+     *Gets the custom download rate limit in KiB/s (-1 means unlimited)*/
+    public int getDownloadLimitKiB() {
+        return downloadLimitKiB;
+    }
+
+    /**
+     *Sets the custom download rate limit in KiB/s (-1 or 0 disable the limit)*/
+    public void setDownloadLimitKiB(int downloadLimitKiB) {
+        this.downloadLimitKiB = downloadLimitKiB <= 0 ? -1 : downloadLimitKiB;
+    }
+
+    /**
+     *Gets the custom upload rate limit in KiB/s (-1 means unlimited)*/
+    public int getUploadLimitKiB() {
+        return uploadLimitKiB;
+    }
+
+    /**
+     *Sets the custom upload rate limit in KiB/s (-1 or 0 disable the limit)*/
+    public void setUploadLimitKiB(int uploadLimitKiB) {
+        this.uploadLimitKiB = uploadLimitKiB <= 0 ? -1 : uploadLimitKiB;
+    }
+
+    /**
+     *Clears both upload and download rate limits*/
+    public void clearRateLimits() {
+        this.downloadLimitKiB = -1;
+        this.uploadLimitKiB = -1;
     }
 
     /**
