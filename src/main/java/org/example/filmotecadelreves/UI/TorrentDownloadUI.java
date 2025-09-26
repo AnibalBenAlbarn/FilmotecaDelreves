@@ -33,9 +33,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -661,82 +665,67 @@ public class TorrentDownloadUI {
 
         // Columna de calidad con selector desplegable
         TableColumn<Movie, String> qualityCol = new TableColumn<>("Calidad");
-        qualityCol.setCellFactory(column -> {
-            return new TableCell<Movie, String>() {
-                private final ComboBox<ConnectDataBase.Quality> qualityCombo = new ComboBox<>();
+        qualityCol.setCellFactory(column -> new TableCell<Movie, String>() {
+            private final ComboBox<ConnectDataBase.Quality> qualityCombo = new ComboBox<>();
 
-                {
-                    qualityCombo.setOnAction(event -> {
-                        if (getTableRow() != null && getTableRow().getItem() != null) {
-                            Movie movie = getTableRow().getItem();
-                            ConnectDataBase.Quality selectedQuality = qualityCombo.getValue();
-                            if (selectedQuality != null) {
-                                // Obtener el enlace torrent para esta calidad
-                                ObservableList<TorrentFile> torrentFiles = connectDataBase.getTorrentFiles(movie.getId());
-                                TorrentFile selectedTorrent = torrentFiles.stream()
-                                        .filter(tf -> tf.getQualityId() == selectedQuality.getId())
-                                        .findFirst()
-                                        .orElse(null);
-
-                                if (selectedTorrent != null) {
-                                    // Actualizar la calidad y enlace en la película
-                                    movie.setQuality(selectedQuality.getQuality());
-                                    movie.setTorrentLink(selectedTorrent.getTorrentLink());
-
-                                    // Actualizar la tabla
-                                    getTableView().refresh();
-                                }
-                            }
-                        }
-                    });
-                }
-
-                @Override
-                protected void updateItem(String item, boolean empty) {
-                    super.updateItem(item, empty);
-
-                    if (empty) {
-                        setGraphic(null);
-                    } else {
-                        Movie movie = getTableRow() != null ? getTableRow().getItem() : null;
-                        if (movie != null) {
-                            // Cargar las calidades disponibles para esta película
-                            ObservableList<ConnectDataBase.Quality> qualities = connectDataBase.getQualities();
-                            qualityCombo.setItems(qualities);
-
-                            // Seleccionar la calidad actual si existe
-                            if (movie.getQuality() != null) {
-                                for (ConnectDataBase.Quality quality : qualities) {
-                                    if (quality.getQuality().equals(movie.getQuality())) {
-                                        qualityCombo.setValue(quality);
-                                        break;
-                                    }
-                                }
-                            } else if (!qualities.isEmpty()) {
-                                // Seleccionar la primera calidad por defecto
-                                qualityCombo.setValue(qualities.get(0));
-                                // Actualizar la película con esta calidad
-                                movie.setQuality(qualities.get(0).getQuality());
-
-                                // Obtener el enlace torrent para esta calidad
-                                ObservableList<TorrentFile> torrentFiles = connectDataBase.getTorrentFiles(movie.getId());
-                                TorrentFile selectedTorrent = torrentFiles.stream()
-                                        .filter(tf -> tf.getQualityId() == qualities.get(0).getId())
-                                        .findFirst()
-                                        .orElse(null);
-
-                                if (selectedTorrent != null) {
-                                    movie.setTorrentLink(selectedTorrent.getTorrentLink());
-                                }
-                            }
-
-                            setGraphic(qualityCombo);
-                        } else {
-                            setGraphic(null);
-                        }
+            {
+                qualityCombo.setOnAction(event -> {
+                    Movie movie = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (movie == null) {
+                        return;
                     }
+                    ConnectDataBase.Quality selectedQuality = qualityCombo.getValue();
+                    if (selectedQuality == null) {
+                        return;
+                    }
+                    movie.findTorrentFileByQualityId(selectedQuality.getId())
+                            .ifPresent(torrentFile -> {
+                                movie.setQuality(selectedQuality.getQuality());
+                                movie.setTorrentLink(torrentFile.getTorrentLink());
+                                getTableView().refresh();
+                            });
+                });
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty) {
+                    setGraphic(null);
+                    return;
                 }
-            };
+
+                Movie movie = getTableRow() != null ? getTableRow().getItem() : null;
+                if (movie == null) {
+                    setGraphic(null);
+                    return;
+                }
+
+                ObservableList<ConnectDataBase.Quality> qualityOptions = movie.buildQualityOptions();
+                qualityCombo.setItems(qualityOptions);
+
+                ConnectDataBase.Quality selectedQuality = null;
+                if (movie.getQuality() != null) {
+                    selectedQuality = qualityOptions.stream()
+                            .filter(q -> q.getQuality().equals(movie.getQuality()))
+                            .findFirst()
+                            .orElse(null);
+                }
+
+                if (selectedQuality == null && !qualityOptions.isEmpty()) {
+                    selectedQuality = qualityOptions.get(qualityOptions.size() - 1);
+                    movie.findTorrentFileByQualityId(selectedQuality.getId())
+                            .ifPresent(torrentFile -> {
+                                movie.setQuality(selectedQuality.getQuality());
+                                movie.setTorrentLink(torrentFile.getTorrentLink());
+                            });
+                }
+
+                qualityCombo.setDisable(qualityOptions.isEmpty());
+                qualityCombo.setValue(selectedQuality);
+                setGraphic(qualityOptions.isEmpty() ? null : qualityCombo);
+            }
         });
 
         TableColumn<Movie, String> linkCol = new TableColumn<>("Enlace");
@@ -1412,17 +1401,51 @@ public class TorrentDownloadUI {
         private final String year;
         private final String genre;
         private final String director;
+        private final Map<Integer, TorrentFile> torrentFilesByQuality;
         private String quality;
         private String torrentLink;
 
-        public Movie(int id, String title, String year, String genre, String director, String quality, String torrentLink) {
+        public Movie(int id, String title, String year, String genre, String director) {
             this.id = id;
             this.title = title;
             this.year = year;
             this.genre = genre;
             this.director = director;
-            this.quality = quality;
-            this.torrentLink = torrentLink;
+            this.torrentFilesByQuality = new LinkedHashMap<>();
+            this.quality = null;
+            this.torrentLink = null;
+        }
+
+        public void addTorrentFile(TorrentFile torrentFile) {
+            if (torrentFile == null) {
+                return;
+            }
+            torrentFilesByQuality.put(torrentFile.getQualityId(), torrentFile);
+        }
+
+        public Collection<TorrentFile> getTorrentFiles() {
+            return torrentFilesByQuality.values();
+        }
+
+        public Optional<TorrentFile> findTorrentFileByQualityId(int qualityId) {
+            return Optional.ofNullable(torrentFilesByQuality.get(qualityId));
+        }
+
+        public ObservableList<ConnectDataBase.Quality> buildQualityOptions() {
+            ObservableList<ConnectDataBase.Quality> qualities = FXCollections.observableArrayList();
+            torrentFilesByQuality.values().stream()
+                    .sorted(Comparator.comparingInt(TorrentFile::getQualityId))
+                    .forEach(file -> qualities.add(new ConnectDataBase.Quality(file.getQualityId(), file.getQuality())));
+            return qualities;
+        }
+
+        public void selectBestAvailableQuality() {
+            torrentFilesByQuality.values().stream()
+                    .max(Comparator.comparingInt(TorrentFile::getQualityId))
+                    .ifPresent(file -> {
+                        this.quality = file.getQuality();
+                        this.torrentLink = file.getTorrentLink();
+                    });
         }
 
         // Getter para calidad

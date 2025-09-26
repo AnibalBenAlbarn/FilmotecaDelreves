@@ -1025,8 +1025,8 @@ public class ConnectDataBase {
             return results;
         }
 
-        String query = "SELECT td.id, td.title, td.year, td.genre, td.director, " +
-                "q.quality, tf.torrent_link " +
+        String query = "SELECT td.id AS torrent_id, td.title, td.year, td.genre, td.director, " +
+                "tf.id AS torrent_file_id, tf.quality_id, tf.torrent_link, q.quality " +
                 "FROM torrent_downloads td " +
                 "JOIN torrent_files tf ON td.id = tf.torrent_id " +
                 "JOIN qualities q ON tf.quality_id = q.id " +
@@ -1037,25 +1037,32 @@ public class ConnectDataBase {
             stmt.setString(1, "%" + searchTerm + "%");
             ResultSet rs = stmt.executeQuery();
 
-            // Use a map to ensure we only add each movie once with its best quality
-            Map<Integer, TorrentDownloadUI.Movie> moviesMap = new HashMap<>();
+            Map<Integer, TorrentDownloadUI.Movie> moviesMap = new LinkedHashMap<>();
 
             while (rs.next()) {
-                int id = rs.getInt("id");
+                int torrentId = rs.getInt("torrent_id");
                 String title = rs.getString("title");
                 String year = String.valueOf(rs.getInt("year"));
                 String genre = rs.getString("genre");
                 String director = rs.getString("director");
                 String quality = rs.getString("quality");
                 String torrentLink = rs.getString("torrent_link");
+                int qualityId = rs.getInt("quality_id");
+                int torrentFileId = rs.getInt("torrent_file_id");
 
-                // If we haven't seen this movie yet, or if this quality is better than what we have
-                if (!moviesMap.containsKey(id)) {
-                    moviesMap.put(id, new TorrentDownloadUI.Movie(
-                            id, title, year, genre, director, quality, torrentLink));
-                }
+                TorrentDownloadUI.Movie movie = moviesMap.computeIfAbsent(torrentId,
+                        id -> new TorrentDownloadUI.Movie(id, title, year, genre, director));
+                movie.addTorrentFile(new TorrentDownloadUI.TorrentFile(
+                        torrentFileId,
+                        torrentId,
+                        null,
+                        qualityId,
+                        torrentLink,
+                        quality
+                ));
             }
 
+            moviesMap.values().forEach(TorrentDownloadUI.Movie::selectBestAvailableQuality);
             results.addAll(moviesMap.values());
             System.out.println("Movies found: " + results.size());
         } catch (SQLException e) {
@@ -1076,8 +1083,8 @@ public class ConnectDataBase {
             return results;
         }
 
-        StringBuilder query = new StringBuilder("SELECT td.id, td.title, td.year, td.genre, td.director, " +
-                "q.quality, tf.torrent_link " +
+        StringBuilder query = new StringBuilder("SELECT td.id AS torrent_id, td.title, td.year, td.genre, td.director, " +
+                "tf.id AS torrent_file_id, tf.quality_id, tf.torrent_link, q.quality " +
                 "FROM torrent_downloads td " +
                 "JOIN torrent_files tf ON td.id = tf.torrent_id " +
                 "JOIN qualities q ON tf.quality_id = q.id " +
@@ -1118,21 +1125,31 @@ public class ConnectDataBase {
             }
 
             ResultSet rs = stmt.executeQuery();
-            Map<Integer, TorrentDownloadUI.Movie> moviesMap = new HashMap<>();
+            Map<Integer, TorrentDownloadUI.Movie> moviesMap = new LinkedHashMap<>();
 
             while (rs.next()) {
-                int id = rs.getInt("id");
+                int torrentId = rs.getInt("torrent_id");
                 String title = rs.getString("title");
                 String yearResult = rs.getString("year");
                 String genreResult = rs.getString("genre");
                 String directorResult = rs.getString("director");
                 String qualityResult = rs.getString("quality");
                 String torrentLink = rs.getString("torrent_link");
+                int qualityId = rs.getInt("quality_id");
+                int torrentFileId = rs.getInt("torrent_file_id");
 
-                if (!moviesMap.containsKey(id)) {
-                    moviesMap.put(id, new TorrentDownloadUI.Movie(id, title, yearResult, genreResult, directorResult, qualityResult, torrentLink));
-                }
+                TorrentDownloadUI.Movie movie = moviesMap.computeIfAbsent(torrentId,
+                        id -> new TorrentDownloadUI.Movie(id, title, yearResult, genreResult, directorResult));
+                movie.addTorrentFile(new TorrentDownloadUI.TorrentFile(
+                        torrentFileId,
+                        torrentId,
+                        null,
+                        qualityId,
+                        torrentLink,
+                        qualityResult
+                ));
             }
+            moviesMap.values().forEach(TorrentDownloadUI.Movie::selectBestAvailableQuality);
             results.addAll(moviesMap.values());
 
         } catch (SQLException e) {
@@ -1151,7 +1168,8 @@ public class ConnectDataBase {
             return results;
         }
 
-        String query = "SELECT td.id, td.title, td.year, td.genre, td.director, q.quality, tf.torrent_link " +
+        String query = "SELECT td.id AS torrent_id, td.title, td.year, td.genre, td.director, " +
+                "tf.id AS torrent_file_id, tf.quality_id, tf.torrent_link, q.quality " +
                 "FROM torrent_downloads td " +
                 "JOIN torrent_files tf ON td.id = tf.torrent_id " +
                 "JOIN qualities q ON tf.quality_id = q.id " +
@@ -1162,23 +1180,35 @@ public class ConnectDataBase {
             stmt.setInt(1, limit);
             ResultSet rs = stmt.executeQuery();
 
-            Map<Integer, T> moviesMap = new HashMap<>();
+            Map<Integer, TorrentDownloadUI.Movie> moviesMap = new LinkedHashMap<>();
 
             while (rs.next()) {
-                int id = rs.getInt("id");
+                int torrentId = rs.getInt("torrent_id");
                 String title = rs.getString("title");
                 String year = rs.getString("year");
                 String genre = rs.getString("genre");
                 String director = rs.getString("director");
                 String quality = rs.getString("quality");
                 String torrentLink = rs.getString("torrent_link");
+                int qualityId = rs.getInt("quality_id");
+                int torrentFileId = rs.getInt("torrent_file_id");
 
-                if (!moviesMap.containsKey(id)) {
-                    T movie = (T) new TorrentDownloadUI.Movie(id, title, year, genre, director, quality, torrentLink);
-                    moviesMap.put(id, movie);
-                }
+                TorrentDownloadUI.Movie movie = moviesMap.computeIfAbsent(torrentId,
+                        id -> new TorrentDownloadUI.Movie(id, title, year, genre, director));
+                movie.addTorrentFile(new TorrentDownloadUI.TorrentFile(
+                        torrentFileId,
+                        torrentId,
+                        null,
+                        qualityId,
+                        torrentLink,
+                        quality
+                ));
             }
-            results.addAll(moviesMap.values());
+
+            for (TorrentDownloadUI.Movie movie : moviesMap.values()) {
+                movie.selectBestAvailableQuality();
+                results.add(movieClass.cast(movie));
+            }
         } catch (SQLException e) {
             System.err.println("Error getting torrent movies: " + e.getMessage());
             e.printStackTrace();
