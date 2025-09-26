@@ -30,7 +30,7 @@ public class DelayedLoadingDialog {
      * @param message message shown under the spinner
      */
     public DelayedLoadingDialog(Window owner, String message) {
-        this(owner, message, Duration.seconds(2));
+        this(owner, message, Duration.millis(200));
     }
 
     /**
