@@ -46,6 +46,7 @@ public class TorrentState implements Serializable {
     private String fileName;
 
     // Unique identifier for the torrent
+    private final String instanceId;
     private String torrentId;
 
     // Timestamps
@@ -88,7 +89,8 @@ public class TorrentState implements Serializable {
         this.fileName = extractFileName(torrentSource);
 
         // Generate a unique ID for this torrent
-        this.torrentId = generateTorrentId();
+        this.instanceId = generateTorrentId();
+        this.torrentId = this.instanceId;
 
         // Set timestamps
         this.createdAt = LocalDateTime.now();
@@ -639,13 +641,13 @@ public class TorrentState implements Serializable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         TorrentState that = (TorrentState) o;
-        return torrentId != null && torrentId.equals(that.torrentId);
+        return instanceId != null && instanceId.equals(that.instanceId);
     }
 
     /**
      *Hash code*/
     @Override
     public int hashCode() {
-        return torrentId != null ? torrentId.hashCode() : 0;
+        return instanceId != null ? instanceId.hashCode() : 0;
     }
 }

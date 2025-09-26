@@ -33,7 +33,6 @@ import javafx.util.Duration;
 import javafx.stage.Window;
 import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 
-import static org.example.filmotecadelreves.UI.AjustesUI.DARK_THEME_FILE;
 //ver1.3
 
 public class MainUI extends Application {
@@ -126,8 +125,8 @@ public class MainUI extends Application {
 
         scene = new Scene(mainLayout, 1200, 800);
 
-        // Cargar el archivo CSS si existe
-        loadStylesheet(DARK_THEME_FILE);
+        // Aplicar el tema guardado una vez que la escena está disponible
+        ajustesUI.applyCurrentTheme();
 
         primaryStage.setScene(scene);
         primaryStage.show();
