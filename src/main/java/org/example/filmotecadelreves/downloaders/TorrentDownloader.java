@@ -448,6 +448,7 @@ public class TorrentDownloader {
         if (torrentState == null) {
             return;
         }
+        torrentState.setSequentialDownload(sequential);
         ManagedTorrent managed;
         synchronized (lock) {
             PendingTorrent pending = pendingByState.get(torrentState);
@@ -471,8 +472,13 @@ public class TorrentDownloader {
         if (torrentState == null) {
             return;
         }
-        int downloadBytes = downloadLimitKiB <= 0 ? -1 : downloadLimitKiB * 1024;
-        int uploadBytes = uploadLimitKiB <= 0 ? -1 : uploadLimitKiB * 1024;
+        int sanitizedDownloadKiB = downloadLimitKiB <= 0 ? -1 : downloadLimitKiB;
+        int sanitizedUploadKiB = uploadLimitKiB <= 0 ? -1 : uploadLimitKiB;
+        int downloadBytes = sanitizedDownloadKiB <= 0 ? -1 : sanitizedDownloadKiB * 1024;
+        int uploadBytes = sanitizedUploadKiB <= 0 ? -1 : sanitizedUploadKiB * 1024;
+
+        torrentState.setDownloadLimitKiB(sanitizedDownloadKiB);
+        torrentState.setUploadLimitKiB(sanitizedUploadKiB);
 
         ManagedTorrent managed;
         synchronized (lock) {
@@ -480,6 +486,9 @@ public class TorrentDownloader {
             if (pending != null) {
                 pending.setDownloadLimitBytes(downloadBytes);
                 pending.setUploadLimitBytes(uploadBytes);
+                if (sanitizedDownloadKiB <= 0 && sanitizedUploadKiB <= 0) {
+                    torrentState.clearRateLimits();
+                }
                 return;
             }
             managed = managedByState.get(torrentState);
@@ -490,6 +499,7 @@ public class TorrentDownloader {
                 managed.handle.setDownloadLimit(downloadBytes);
                 managed.downloadLimitBytes = downloadBytes;
                 managed.lastAutoDownloadLimit = -1;
+                managed.state.setDownloadLimitKiB(sanitizedDownloadKiB);
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo establecer el límite de descarga del torrent: " + t.getMessage());
             }
@@ -497,8 +507,12 @@ public class TorrentDownloader {
                 managed.handle.setUploadLimit(uploadBytes);
                 managed.uploadLimitBytes = uploadBytes;
                 managed.lastAutoUploadLimit = -1;
+                managed.state.setUploadLimitKiB(sanitizedUploadKiB);
             } catch (Throwable t) {
                 log(Level.FINEST, "No se pudo establecer el límite de subida del torrent: " + t.getMessage());
+            }
+            if (sanitizedDownloadKiB <= 0 && sanitizedUploadKiB <= 0) {
+                managed.state.clearRateLimits();
             }
         }
         lastBandwidthRebalanceNanos = 0L;
@@ -1867,6 +1881,7 @@ public class TorrentDownloader {
         }
         if (applySequentialDownloadFlag(managed.handle, sequential)) {
             managed.sequentialDownload = sequential;
+            managed.state.setSequentialDownload(sequential);
         }
     }
 

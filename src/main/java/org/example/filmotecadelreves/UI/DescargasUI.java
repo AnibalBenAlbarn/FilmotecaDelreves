@@ -34,6 +34,7 @@ import org.json.simple.JSONObject;
 import java.awt.Desktop;
 import java.io.File;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -1237,6 +1238,12 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                     private final Button openLocationButton = new Button("Abrir ubicación");
                     private final Button logButton = new Button("Ver registro");
                     private final Button healthCheckButton = new Button("Diagnóstico");
+                    private final MenuButton advancedMenu = new MenuButton("Opciones");
+                    private final MenuItem changePriorityItem = new MenuItem("Cambiar prioridad...");
+                    private final CheckMenuItem sequentialItem = new CheckMenuItem("Descarga secuencial");
+                    private final MenuItem limitsItem = new MenuItem("Límites de velocidad...");
+                    private final MenuItem clearLimitsItem = new MenuItem("Quitar límites");
+                    private final Tooltip advancedTooltip = new Tooltip();
                     private final HBox pane = new HBox(5);
 
                     {
@@ -1248,6 +1255,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         openLocationButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white;");
                         logButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white;");
                         healthCheckButton.setStyle("-fx-background-color: #1abc9c; -fx-text-fill: white;");
+                        advancedMenu.setStyle("-fx-background-color: #7f8c8d; -fx-text-fill: white;");
 
                         // Hacer que los botones ocupen todo el espacio disponible
                         pauseButton.setMaxWidth(Double.MAX_VALUE);
@@ -1257,6 +1265,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         openLocationButton.setMaxWidth(Double.MAX_VALUE);
                         logButton.setMaxWidth(Double.MAX_VALUE);
                         healthCheckButton.setMaxWidth(Double.MAX_VALUE);
+                        advancedMenu.setMaxWidth(Double.MAX_VALUE);
 
                         // Asegurar que los botones tengan un tamaño mínimo
                         pauseButton.setMinWidth(80);
@@ -1266,6 +1275,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         openLocationButton.setMinWidth(80);
                         logButton.setMinWidth(100);
                         healthCheckButton.setMinWidth(100);
+                        advancedMenu.setMinWidth(120);
 
                         HBox.setHgrow(pauseButton, Priority.ALWAYS);
                         HBox.setHgrow(resumeButton, Priority.ALWAYS);
@@ -1274,6 +1284,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                         HBox.setHgrow(openLocationButton, Priority.ALWAYS);
                         HBox.setHgrow(logButton, Priority.ALWAYS);
                         HBox.setHgrow(healthCheckButton, Priority.ALWAYS);
+                        HBox.setHgrow(advancedMenu, Priority.ALWAYS);
+
+                        advancedMenu.getItems().addAll(changePriorityItem, sequentialItem, limitsItem, clearLimitsItem);
+                        advancedMenu.setTooltip(advancedTooltip);
 
                         pauseButton.setOnAction(event -> {
                             TorrentState torrentState = getTableView().getItems().get(getIndex());
@@ -1310,11 +1324,32 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                             runTorrentHealthCheck(torrentState);
                         });
 
+                        changePriorityItem.setOnAction(event -> {
+                            TorrentState torrentState = getTableView().getItems().get(getIndex());
+                            changeTorrentPriority(torrentState);
+                        });
+
+                        sequentialItem.setOnAction(event -> {
+                            TorrentState torrentState = getTableView().getItems().get(getIndex());
+                            boolean enableSequential = sequentialItem.isSelected();
+                            toggleSequentialDownload(torrentState, enableSequential, sequentialItem);
+                        });
+
+                        limitsItem.setOnAction(event -> {
+                            TorrentState torrentState = getTableView().getItems().get(getIndex());
+                            showRateLimitDialog(torrentState);
+                        });
+
+                        clearLimitsItem.setOnAction(event -> {
+                            TorrentState torrentState = getTableView().getItems().get(getIndex());
+                            clearTorrentRateLimits(torrentState);
+                        });
+
                         pane.setAlignment(Pos.CENTER);
                         pane.setPadding(new Insets(2));
                         pane.setSpacing(5);
                         pane.getChildren().addAll(pauseButton, resumeButton, removeButton, retryButton,
-                                openLocationButton, logButton, healthCheckButton);
+                                openLocationButton, logButton, healthCheckButton, advancedMenu);
                     }
 
                     @Override
@@ -1360,6 +1395,12 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                             pane.getChildren().add(openLocationButton);
                             pane.getChildren().add(logButton);
                             pane.getChildren().add(healthCheckButton);
+                            pane.getChildren().add(advancedMenu);
+
+                            sequentialItem.setSelected(torrentState.isSequentialDownload());
+                            clearLimitsItem.setDisable(torrentState.getDownloadLimitKiB() <= 0
+                                    && torrentState.getUploadLimitKiB() <= 0);
+                            advancedTooltip.setText(buildAdvancedOptionsTooltip(torrentState));
 
                             setGraphic(pane);
                         }
@@ -1688,6 +1729,158 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             e.printStackTrace();
             showErrorAlert("Error", "No se pudo abrir la ubicación del archivo: " + e.getMessage());
         }
+    }
+
+    private void changeTorrentPriority(TorrentState torrentState) {
+        if (torrentState == null) {
+            return;
+        }
+        if (torrentDownloader == null) {
+            showErrorAlert("Cliente torrent no disponible",
+                    "Inicializa el cliente de torrents antes de modificar la prioridad.");
+            return;
+        }
+
+        List<Integer> priorities = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            priorities.add(i);
+        }
+
+        ChoiceDialog<Integer> dialog = new ChoiceDialog<>(torrentState.getPriority(), priorities);
+        dialog.setTitle("Cambiar prioridad");
+        dialog.setHeaderText("Selecciona la prioridad de descarga (1-10)");
+        dialog.setContentText("Prioridad:");
+
+        dialog.showAndWait().ifPresent(priority -> {
+            torrentState.setPriority(priority);
+            torrentDownloader.reprioritize(torrentState, priority);
+            torrentsTable.refresh();
+        });
+    }
+
+    private void toggleSequentialDownload(TorrentState torrentState, boolean enableSequential, CheckMenuItem menuItem) {
+        if (torrentState == null) {
+            return;
+        }
+        if (torrentDownloader == null) {
+            showErrorAlert("Cliente torrent no disponible",
+                    "Inicializa el cliente de torrents antes de cambiar la descarga secuencial.");
+            menuItem.setSelected(torrentState.isSequentialDownload());
+            return;
+        }
+
+        torrentDownloader.setSequentialDownload(torrentState, enableSequential);
+        torrentState.setSequentialDownload(enableSequential);
+        torrentsTable.refresh();
+    }
+
+    private void showRateLimitDialog(TorrentState torrentState) {
+        if (torrentState == null) {
+            return;
+        }
+        if (torrentDownloader == null) {
+            showErrorAlert("Cliente torrent no disponible",
+                    "Inicializa el cliente de torrents antes de modificar los límites de velocidad.");
+            return;
+        }
+
+        Dialog<int[]> dialog = new Dialog<>();
+        dialog.setTitle("Límites de velocidad");
+        dialog.setHeaderText("Establece los límites en KiB/s (deja en blanco para ilimitado)");
+
+        ButtonType applyButtonType = new ButtonType("Aplicar", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(applyButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        TextField downloadField = new TextField();
+        downloadField.setPromptText("Ilimitado");
+        if (torrentState.getDownloadLimitKiB() > 0) {
+            downloadField.setText(String.valueOf(torrentState.getDownloadLimitKiB()));
+        }
+
+        TextField uploadField = new TextField();
+        uploadField.setPromptText("Ilimitado");
+        if (torrentState.getUploadLimitKiB() > 0) {
+            uploadField.setText(String.valueOf(torrentState.getUploadLimitKiB()));
+        }
+
+        restrictToNumericInput(downloadField);
+        restrictToNumericInput(uploadField);
+
+        grid.add(new Label("Descarga (KiB/s):"), 0, 0);
+        grid.add(downloadField, 1, 0);
+        grid.add(new Label("Subida (KiB/s):"), 0, 1);
+        grid.add(uploadField, 1, 1);
+
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == applyButtonType) {
+                int downloadLimit = parseLimitValue(downloadField.getText());
+                int uploadLimit = parseLimitValue(uploadField.getText());
+                return new int[]{downloadLimit, uploadLimit};
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(result -> {
+            int downloadLimit = result[0];
+            int uploadLimit = result[1];
+            torrentDownloader.setTorrentRateLimits(torrentState, downloadLimit, uploadLimit);
+            torrentState.setDownloadLimitKiB(downloadLimit);
+            torrentState.setUploadLimitKiB(uploadLimit);
+            torrentsTable.refresh();
+        });
+    }
+
+    private void clearTorrentRateLimits(TorrentState torrentState) {
+        if (torrentState == null) {
+            return;
+        }
+        if (torrentDownloader == null) {
+            showErrorAlert("Cliente torrent no disponible",
+                    "Inicializa el cliente de torrents antes de eliminar los límites de velocidad.");
+            return;
+        }
+
+        torrentDownloader.setTorrentRateLimits(torrentState, -1, -1);
+        torrentState.clearRateLimits();
+        torrentsTable.refresh();
+    }
+
+    private int parseLimitValue(String value) {
+        if (value == null || value.isBlank()) {
+            return -1;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed <= 0 ? -1 : parsed;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private void restrictToNumericInput(TextField textField) {
+        textField.textProperty().addListener((observable, oldValue, newValue) -> {
+            if (!newValue.matches("\\d*")) {
+                textField.setText(oldValue);
+            }
+        });
+    }
+
+    private String buildAdvancedOptionsTooltip(TorrentState torrentState) {
+        return "Prioridad: " + torrentState.getPriority()
+                + "\nDescarga secuencial: " + (torrentState.isSequentialDownload() ? "Activada" : "Desactivada")
+                + "\nLímite descarga: " + formatRateLimit(torrentState.getDownloadLimitKiB())
+                + "\nLímite subida: " + formatRateLimit(torrentState.getUploadLimitKiB());
+    }
+
+    private String formatRateLimit(int limitKiB) {
+        return limitKiB > 0 ? limitKiB + " KiB/s" : "Sin límite";
     }
 
     private void showTorrentLogDialog(TorrentState torrentState) {
