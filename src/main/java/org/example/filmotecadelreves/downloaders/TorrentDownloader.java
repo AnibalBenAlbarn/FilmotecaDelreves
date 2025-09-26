@@ -44,6 +44,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -145,6 +146,38 @@ public class TorrentDownloader {
             "router.bitcomet.com:6881",
             "dht.libtorrent.org:25401"
     };
+
+    private static final Map<TorrentStatus.State, String> TORRENT_STATE_DESCRIPTIONS =
+            buildTorrentStateDescriptions();
+
+    private static Map<TorrentStatus.State, String> buildTorrentStateDescriptions() {
+        Map<TorrentStatus.State, String> map = new EnumMap<>(TorrentStatus.State.class);
+        registerStateDescription(map, "CHECKING_FILES", "Verificando");
+        registerStateDescription(map, "CHECKING_RESUME_DATA", "Verificando");
+        registerStateDescription(map, "VALIDATING_RESUME_DATA", "Verificando");
+        registerStateDescription(map, "DOWNLOADING_METADATA", "Obteniendo metadatos");
+        registerStateDescription(map, "DOWNLOADING", "Descargando");
+        registerStateDescription(map, "FINISHED", "Completado");
+        registerStateDescription(map, "SEEDING", "Completado");
+        registerStateDescription(map, "PAUSED", "Pausado");
+        registerStateDescription(map, "QUEUED_FOR_CHECKING", "En cola");
+        registerStateDescription(map, "ALLOCATING", "Preparando");
+        registerStateDescription(map, "STOPPED", "Detenido");
+        registerStateDescription(map, "ERROR", "Error");
+        registerStateDescription(map, "UNKNOWN", "Desconocido");
+        return Collections.unmodifiableMap(map);
+    }
+
+    private static void registerStateDescription(Map<TorrentStatus.State, String> target,
+                                                 String stateName,
+                                                 String description) {
+        try {
+            TorrentStatus.State state = TorrentStatus.State.valueOf(stateName);
+            target.put(state, description);
+        } catch (IllegalArgumentException ignored) {
+            // Ignore missing states so the code compiles with multiple jlibtorrent versions.
+        }
+    }
 
     private final SessionManager sessionManager;
     private final ScheduledExecutorService scheduler;
@@ -2144,33 +2177,21 @@ public class TorrentDownloader {
     }
 
     private String describeState(TorrentStatus.State state) {
-        switch (state) {
-            case CHECKING_FILES:
-            case CHECKING_RESUME_DATA:
-            case VALIDATING_RESUME_DATA:
-                return "Verificando";
-            case DOWNLOADING_METADATA:
-                return "Obteniendo metadatos";
-            case DOWNLOADING:
-                return "Descargando";
-            case FINISHED:
-            case SEEDING:
-                return "Completado";
-            case PAUSED:
-                return "Pausado";
-            case QUEUED_FOR_CHECKING:
-                return "En cola";
-            case ALLOCATING:
-                return "Preparando";
-            case STOPPED:
-                return "Detenido";
-            case ERROR:
-                return "Error";
-            case UNKNOWN:
-                return "Desconocido";
-            default:
-                return state.name();
+        if (state == null) {
+            return "Desconocido";
         }
+
+        String description = TORRENT_STATE_DESCRIPTIONS.get(state);
+        if (description != null) {
+            return description;
+        }
+
+        String stateName = state.name();
+        if ("UNKNOWN".equals(stateName)) {
+            return "Desconocido";
+        }
+
+        return stateName;
     }
 
     private void notifyComplete(TorrentState state) {
