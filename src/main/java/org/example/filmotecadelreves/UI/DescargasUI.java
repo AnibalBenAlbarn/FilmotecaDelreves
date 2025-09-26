@@ -1231,14 +1231,14 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             @Override
             public TableCell<TorrentState, Void> call(final TableColumn<TorrentState, Void> param) {
                 return new TableCell<TorrentState, Void>() {
-                    private final Button pauseButton = new Button("Pausar");
-                    private final Button resumeButton = new Button("Reanudar");
-                    private final Button removeButton = new Button("Eliminar");
-                    private final Button retryButton = new Button("Reintentar");
-                    private final Button openLocationButton = new Button("Abrir ubicación");
-                    private final Button logButton = new Button("Ver registro");
-                    private final Button healthCheckButton = new Button("Diagnóstico");
-                    private final MenuButton advancedMenu = new MenuButton("Opciones");
+                    private final Button pauseButton = createActionButton("⏸", "Pausar descarga", "Pausar");
+                    private final Button resumeButton = createActionButton("▶", "Reanudar descarga", "Reanudar");
+                    private final Button removeButton = createActionButton("✖", "Eliminar descarga", "Eliminar");
+                    private final Button retryButton = createActionButton("↻", "Reintentar descarga", "Reintentar");
+                    private final Button openLocationButton = createActionButton("📂", "Abrir carpeta de destino", "Abrir ubicación");
+                    private final Button logButton = createActionButton("ℹ", "Ver registro", "Ver registro");
+                    private final Button healthCheckButton = createActionButton("⚕", "Diagnóstico de torrent", "Diagnóstico");
+                    private final MenuButton advancedMenu = new MenuButton("⚙");
                     private final MenuItem changePriorityItem = new MenuItem("Cambiar prioridad...");
                     private final CheckMenuItem sequentialItem = new CheckMenuItem("Descarga secuencial");
                     private final MenuItem limitsItem = new MenuItem("Límites de velocidad...");
@@ -1247,47 +1247,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                     private final HBox pane = new HBox(5);
 
                     {
-                        // Configurar estilos de los botones
-                        pauseButton.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white;");
-                        resumeButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
-                        removeButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
-                        retryButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-                        openLocationButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white;");
-                        logButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white;");
-                        healthCheckButton.setStyle("-fx-background-color: #1abc9c; -fx-text-fill: white;");
-                        advancedMenu.setStyle("-fx-background-color: #7f8c8d; -fx-text-fill: white;");
-
-                        // Hacer que los botones ocupen todo el espacio disponible
-                        pauseButton.setMaxWidth(Double.MAX_VALUE);
-                        resumeButton.setMaxWidth(Double.MAX_VALUE);
-                        removeButton.setMaxWidth(Double.MAX_VALUE);
-                        retryButton.setMaxWidth(Double.MAX_VALUE);
-                        openLocationButton.setMaxWidth(Double.MAX_VALUE);
-                        logButton.setMaxWidth(Double.MAX_VALUE);
-                        healthCheckButton.setMaxWidth(Double.MAX_VALUE);
-                        advancedMenu.setMaxWidth(Double.MAX_VALUE);
-
-                        // Asegurar que los botones tengan un tamaño mínimo
-                        pauseButton.setMinWidth(80);
-                        resumeButton.setMinWidth(80);
-                        removeButton.setMinWidth(80);
-                        retryButton.setMinWidth(80);
-                        openLocationButton.setMinWidth(80);
-                        logButton.setMinWidth(100);
-                        healthCheckButton.setMinWidth(100);
-                        advancedMenu.setMinWidth(120);
-
-                        HBox.setHgrow(pauseButton, Priority.ALWAYS);
-                        HBox.setHgrow(resumeButton, Priority.ALWAYS);
-                        HBox.setHgrow(removeButton, Priority.ALWAYS);
-                        HBox.setHgrow(retryButton, Priority.ALWAYS);
-                        HBox.setHgrow(openLocationButton, Priority.ALWAYS);
-                        HBox.setHgrow(logButton, Priority.ALWAYS);
-                        HBox.setHgrow(healthCheckButton, Priority.ALWAYS);
-                        HBox.setHgrow(advancedMenu, Priority.ALWAYS);
+                        configureActionControl(advancedMenu, null, "Opciones avanzadas");
+                        advancedMenu.setTooltip(advancedTooltip);
 
                         advancedMenu.getItems().addAll(changePriorityItem, sequentialItem, limitsItem, clearLimitsItem);
-                        advancedMenu.setTooltip(advancedTooltip);
 
                         pauseButton.setOnAction(event -> {
                             TorrentState torrentState = getTableView().getItems().get(getIndex());
@@ -1347,7 +1310,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
                         pane.setAlignment(Pos.CENTER);
                         pane.setPadding(new Insets(2));
-                        pane.setSpacing(5);
+                        pane.setSpacing(4);
                         pane.getChildren().addAll(pauseButton, resumeButton, removeButton, retryButton,
                                 openLocationButton, logButton, healthCheckButton, advancedMenu);
                     }
@@ -1420,41 +1383,14 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             @Override
             public TableCell<DirectDownload, Void> call(final TableColumn<DirectDownload, Void> param) {
                 return new TableCell<DirectDownload, Void>() {
-                    private final Button pauseButton = new Button("Pause");
-                    private final Button resumeButton = new Button("Resume");
-                    private final Button removeButton = new Button("Remove");
-                    private final Button retryButton = new Button("Reintentar");
-                    private final Button openLocationButton = new Button("Open Location");
+                    private final Button pauseButton = createActionButton("⏸", "Pause download", "Pause");
+                    private final Button resumeButton = createActionButton("▶", "Resume download", "Resume");
+                    private final Button removeButton = createActionButton("✖", "Remove download", "Remove");
+                    private final Button retryButton = createActionButton("↻", "Retry download", "Retry");
+                    private final Button openLocationButton = createActionButton("📂", "Open download folder", "Open location");
                     private final HBox pane = new HBox(5);
 
                     {
-                        // Configurar estilos de los botones
-                        pauseButton.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white;");
-                        resumeButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
-                        removeButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
-                        retryButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-                        openLocationButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white;");
-
-                        // Hacer que los botones ocupen todo el espacio disponible
-                        pauseButton.setMaxWidth(Double.MAX_VALUE);
-                        resumeButton.setMaxWidth(Double.MAX_VALUE);
-                        removeButton.setMaxWidth(Double.MAX_VALUE);
-                        retryButton.setMaxWidth(Double.MAX_VALUE);
-                        openLocationButton.setMaxWidth(Double.MAX_VALUE);
-
-                        // Asegurar que los botones tengan un tamaño mínimo
-                        pauseButton.setMinWidth(80);
-                        resumeButton.setMinWidth(80);
-                        removeButton.setMinWidth(80);
-                        retryButton.setMinWidth(80);
-                        openLocationButton.setMinWidth(80);
-
-                        HBox.setHgrow(pauseButton, Priority.ALWAYS);
-                        HBox.setHgrow(resumeButton, Priority.ALWAYS);
-                        HBox.setHgrow(removeButton, Priority.ALWAYS);
-                        HBox.setHgrow(retryButton, Priority.ALWAYS);
-                        HBox.setHgrow(openLocationButton, Priority.ALWAYS);
-
                         pauseButton.setOnAction(event -> {
                             DirectDownload download = getTableView().getItems().get(getIndex());
                             pauseDirectDownload(download);
@@ -1482,7 +1418,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
                         pane.setAlignment(Pos.CENTER);
                         pane.setPadding(new Insets(2));
-                        pane.setSpacing(5);
+                        pane.setSpacing(4);
                         pane.getChildren().addAll(pauseButton, resumeButton, removeButton, retryButton, openLocationButton);
                     }
 
@@ -1515,10 +1451,20 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                             // y es un servidor PowVideo o StreamPlay
                             if (isPowvideoOrStreamplay && DownloadLimitManager.isPowvideoStreamplayLimitReached()) {
                                 retryButton.setDisable(true);
-                                retryButton.setTooltip(new Tooltip("Límite de descargas alcanzado. Espere a que se reinicie el contador."));
+                                Tooltip tooltip = retryButton.getTooltip();
+                                if (tooltip == null) {
+                                    tooltip = new Tooltip();
+                                    retryButton.setTooltip(tooltip);
+                                }
+                                tooltip.setText("Límite de descargas alcanzado. Espere a que se reinicie el contador.");
                             } else {
                                 retryButton.setDisable(false);
-                                retryButton.setTooltip(null);
+                                Tooltip tooltip = retryButton.getTooltip();
+                                if (tooltip != null) {
+                                    tooltip.setText("Retry download");
+                                } else {
+                                    retryButton.setTooltip(new Tooltip("Retry download"));
+                                }
                             }
 
                             // Reorganizar los botones según el estado
@@ -1546,6 +1492,26 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 };
             }
         };
+    }
+
+    private Button createActionButton(String symbol, String tooltipText, String accessibleText) {
+        Button button = new Button(symbol);
+        configureActionControl(button, tooltipText, accessibleText);
+        return button;
+    }
+
+    private void configureActionControl(Control control, String tooltipText, String accessibleText) {
+        control.getStyleClass().add("torrent-action-button");
+        control.setMinWidth(32);
+        control.setPrefWidth(32);
+        control.setMaxWidth(32);
+        control.setFocusTraversable(false);
+        if (accessibleText != null && !accessibleText.isBlank()) {
+            control.setAccessibleText(accessibleText);
+        }
+        if (tooltipText != null && !tooltipText.isBlank()) {
+            control.setTooltip(new Tooltip(tooltipText));
+        }
     }
 
     /**

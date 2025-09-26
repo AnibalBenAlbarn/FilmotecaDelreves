@@ -5,6 +5,7 @@ import org.example.filmotecadelreves.moviesad.TorrentState;
 import com.frostwire.jlibtorrent.AddTorrentParams;
 import com.frostwire.jlibtorrent.AlertListener;
 import com.frostwire.jlibtorrent.AnnounceEntry;
+import com.frostwire.jlibtorrent.FileStorage;
 import com.frostwire.jlibtorrent.SessionHandle;
 import com.frostwire.jlibtorrent.SessionManager;
 import com.frostwire.jlibtorrent.SessionParams;
@@ -34,11 +35,15 @@ import com.frostwire.jlibtorrent.swig.torrent_flags_t;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.DirectoryStream;
 import java.nio.file.FileStore;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -789,6 +794,8 @@ public class TorrentDownloader {
             return;
         }
         ManagedTorrent managed;
+        TorrentInfo torrentInfo = null;
+        Path savePath = null;
         synchronized (lock) {
             PendingTorrent pending = pendingByState.remove(torrentState);
             if (pending != null) {
@@ -797,6 +804,21 @@ public class TorrentDownloader {
             managed = managedByState.remove(torrentState);
             if (managed != null) {
                 managedByHash.remove(managed.infoHashKey);
+                if (deleteFiles && managed.handle != null && managed.handle.isValid()) {
+                    try {
+                        torrentInfo = managed.handle.torrentFile();
+                    } catch (Throwable t) {
+                        log(Level.FINEST, "No se pudo recuperar la información del torrent antes de eliminarlo: " + t.getMessage());
+                    }
+                    try {
+                        String handleSavePath = managed.handle.savePath();
+                        if (handleSavePath != null && !handleSavePath.isBlank()) {
+                            savePath = Paths.get(handleSavePath);
+                        }
+                    } catch (Throwable t) {
+                        log(Level.FINEST, "No se pudo recuperar la ruta de guardado del torrent: " + t.getMessage());
+                    }
+                }
             }
         }
         if (managed != null && managed.handle.isValid()) {
@@ -809,9 +831,143 @@ public class TorrentDownloader {
         torrentState.setStatus("Eliminado");
         recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
                 deleteFiles ? "Descarga eliminada y datos borrados." : "Descarga eliminada conservando los archivos.");
+        if (deleteFiles) {
+            deleteTorrentPayload(savePath, torrentInfo, torrentState);
+        }
         logsByState.remove(torrentState);
         lastBandwidthRebalanceNanos = 0L;
         startNextIfPossible();
+    }
+
+    private void deleteTorrentPayload(Path savePath, TorrentInfo torrentInfo, TorrentState torrentState) {
+        if (torrentState == null) {
+            return;
+        }
+        Path basePath = savePath;
+        if (basePath == null) {
+            String destination = torrentState.getDestinationPath();
+            if (destination != null && !destination.isBlank()) {
+                basePath = Paths.get(destination);
+            }
+        }
+        if (basePath == null) {
+            return;
+        }
+
+        try {
+            boolean deleted = false;
+            if (torrentInfo != null) {
+                deleted = deleteTorrentRootFolder(basePath, torrentInfo);
+                if (!deleted) {
+                    deleted = deleteTorrentFilesIndividually(basePath, torrentInfo);
+                }
+            }
+
+            if (!deleted) {
+                String fileName = torrentState.getFileName();
+                if (fileName != null && !fileName.isBlank()) {
+                    Path candidate = basePath.resolve(fileName).normalize();
+                    if (Files.exists(candidate)) {
+                        deleteRecursively(candidate);
+                        cleanupEmptyParents(candidate.getParent(), basePath);
+                        deleted = true;
+                    }
+                }
+            }
+
+            if (!deleted) {
+                String displayName = torrentState.getName();
+                if (displayName != null && !displayName.isBlank()) {
+                    Path candidate = basePath.resolve(displayName).normalize();
+                    if (Files.exists(candidate)) {
+                        deleteRecursively(candidate);
+                        cleanupEmptyParents(candidate.getParent(), basePath);
+                        deleted = true;
+                    }
+                }
+            }
+
+            if (deleted) {
+                recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
+                        "Archivos locales eliminados correctamente.");
+            }
+        } catch (Exception e) {
+            log(Level.WARNING, "No se pudieron eliminar los archivos del torrent: " + e.getMessage());
+        }
+    }
+
+    private boolean deleteTorrentRootFolder(Path basePath, TorrentInfo torrentInfo) throws IOException {
+        if (torrentInfo == null) {
+            return false;
+        }
+        String rootName = torrentInfo.name();
+        if (rootName == null || rootName.isBlank()) {
+            return false;
+        }
+        Path rootFolder = basePath.resolve(rootName).normalize();
+        if (!Files.exists(rootFolder)) {
+            return false;
+        }
+        deleteRecursively(rootFolder);
+        cleanupEmptyParents(rootFolder.getParent(), basePath);
+        return true;
+    }
+
+    private boolean deleteTorrentFilesIndividually(Path basePath, TorrentInfo torrentInfo) throws IOException {
+        FileStorage storage = torrentInfo != null ? torrentInfo.files() : null;
+        if (storage == null || storage.numFiles() <= 0) {
+            return false;
+        }
+        boolean deletedAny = false;
+        for (int i = 0; i < storage.numFiles(); i++) {
+            String relative = storage.filePath(i);
+            if (relative == null || relative.isBlank()) {
+                continue;
+            }
+            Path candidate = basePath.resolve(relative).normalize();
+            if (Files.exists(candidate)) {
+                deleteRecursively(candidate);
+                cleanupEmptyParents(candidate.getParent(), basePath);
+                deletedAny = true;
+            }
+        }
+        return deletedAny;
+    }
+
+    private void deleteRecursively(Path path) throws IOException {
+        if (path == null || !Files.exists(path)) {
+            return;
+        }
+        Files.walkFileTree(path, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.deleteIfExists(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    private void cleanupEmptyParents(Path start, Path stopAt) throws IOException {
+        Path current = start;
+        while (current != null && (stopAt == null || !current.equals(stopAt))) {
+            if (!Files.exists(current) || !Files.isDirectory(current)) {
+                current = current.getParent();
+                continue;
+            }
+            try (DirectoryStream<Path> entries = Files.newDirectoryStream(current)) {
+                if (entries.iterator().hasNext()) {
+                    break;
+                }
+            }
+            Files.deleteIfExists(current);
+            current = current.getParent();
+        }
     }
 
     /** Gracefully shutdown jlibtorrent and background executors. */

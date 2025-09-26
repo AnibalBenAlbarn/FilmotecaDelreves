@@ -1264,6 +1264,12 @@ public class AjustesUI {
         return themeComboBox.getValue();
     }
 
+    public void applyCurrentTheme() {
+        if (themeComboBox != null) {
+            applySelectedTheme(themeComboBox.getValue());
+        }
+    }
+
     public boolean isShowNotifications() {
         return showNotificationsCheckbox.isSelected();
     }
