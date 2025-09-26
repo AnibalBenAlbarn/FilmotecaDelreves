@@ -6,6 +6,7 @@ import org.example.filmotecadelreves.moviesad.DatabaseStatusPanel;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -28,6 +29,9 @@ import java.util.Base64;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+import javafx.util.Duration;
+import javafx.stage.Window;
+import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 
 import static org.example.filmotecadelreves.UI.AjustesUI.DARK_THEME_FILE;
 //ver1.3
@@ -45,9 +49,12 @@ public class MainUI extends Application {
     private JSONObject configJson;
     private static final String CONFIG_FILE_PATH = "config.json";
     private final ScraperProgressTracker scraperProgressTracker = new ScraperProgressTracker();
+    private Stage primaryStage;
+    private boolean initializingTorrentDownloader;
 
     @Override
     public void start(Stage primaryStage) {
+        this.primaryStage = primaryStage;
         // Cargar configuración
         loadConfig();
         registerScraperProgressListeners();
@@ -108,10 +115,6 @@ public class MainUI extends Application {
             }
         });
 
-        if (mainTabs.getSelectionModel().getSelectedItem() == torrentDownloadUI.getTab()) {
-            ensureTorrentDownloaderInitialized(ajustesUI);
-        }
-
         contentLayout.getChildren().add(mainTabs);
 
         // Crear el panel de estado de la base de datos con ambas bases de datos
@@ -128,6 +131,12 @@ public class MainUI extends Application {
 
         primaryStage.setScene(scene);
         primaryStage.show();
+
+        Platform.runLater(() -> {
+            if (mainTabs.getSelectionModel().getSelectedItem() == torrentDownloadUI.getTab()) {
+                ensureTorrentDownloaderInitialized(ajustesUI);
+            }
+        });
 
         // Configurar el cierre adecuado de la aplicación
         primaryStage.setOnCloseRequest(event -> {
@@ -181,21 +190,68 @@ public class MainUI extends Application {
     }
 
     private void ensureTorrentDownloaderInitialized(AjustesUI ajustesUI) {
-        if (this.torrentDownloader != null) {
+        if (this.torrentDownloader != null || initializingTorrentDownloader) {
             return;
         }
+        initializingTorrentDownloader = true;
 
-        TorrentDownloader newDownloader = ajustesUI.createTorrentDownloader();
-        if (newDownloader == null) {
-            System.err.println("No se pudo crear una instancia de TorrentDownloader");
-            return;
-        }
+        int maxConcurrent = ajustesUI.getMaxConcurrentDownloads();
+        boolean extractArchives = ajustesUI.isExtractArchives();
+        int downloadLimit = ajustesUI.getTorrentDownloadSpeedLimit();
+        int uploadLimit = ajustesUI.getTorrentUploadSpeedLimit();
+        boolean autoStart = ajustesUI.isAutoStartTorrentDownloads();
 
-        setTorrentDownloader(newDownloader);
-        ajustesUI.setTorrentDownloader(newDownloader);
-        applyColumnVisibilityConfig();
+        Task<TorrentDownloader> initTask = new Task<>() {
+            @Override
+            protected TorrentDownloader call() {
+                TorrentDownloader downloader = new TorrentDownloader(
+                        maxConcurrent,
+                        extractArchives,
+                        downloadLimit,
+                        uploadLimit
+                );
+                downloader.setAutoStartDownloads(autoStart);
+                return downloader;
+            }
+        };
 
-        System.out.println("TorrentDownloader creado y configurado");
+        Window owner = primaryStage != null ? primaryStage : (scene != null ? scene.getWindow() : null);
+        DelayedLoadingDialog loadingDialog = new DelayedLoadingDialog(owner,
+                "Inicializando gestor de torrents...",
+                Duration.ZERO);
+
+        initTask.setOnSucceeded(event -> {
+            loadingDialog.stop();
+            initializingTorrentDownloader = false;
+            TorrentDownloader newDownloader = initTask.getValue();
+            if (newDownloader == null) {
+                System.err.println("No se pudo crear una instancia de TorrentDownloader");
+                return;
+            }
+            setTorrentDownloader(newDownloader);
+            ajustesUI.setTorrentDownloader(newDownloader);
+            applyColumnVisibilityConfig();
+            System.out.println("TorrentDownloader creado y configurado");
+        });
+
+        initTask.setOnFailed(event -> {
+            loadingDialog.stop();
+            initializingTorrentDownloader = false;
+            Throwable ex = initTask.getException();
+            if (ex != null) {
+                ex.printStackTrace();
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error",
+                        "No se pudo inicializar el gestor de torrents: " + ex.getMessage()));
+            } else {
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error",
+                        "No se pudo inicializar el gestor de torrents."));
+            }
+        });
+
+        Thread thread = new Thread(initTask, "torrent-downloader-init");
+        thread.setDaemon(true);
+        thread.start();
+        loadingDialog.start();
     }
 
     /**
