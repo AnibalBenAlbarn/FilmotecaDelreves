@@ -1267,6 +1267,7 @@ public class TorrentDownloader {
         managed.lastPeerFetchMs = now;
         workerExecutor.submit(() -> {
             TorrentHandle handle = managed.handle;
+
             if (!sessionManager.isRunning() || !handle.isValid()) {
                 return;
             }
