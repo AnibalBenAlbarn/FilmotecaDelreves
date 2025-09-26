@@ -2144,33 +2144,53 @@ public class TorrentDownloader {
     }
 
     private String describeState(TorrentStatus.State state) {
-        switch (state) {
-            case CHECKING_FILES:
-            case CHECKING_RESUME_DATA:
-            case VALIDATING_RESUME_DATA:
-                return "Verificando";
-            case DOWNLOADING_METADATA:
-                return "Obteniendo metadatos";
-            case DOWNLOADING:
-                return "Descargando";
-            case FINISHED:
-            case SEEDING:
-                return "Completado";
-            case PAUSED:
-                return "Pausado";
-            case QUEUED_FOR_CHECKING:
-                return "En cola";
-            case ALLOCATING:
-                return "Preparando";
-            case STOPPED:
-                return "Detenido";
-            case ERROR:
-                return "Error";
-            case UNKNOWN:
-                return "Desconocido";
-            default:
-                return state.name();
+        if (state == null) {
+            return "Desconocido";
         }
+
+        if (state == TorrentStatus.State.CHECKING_FILES
+                || state == TorrentStatus.State.CHECKING_RESUME_DATA
+                || state == TorrentStatus.State.VALIDATING_RESUME_DATA) {
+            return "Verificando";
+        }
+
+        if (state == TorrentStatus.State.DOWNLOADING_METADATA) {
+            return "Obteniendo metadatos";
+        }
+
+        if (state == TorrentStatus.State.DOWNLOADING) {
+            return "Descargando";
+        }
+
+        if (state == TorrentStatus.State.FINISHED || state == TorrentStatus.State.SEEDING) {
+            return "Completado";
+        }
+
+        if (state == TorrentStatus.State.PAUSED) {
+            return "Pausado";
+        }
+
+        if (state == TorrentStatus.State.QUEUED_FOR_CHECKING) {
+            return "En cola";
+        }
+
+        if (state == TorrentStatus.State.ALLOCATING) {
+            return "Preparando";
+        }
+
+        if (state == TorrentStatus.State.STOPPED) {
+            return "Detenido";
+        }
+
+        if (state == TorrentStatus.State.ERROR) {
+            return "Error";
+        }
+
+        if (state == TorrentStatus.State.UNKNOWN) {
+            return "Desconocido";
+        }
+
+        return state.name();
     }
 
     private void notifyComplete(TorrentState state) {
