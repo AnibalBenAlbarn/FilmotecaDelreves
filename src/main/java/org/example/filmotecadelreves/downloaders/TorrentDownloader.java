@@ -2164,6 +2164,7 @@ public class TorrentDownloader {
         }
 
         return TORRENT_STATE_DESCRIPTIONS.getOrDefault(state.name(), state.name());
+
     }
 
     private void notifyComplete(TorrentState state) {
