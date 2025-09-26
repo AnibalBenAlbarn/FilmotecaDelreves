@@ -5,7 +5,6 @@ import org.example.filmotecadelreves.moviesad.TorrentState;
 import com.frostwire.jlibtorrent.AddTorrentParams;
 import com.frostwire.jlibtorrent.AlertListener;
 import com.frostwire.jlibtorrent.AnnounceEntry;
-import com.frostwire.jlibtorrent.InfoHash;
 import com.frostwire.jlibtorrent.SessionHandle;
 import com.frostwire.jlibtorrent.SessionManager;
 import com.frostwire.jlibtorrent.SessionParams;
@@ -1199,7 +1198,7 @@ public class TorrentDownloader {
         if (status.numPeers() >= MINIMUM_ACTIVE_PEERS) {
             return;
         }
-        if (managed.handle == null || !managed.handle.isValid()) {
+        if (!managed.handle.isValid()) {
             return;
         }
         if (now - managed.lastTrackerInjectionMs < TRACKER_REFRESH_INTERVAL.toMillis()) {
@@ -1219,8 +1218,8 @@ public class TorrentDownloader {
                         if (entry == null) {
                             continue;
                         }
-                        String url = entry.url();
-                        if (url != null && !url.isBlank()) {
+                        String url = Objects.toString(entry.url(), "");
+                        if (!url.isBlank()) {
                             urls.add(url.trim());
                         }
                     }
@@ -1258,7 +1257,7 @@ public class TorrentDownloader {
         if (status.numPeers() >= MINIMUM_ACTIVE_PEERS) {
             return;
         }
-        if (!sessionManager.isRunning() || managed.handle == null || !managed.handle.isValid()) {
+        if (!sessionManager.isRunning() || !managed.handle.isValid()) {
             return;
         }
         if (now - managed.lastPeerFetchMs < DHT_PEER_FETCH_INTERVAL.toMillis()) {
@@ -1268,7 +1267,8 @@ public class TorrentDownloader {
         managed.lastPeerFetchMs = now;
         workerExecutor.submit(() -> {
             TorrentHandle handle = managed.handle;
-            if (!sessionManager.isRunning() || handle == null || !handle.isValid()) {
+
+            if (!sessionManager.isRunning() || !handle.isValid()) {
                 return;
             }
             try {
@@ -1289,7 +1289,7 @@ public class TorrentDownloader {
                         continue;
                     }
                     String key = endpoint.toString();
-                    if (key == null || key.isBlank()) {
+                    if (key.isBlank()) {
                         continue;
                     }
                     SlowPeerRecord slowRecord = managed.slowPeers.get(key);
@@ -1329,15 +1329,15 @@ public class TorrentDownloader {
     }
 
     private List<PeerSample> snapshotPeers(ManagedTorrent managed) {
-        if (managed == null || managed.handle == null || !managed.handle.isValid()) {
+        if (managed == null || !managed.handle.isValid()) {
             if (managed != null) {
                 managed.lastPeerSamples = Collections.emptyList();
             }
             return Collections.emptyList();
         }
         try {
-            List<PeerInfo> peers = managed.handle.peerInfo();
-            if (peers == null || peers.isEmpty()) {
+            List<PeerInfo> peers = Objects.requireNonNullElse(managed.handle.peerInfo(), Collections.emptyList());
+            if (peers.isEmpty()) {
                 managed.lastPeerSamples = Collections.emptyList();
                 return managed.lastPeerSamples;
             }
@@ -1346,8 +1346,8 @@ public class TorrentDownloader {
                 if (peer == null) {
                     continue;
                 }
-                String endpoint = peer.ip();
-                if (endpoint == null || endpoint.isBlank()) {
+                String endpoint = Objects.toString(peer.ip(), "");
+                if (endpoint.isBlank()) {
                     continue;
                 }
                 samples.add(new PeerSample(endpoint, peer.downSpeed(), peer.upSpeed(), peer.progress()));
@@ -1371,7 +1371,7 @@ public class TorrentDownloader {
             return;
         }
         for (PeerSample sample : peerSamples) {
-            if (sample == null || sample.endpoint == null || sample.endpoint.isBlank()) {
+            if (sample == null || sample.endpoint.isBlank()) {
                 continue;
             }
             managed.contactedPeers.add(sample.endpoint);
@@ -1616,8 +1616,9 @@ public class TorrentDownloader {
                 totalDemand += computeDownloadDemand(managed);
             }
             if (totalDemand > 0.0) {
+                int participants = Math.max(1, active.size());
                 int minShare = Math.min(MIN_AUTO_DOWNLOAD_LIMIT,
-                        Math.max(1, downloadBudget / Math.max(1, active.size())));
+                        Math.max(1, downloadBudget / participants));
                 for (ManagedTorrent managed : active) {
                     if (managed.downloadLimitBytes >= 0) {
                         continue;
@@ -1665,8 +1666,9 @@ public class TorrentDownloader {
                 totalDemand += computeUploadDemand(managed);
             }
             if (totalDemand > 0.0) {
+                int participants = Math.max(1, active.size());
                 int minShare = Math.min(MIN_AUTO_UPLOAD_LIMIT,
-                        Math.max(1, uploadBudget / Math.max(1, active.size())));
+                        Math.max(1, uploadBudget / participants));
                 for (ManagedTorrent managed : active) {
                     if (managed.uploadLimitBytes >= 0) {
                         continue;
@@ -1860,7 +1862,7 @@ public class TorrentDownloader {
     }
 
     private void updateSequentialDownload(ManagedTorrent managed, boolean sequential) {
-        if (managed == null || managed.handle == null || !managed.handle.isValid()) {
+        if (managed == null || !managed.handle.isValid()) {
             return;
         }
         if (applySequentialDownloadFlag(managed.handle, sequential)) {
@@ -1869,7 +1871,8 @@ public class TorrentDownloader {
     }
 
     private boolean applySequentialDownloadFlag(TorrentHandle handle, boolean sequential) {
-        if (handle == null || !handle.isValid()) {
+        Objects.requireNonNull(handle, "handle");
+        if (!handle.isValid()) {
             return false;
         }
         try {
@@ -2010,7 +2013,7 @@ public class TorrentDownloader {
     }
 
     private void primeNewTorrent(ManagedTorrent managed, AddTorrentParams params) {
-        if (managed == null || managed.handle == null || !managed.handle.isValid()) {
+        if (managed == null || !managed.handle.isValid()) {
             return;
         }
         TorrentHandle handle = managed.handle;
@@ -2274,8 +2277,8 @@ public class TorrentDownloader {
             return null;
         }
         try {
-            Sha1Hash hash = status.infoHash();
-            if (hash != null && !hash.isAllZeros()) {
+            Sha1Hash hash = Objects.requireNonNull(status.infoHash(), "status.infoHash()");
+            if (!hash.isAllZeros()) {
                 return hash;
             }
         } catch (Throwable t) {
@@ -2296,17 +2299,6 @@ public class TorrentDownloader {
             return null;
         }
         return managedByHash.get(hash.toString());
-    }
-
-    private ManagedTorrent findManagedTorrent(InfoHash infoHash) {
-        if (infoHash == null) {
-            return null;
-        }
-        Sha1Hash best = infoHash.getBest();
-        if (best == null) {
-            return null;
-        }
-        return managedByHash.get(best.toString());
     }
 
     private static ThreadFactory daemonThreadFactory(String baseName) {
