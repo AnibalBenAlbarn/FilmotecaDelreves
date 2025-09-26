@@ -146,6 +146,21 @@ public class TorrentDownloader {
             "dht.libtorrent.org:25401"
     };
 
+    private static final Map<String, String> TORRENT_STATE_DESCRIPTIONS = Map.ofEntries(
+            Map.entry("CHECKING_FILES", "Verificando"),
+            Map.entry("CHECKING_RESUME_DATA", "Verificando"),
+            Map.entry("VALIDATING_RESUME_DATA", "Verificando"),
+            Map.entry("DOWNLOADING_METADATA", "Obteniendo metadatos"),
+            Map.entry("DOWNLOADING", "Descargando"),
+            Map.entry("FINISHED", "Completado"),
+            Map.entry("SEEDING", "Completado"),
+            Map.entry("PAUSED", "Pausado"),
+            Map.entry("QUEUED_FOR_CHECKING", "En cola"),
+            Map.entry("ALLOCATING", "Preparando"),
+            Map.entry("STOPPED", "Detenido"),
+            Map.entry("ERROR", "Error"),
+            Map.entry("UNKNOWN", "Desconocido"));
+
     private final SessionManager sessionManager;
     private final ScheduledExecutorService scheduler;
     private final ExecutorService workerExecutor;
@@ -2144,33 +2159,11 @@ public class TorrentDownloader {
     }
 
     private String describeState(TorrentStatus.State state) {
-        switch (state) {
-            case CHECKING_FILES:
-            case CHECKING_RESUME_DATA:
-            case VALIDATING_RESUME_DATA:
-                return "Verificando";
-            case DOWNLOADING_METADATA:
-                return "Obteniendo metadatos";
-            case DOWNLOADING:
-                return "Descargando";
-            case FINISHED:
-            case SEEDING:
-                return "Completado";
-            case PAUSED:
-                return "Pausado";
-            case QUEUED_FOR_CHECKING:
-                return "En cola";
-            case ALLOCATING:
-                return "Preparando";
-            case STOPPED:
-                return "Detenido";
-            case ERROR:
-                return "Error";
-            case UNKNOWN:
-                return "Desconocido";
-            default:
-                return state.name();
+        if (state == null) {
+            return "Desconocido";
         }
+
+        return TORRENT_STATE_DESCRIPTIONS.getOrDefault(state.name(), state.name());
     }
 
     private void notifyComplete(TorrentState state) {
