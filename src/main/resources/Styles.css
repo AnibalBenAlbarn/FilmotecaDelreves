@@ -13,6 +13,7 @@
     -fx-font-family: 'Segoe UI';
     -fx-font-size: 14px;
     -fx-text-fill: -color-text-light;
+    -fx-text-background-color: -color-bg-light;
 }
 
 /* Labels */

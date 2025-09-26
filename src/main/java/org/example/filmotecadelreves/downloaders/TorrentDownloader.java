@@ -2147,6 +2147,7 @@ public class TorrentDownloader {
         switch (state) {
             case CHECKING_FILES:
             case CHECKING_RESUME_DATA:
+            case VALIDATING_RESUME_DATA:
                 return "Verificando";
             case DOWNLOADING_METADATA:
                 return "Obteniendo metadatos";
@@ -2155,6 +2156,18 @@ public class TorrentDownloader {
             case FINISHED:
             case SEEDING:
                 return "Completado";
+            case PAUSED:
+                return "Pausado";
+            case QUEUED_FOR_CHECKING:
+                return "En cola";
+            case ALLOCATING:
+                return "Preparando";
+            case STOPPED:
+                return "Detenido";
+            case ERROR:
+                return "Error";
+            case UNKNOWN:
+                return "Desconocido";
             default:
                 return state.name();
         }
