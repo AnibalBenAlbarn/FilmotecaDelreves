@@ -50,7 +50,9 @@ public class DirectDownloadUI {
     private Tab tab;
     private AjustesUI ajustesUI;
     private DescargasUI descargasUI;
+    private final MainUI mainUI;
     private static ConnectDataBase connectDataBase;
+    private boolean notifyStartupOnInitialData = true;
     private final ScraperProgressTracker scraperProgressTracker;
 
     // ==================== COMPONENTES DE UI ====================
@@ -129,10 +131,11 @@ public class DirectDownloadUI {
     /**
      * Constructor principal de la interfaz de descarga directa
      */
-    public DirectDownloadUI(AjustesUI ajustesUI, DescargasUI descargasUI, Stage primaryStage, ScraperProgressTracker scraperProgressTracker) {
+    public DirectDownloadUI(AjustesUI ajustesUI, DescargasUI descargasUI, Stage primaryStage, ScraperProgressTracker scraperProgressTracker, MainUI mainUI) {
         this.ajustesUI = ajustesUI;
         this.descargasUI = descargasUI;
         this.scraperProgressTracker = scraperProgressTracker;
+        this.mainUI = mainUI;
         // Use the database path specified in the user settings instead of a hardcoded name
         this.connectDataBase = new ConnectDataBase(ajustesUI.getDirectDatabasePath());
 
@@ -142,8 +145,8 @@ public class DirectDownloadUI {
         // Configurar la interfaz de usuario
         setupUI(primaryStage);
 
-        // Cargar datos iniciales
-        loadInitialData();
+        // Cargar datos iniciales cuando la interfaz esté lista
+        Platform.runLater(this::loadInitialData);
     }
 
     private Window getWindow() {
@@ -154,6 +157,10 @@ public class DirectDownloadUI {
     }
 
     private <T> void runWithLoading(Callable<T> operation, Consumer<T> onSuccess, String loadingMessage, String errorMessage) {
+        runWithLoading(operation, onSuccess, loadingMessage, errorMessage, null);
+    }
+
+    private <T> void runWithLoading(Callable<T> operation, Consumer<T> onSuccess, String loadingMessage, String errorMessage, Runnable onComplete) {
         Task<T> task = new Task<>() {
             @Override
             protected T call() throws Exception {
@@ -167,6 +174,9 @@ public class DirectDownloadUI {
             loadingDialog.stop();
             if (onSuccess != null) {
                 onSuccess.accept(task.getValue());
+            }
+            if (onComplete != null) {
+                onComplete.run();
             }
         });
 
@@ -182,6 +192,9 @@ public class DirectDownloadUI {
                 Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", messageToShow));
             } else {
                 Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", errorMessage));
+            }
+            if (onComplete != null) {
+                onComplete.run();
             }
         });
 
@@ -258,6 +271,8 @@ public class DirectDownloadUI {
      * Carga los datos iniciales para películas y series
      */
     private void loadInitialData() {
+        final boolean notifyStartup = notifyStartupOnInitialData;
+        notifyStartupOnInitialData = false;
         runWithLoading(() -> new InitialData(
                         connectDataBase.getLatestMovies(10),
                         connectDataBase.getLatestSeries(10, DirectDownloadUI.Series.class)
@@ -272,7 +287,12 @@ public class DirectDownloadUI {
                     System.out.println("Initial data loaded: " + data.movies.size() + " movies, " + data.series.size() + " series");
                 },
                 "Cargando datos iniciales...",
-                "No se pudieron cargar los datos iniciales.");
+                "No se pudieron cargar los datos iniciales.",
+                () -> {
+                    if (notifyStartup && mainUI != null) {
+                        mainUI.notifyStartupTaskCompleted();
+                    }
+                });
     }
 
     private static class InitialData {

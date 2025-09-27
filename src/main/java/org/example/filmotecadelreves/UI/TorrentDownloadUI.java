@@ -72,10 +72,14 @@ public class TorrentDownloadUI {
     // Directorio para archivos temporales
     private final String TEMP_DIR = System.getProperty("java.io.tmpdir") + File.separator + "torrent_downloader";
 
-    public TorrentDownloadUI(AjustesUI ajustesUI, DescargasUI descargasUI, Stage primaryStage, ScraperProgressTracker scraperProgressTracker) {
+    private final MainUI mainUI;
+    private boolean notifyStartupOnInitialData = true;
+
+    public TorrentDownloadUI(AjustesUI ajustesUI, DescargasUI descargasUI, Stage primaryStage, ScraperProgressTracker scraperProgressTracker, MainUI mainUI) {
         this.ajustesUI = ajustesUI;
         this.descargasUI = descargasUI;
         this.scraperProgressTracker = scraperProgressTracker;
+        this.mainUI = mainUI;
 
         // No inicializar el TorrentDownloader aquí, se recibirá desde MainUI
         this.connectDataBase = new ConnectDataBase(ajustesUI.getTorrentDatabasePath());
@@ -113,6 +117,10 @@ public class TorrentDownloadUI {
     }
 
     private <T> void runWithLoading(Callable<T> operation, Consumer<T> onSuccess, String loadingMessage, String errorMessage) {
+        runWithLoading(operation, onSuccess, loadingMessage, errorMessage, null);
+    }
+
+    private <T> void runWithLoading(Callable<T> operation, Consumer<T> onSuccess, String loadingMessage, String errorMessage, Runnable onComplete) {
         Task<T> task = new Task<>() {
             @Override
             protected T call() throws Exception {
@@ -126,6 +134,9 @@ public class TorrentDownloadUI {
             loadingDialog.stop();
             if (onSuccess != null) {
                 onSuccess.accept(task.getValue());
+            }
+            if (onComplete != null) {
+                onComplete.run();
             }
         });
 
@@ -141,6 +152,9 @@ public class TorrentDownloadUI {
                 Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", messageToShow));
             } else {
                 Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Error", errorMessage));
+            }
+            if (onComplete != null) {
+                onComplete.run();
             }
         });
 
@@ -189,6 +203,8 @@ public class TorrentDownloadUI {
     }
 
     private void loadInitialData() {
+        final boolean notifyStartup = notifyStartupOnInitialData;
+        notifyStartupOnInitialData = false;
         runWithLoading(() -> new InitialData(
                         connectDataBase.getLatestTorrentMovies(10, Movie.class),
                         connectDataBase.getLatestTorrentSeries(10, Series.class)
@@ -203,7 +219,12 @@ public class TorrentDownloadUI {
                     System.out.println("Datos iniciales cargados: " + data.movies.size() + " películas, " + data.series.size() + " series");
                 },
                 "Cargando datos iniciales...",
-                "No se pudieron cargar los datos iniciales.");
+                "No se pudieron cargar los datos iniciales.",
+                () -> {
+                    if (notifyStartup && mainUI != null) {
+                        mainUI.notifyStartupTaskCompleted();
+                    }
+                });
     }
 
     private static class InitialData {
