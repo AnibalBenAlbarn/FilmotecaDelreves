@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -50,6 +51,9 @@ public class MainUI extends Application {
     private final ScraperProgressTracker scraperProgressTracker = new ScraperProgressTracker();
     private Stage primaryStage;
     private boolean initializingTorrentDownloader;
+    private DelayedLoadingDialog startupLoadingDialog;
+    private final AtomicInteger pendingStartupTasks = new AtomicInteger();
+    private volatile boolean startupLoadingActive;
 
     @Override
     public void start(Stage primaryStage) {
@@ -93,10 +97,12 @@ public class MainUI extends Application {
         // Aplicar configuración de columnas visibles
         applyColumnVisibilityConfig();
 
-        torrentDownloadUI = new TorrentDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker);
+        beginStartupLoading(3, "Inicializando bases de datos...");
+
+        torrentDownloadUI = new TorrentDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker, this);
         torrentDownloadUI.updateDownloader(this.torrentDownloader);
 
-        directDownloadUI = new DirectDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker);
+        directDownloadUI = new DirectDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker, this);
 
         // Inicializar bases de datos después de cargar la configuración
         initializeDatabases(ajustesUI);
@@ -118,6 +124,10 @@ public class MainUI extends Application {
 
         // Crear el panel de estado de la base de datos con ambas bases de datos
         statusPanel = new DatabaseStatusPanel(directDB, torrentDB);
+
+        if (startupLoadingActive) {
+            setDatabasesUpdatingState(true);
+        }
 
         // Configurar el layout principal
         mainLayout.setCenter(contentLayout);
@@ -521,24 +531,106 @@ public class MainUI extends Application {
     }
 
     private void initializeDatabases(AjustesUI ajustesUI) {
-        try {
-            System.out.println("Inicializando bases de datos...");
-            String torrentPath = ajustesUI.getTorrentDatabasePath();
-            String directPath = ajustesUI.getDirectDatabasePath();
+        Task<Void> initTask = new Task<>() {
+            @Override
+            protected Void call() {
+                try {
+                    System.out.println("Inicializando bases de datos...");
+                    String torrentPath = ajustesUI.getTorrentDatabasePath();
+                    String directPath = ajustesUI.getDirectDatabasePath();
 
-            torrentDB = new ConnectDataBase(torrentPath);
-            directDB = new ConnectDataBase(directPath);
+                    ConnectDataBase newTorrentDB = new ConnectDataBase(torrentPath);
+                    newTorrentDB.setUpdating(true);
+                    ConnectDataBase newDirectDB = new ConnectDataBase(directPath);
+                    newDirectDB.setUpdating(true);
 
-            if (!torrentDB.connect()) {
-                showDatabaseError("torrent_dw_db");
+                    if (!newTorrentDB.connect()) {
+                        Platform.runLater(() -> showDatabaseError("torrent_dw_db"));
+                    }
+
+                    if (!newDirectDB.connect()) {
+                        Platform.runLater(() -> showDatabaseError("direct_dw_db"));
+                    }
+
+                    torrentDB = newTorrentDB;
+                    directDB = newDirectDB;
+                } catch (Exception e) {
+                    Platform.runLater(() -> {
+                        showAlert(Alert.AlertType.ERROR, "Error crítico",
+                                "No se pudo inicializar las bases de datos: " + e.getMessage());
+                    });
+                    throw e;
+                }
+                return null;
             }
+        };
 
-            if (!directDB.connect()) {
-                showDatabaseError("direct_dw_db");
+        initTask.setOnSucceeded(event -> {
+            Platform.runLater(() -> {
+                if (statusPanel != null) {
+                    statusPanel.updateConnections(directDB, torrentDB);
+                }
+            });
+            notifyStartupTaskCompleted();
+        });
+
+        initTask.setOnFailed(event -> {
+            Throwable ex = initTask.getException();
+            if (ex != null) {
+                ex.printStackTrace();
             }
-        } catch (Exception e) {
-            showAlert(Alert.AlertType.ERROR, "Error crítico", "No se pudo inicializar las bases de datos: " + e.getMessage());
-            e.printStackTrace();
+            notifyStartupTaskCompleted();
+        });
+
+        Thread thread = new Thread(initTask);
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void beginStartupLoading(int expectedTasks, String message) {
+        startupLoadingActive = true;
+        pendingStartupTasks.set(Math.max(0, expectedTasks));
+        if (startupLoadingDialog != null) {
+            startupLoadingDialog.stop();
+        }
+        startupLoadingDialog = new DelayedLoadingDialog(primaryStage, message);
+        startupLoadingDialog.start();
+    }
+
+    public void notifyStartupTaskCompleted() {
+        if (!startupLoadingActive) {
+            return;
+        }
+        int remaining = pendingStartupTasks.updateAndGet(current -> current > 0 ? current - 1 : 0);
+        if (remaining == 0) {
+            stopStartupLoading();
+        }
+    }
+
+    private void stopStartupLoading() {
+        if (!startupLoadingActive) {
+            return;
+        }
+        startupLoadingActive = false;
+        pendingStartupTasks.set(0);
+        Platform.runLater(() -> {
+            if (startupLoadingDialog != null) {
+                startupLoadingDialog.stop();
+                startupLoadingDialog = null;
+            }
+            setDatabasesUpdatingState(false);
+        });
+    }
+
+    private void setDatabasesUpdatingState(boolean updating) {
+        if (directDB != null) {
+            directDB.setUpdating(updating);
+        }
+        if (torrentDB != null) {
+            torrentDB.setUpdating(updating);
+        }
+        if (statusPanel != null) {
+            statusPanel.updateStatistics();
         }
     }
 
