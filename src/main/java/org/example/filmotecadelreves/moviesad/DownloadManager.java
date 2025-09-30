@@ -93,9 +93,10 @@ public class DownloadManager {
             // Crear estructura de directorios de destino
             String baseDestination = ajustesUI.getMovieDestination();
             String movieName = item.getName();
+            String sanitizedMovieFolderName = sanitizePathComponent(movieName);
 
             // Crear carpeta de película
-            String movieFolder = baseDestination + File.separator + movieName;
+            String movieFolder = baseDestination + File.separator + sanitizedMovieFolderName;
             File destDir = new File(movieFolder);
             if (!destDir.exists() && !destDir.mkdirs()) {
                 System.err.println("No se pudo crear el directorio de destino: " + movieFolder);
@@ -175,11 +176,11 @@ public class DownloadManager {
 
             // Crear estructura de directorios de destino
             String baseDestination = ajustesUI.getSeriesDestination();
-            String seriesName = item.getSeriesName();
-            String seasonFolder = "Season " + item.getSeasonNumber();
+            String sanitizedSeriesFolder = sanitizePathComponent(item.getSeriesName());
+            String sanitizedSeasonFolder = sanitizePathComponent("Season " + item.getSeasonNumber());
 
             // Crear estructura de carpetas serie/temporada
-            String destinationPath = baseDestination + File.separator + seriesName + File.separator + seasonFolder;
+            String destinationPath = baseDestination + File.separator + sanitizedSeriesFolder + File.separator + sanitizedSeasonFolder;
             File destDir = new File(destinationPath);
             if (!destDir.exists() && !destDir.mkdirs()) {
                 System.err.println("No se pudo crear el directorio de destino: " + destinationPath);
@@ -215,5 +216,28 @@ public class DownloadManager {
             e.printStackTrace();
             return false;
         }
+    }
+
+    /**
+     * Limpia un componente de ruta para que sea válido en sistemas de archivos como Windows.
+     * Reemplaza caracteres no permitidos y elimina puntos o espacios finales.
+     *
+     * @param name El nombre a sanitizar
+     * @return Un nombre seguro para usar como carpeta o archivo
+     */
+    private static String sanitizePathComponent(String name) {
+        if (name == null) {
+            return "unknown";
+        }
+
+        String sanitized = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        sanitized = sanitized.replaceAll("\\s+", " ").trim();
+        sanitized = sanitized.replaceAll("[\\. ]+$", "");
+
+        if (sanitized.isEmpty()) {
+            sanitized = "unknown";
+        }
+
+        return sanitized;
     }
 }
