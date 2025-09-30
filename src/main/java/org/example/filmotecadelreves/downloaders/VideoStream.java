@@ -1,22 +1,7 @@
 package org.example.filmotecadelreves.downloaders;
 
-import org.openqa.selenium.By;
-import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.Keys;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.interactions.Actions;
-import org.openqa.selenium.support.ui.WebDriverWait;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-
-import java.io.File;
-import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Class to handle video streaming in full screen mode using Selenium.
@@ -24,13 +9,16 @@ import java.util.concurrent.TimeUnit;
  * Closes when ESC key is pressed.
  */
 public class VideoStream {
-    private VideosStreamerManager streamerManager;
+    private final VideosStreamerManager defaultStreamerManager;
+    private final Map<Integer, VideosStreamerManager> serverManagers;
 
     /**
      * Initializes the VideoStream with Selenium WebDriver
      */
     public VideoStream() {
-        this.streamerManager = new VideosStreamerManager();
+        this.defaultStreamerManager = new VideosStreamerManager();
+        this.serverManagers = new HashMap<>();
+        registerManager(497, new StreamtapeStreamManager());
     }
 
     /**
@@ -38,9 +26,9 @@ public class VideoStream {
      * @param url The URL to stream
      */
     public void stream(String url) {
-        // Use the new VideosStreamerManager with default server ID (-1)
-        // The manager will detect the server type from the URL
-        streamerManager.streamVideo(url, -1);
+        VideosStreamerManager manager = selectManager(url, null);
+        int serverId = resolveServerId(manager, url);
+        manager.streamVideo(url, serverId);
     }
 
     /**
@@ -49,6 +37,56 @@ public class VideoStream {
      * @param serverId The server ID
      */
     public void stream(String url, int serverId) {
-        streamerManager.streamVideo(url, serverId);
+        VideosStreamerManager manager = selectManager(url, serverId);
+        manager.streamVideo(url, serverId);
+    }
+
+    private void registerManager(int serverId, VideosStreamerManager manager) {
+        if (manager != null) {
+            serverManagers.put(serverId, manager);
+        }
+    }
+
+    private VideosStreamerManager selectManager(String url, Integer serverId) {
+        if (serverId != null) {
+            VideosStreamerManager manager = serverManagers.get(serverId);
+            if (manager != null) {
+                return manager;
+            }
+        }
+
+        if (url != null) {
+            for (Map.Entry<Integer, VideosStreamerManager> entry : serverManagers.entrySet()) {
+                VideosStreamerManager manager = entry.getValue();
+                if (manager != null && manager.handlesUrl(url)) {
+                    return manager;
+                }
+            }
+        }
+
+        return defaultStreamerManager;
+    }
+
+    private int resolveServerId(VideosStreamerManager manager, String url) {
+        if (manager == null || manager == defaultStreamerManager) {
+            return -1;
+        }
+
+        for (Map.Entry<Integer, VideosStreamerManager> entry : serverManagers.entrySet()) {
+            if (entry.getValue() == manager) {
+                return entry.getKey();
+            }
+        }
+
+        if (url != null && manager.handlesUrl(url)) {
+            for (Map.Entry<Integer, VideosStreamerManager> entry : serverManagers.entrySet()) {
+                VideosStreamerManager candidate = entry.getValue();
+                if (candidate != null && candidate.handlesUrl(url)) {
+                    return entry.getKey();
+                }
+            }
+        }
+
+        return -1;
     }
 }

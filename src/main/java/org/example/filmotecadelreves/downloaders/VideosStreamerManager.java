@@ -1,15 +1,11 @@
 package org.example.filmotecadelreves.downloaders;
 
-import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.interactions.Actions;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
 import java.time.Duration;
@@ -26,13 +22,13 @@ import java.util.concurrent.TimeUnit;
  */
 public class VideosStreamerManager {
     private WebDriver driver;
-    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
-    private static final String CHROME_PATH = "Chrome Test/chrome.exe";
+    protected static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
+    protected static final String CHROME_PATH = "Chrome Test/chrome.exe";
 
     // Addon paths
-    private static final String POPUP_BLOCKER_PATH = "lib/PopUp Strict.crx";
-    private static final String ADBLOCK_PATH = "lib/adblock2.crx";
-    private static final String STREAMTAPE_ADDON_PATH = "lib/Streamtape.crx";
+    protected static final String POPUP_BLOCKER_PATH = "lib/PopUp Strict.crx";
+    protected static final String ADBLOCK_PATH = "lib/adblock2.crx";
+    protected static final String STREAMTAPE_ADDON_PATH = "lib/Streamtape.crx";
 
     // Thread to monitor for ESC key
     private Thread escMonitorThread;
@@ -45,15 +41,35 @@ public class VideosStreamerManager {
      * Initializes the VideosStreamerManager with server configurations.
      */
     public VideosStreamerManager() {
+        this(null);
+    }
+
+    /**
+     * Initializes the VideosStreamerManager with custom server configurations.
+     *
+     * @param customServerConfigs Optional list of server configurations. When {@code null},
+     *                            the default configuration set is used.
+     */
+    protected VideosStreamerManager(List<ServerConfig> customServerConfigs) {
         // Set the path to the ChromeDriver
         System.setProperty("webdriver.chrome.driver", getAbsolutePath(CHROME_DRIVER_PATH));
 
-        // Initialize server configurations
-        serverConfigs = new ArrayList<>();
+        if (customServerConfigs != null) {
+            serverConfigs = new ArrayList<>(customServerConfigs);
+        } else {
+            serverConfigs = buildDefaultServerConfigs();
+        }
+    }
+
+    /**
+     * Builds the default list of server configurations.
+     */
+    protected List<ServerConfig> buildDefaultServerConfigs() {
+        List<ServerConfig> configs = new ArrayList<>();
 
         // Configure servers based on requirements
         // powvideo.org (ID: 1)
-        serverConfigs.add(new ServerConfig(
+        configs.add(new ServerConfig(
                 1,
                 "powvideo.org",
                 "powvideo.org",
@@ -63,7 +79,7 @@ public class VideosStreamerManager {
         ));
 
         // streamplay.to (ID: 21)
-        serverConfigs.add(new ServerConfig(
+        configs.add(new ServerConfig(
                 21,
                 "streamplay.to",
                 "streamplay.to",
@@ -73,7 +89,7 @@ public class VideosStreamerManager {
         ));
 
         // streamtape.com (ID: 497)
-        serverConfigs.add(new ServerConfig(
+        configs.add(new ServerConfig(
                 497,
                 "streamtape.com",
                 "streamtape.com",
@@ -83,7 +99,7 @@ public class VideosStreamerManager {
         ));
 
         // mixdrop.bz (ID: 15)
-        serverConfigs.add(new ServerConfig(
+        configs.add(new ServerConfig(
                 15,
                 "mixdrop.bz",
                 "mixdrop.bz",
@@ -93,7 +109,7 @@ public class VideosStreamerManager {
         ));
 
         // vidmoly.me (ID: 3)
-        serverConfigs.add(new ServerConfig(
+        configs.add(new ServerConfig(
                 3,
                 "vidmoly.me",
                 "vidmoly.to",
@@ -103,7 +119,7 @@ public class VideosStreamerManager {
         ));
 
         // Default configuration for other servers
-        serverConfigs.add(new ServerConfig(
+        configs.add(new ServerConfig(
                 -1,
                 "default",
                 "",
@@ -111,6 +127,8 @@ public class VideosStreamerManager {
                 POPUP_BLOCKER_PATH,
                 ADBLOCK_PATH
         ));
+
+        return configs;
     }
 
     /**
@@ -125,13 +143,13 @@ public class VideosStreamerManager {
 
             // Find the appropriate server configuration
             ServerConfig config = findServerConfig(url, serverId);
+            if (config == null) {
+                throw new IllegalStateException("No server configuration available for the requested stream");
+            }
             System.out.println("Using server configuration: " + config.getName());
 
-            // Close any existing Chrome processes
-            closeAllChromeProcesses();
-
-            // Wait a moment to ensure all processes are closed
-            Thread.sleep(1000);
+            // Ensure any previous driver session for this manager is closed before starting a new one
+            closeDriver();
 
             // Configure Chrome options
             ChromeOptions options = setupChromeOptions(config);
@@ -184,8 +202,14 @@ public class VideosStreamerManager {
      * @return The server configuration to use
      */
     private ServerConfig findServerConfig(String url, int serverId) {
+        ServerConfig defaultConfig = null;
+
         // First try to match by server ID
         for (ServerConfig config : serverConfigs) {
+            if (config.getId() == -1) {
+                defaultConfig = config;
+            }
+
             if (config.getId() == serverId) {
                 // Double check URL pattern for extra validation
                 if (config.matchesUrl(url)) {
@@ -196,13 +220,17 @@ public class VideosStreamerManager {
 
         // If no match by ID or URL doesn't match the ID's pattern, try matching by URL
         for (ServerConfig config : serverConfigs) {
-            if (config.matchesUrl(url)) {
+            if (config.getId() != -1 && config.matchesUrl(url)) {
                 return config;
             }
         }
 
-        // If no match found, return default configuration
-        return serverConfigs.get(serverConfigs.size() - 1);
+        // If no match found, return default configuration if available, otherwise fallback to the first config
+        if (defaultConfig != null) {
+            return defaultConfig;
+        }
+
+        return serverConfigs.isEmpty() ? null : serverConfigs.get(0);
     }
 
     /**
@@ -211,11 +239,16 @@ public class VideosStreamerManager {
      * @param config The server configuration
      * @return Configured ChromeOptions
      */
-    private ChromeOptions setupChromeOptions(ServerConfig config) {
+    protected ChromeOptions setupChromeOptions(ServerConfig config) {
         ChromeOptions options = new ChromeOptions();
 
         // Set binary location to our custom Chrome
         options.setBinary(getAbsolutePath(CHROME_PATH));
+
+        // Use a dedicated user data directory per server to avoid interfering with the main browser
+        File userDataDir = ensureUserDataDir(config);
+        options.addArguments("--user-data-dir=" + userDataDir.getAbsolutePath());
+        options.addArguments("--profile-directory=Default");
 
         // Basic configuration to avoid issues
         options.addArguments("--no-sandbox");
@@ -245,12 +278,12 @@ public class VideosStreamerManager {
 
         // Add extensions based on server configuration
         for (String addonPath : config.getAddons()) {
-            File addon = new File(addonPath);
-            if (addon.exists()) {
+            File addon = resolveAddonFile(addonPath);
+            if (addon != null && addon.exists()) {
                 options.addExtensions(addon);
                 System.out.println("Added extension: " + addon.getAbsolutePath());
             } else {
-                System.out.println("Warning: Extension not found at: " + addon.getAbsolutePath());
+                System.out.println("Warning: Extension not found at: " + addonPath);
             }
         }
 
@@ -273,19 +306,6 @@ public class VideosStreamerManager {
             }
         }
         driver.switchTo().window(originalHandle);
-    }
-
-    /**
-     * Closes all Chrome processes before starting a new one.
-     */
-    private void closeAllChromeProcesses() {
-        try {
-            Runtime.getRuntime().exec("taskkill /F /IM chrome.exe");
-            Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe");
-            Thread.sleep(500);
-        } catch (Exception e) {
-            System.err.println("Error killing Chrome processes: " + e.getMessage());
-        }
     }
 
     /**
@@ -349,14 +369,6 @@ public class VideosStreamerManager {
                 // Give it a moment to close
                 Thread.sleep(500);
 
-                // Force kill any remaining Chrome processes on Windows
-                try {
-                    Runtime.getRuntime().exec("taskkill /F /IM chrome.exe");
-                    Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe");
-                } catch (Exception e) {
-                    System.err.println("Error killing Chrome processes: " + e.getMessage());
-                }
-
                 System.out.println("Chrome browser closed successfully");
             } catch (Exception e) {
                 System.err.println("Error closing WebDriver: " + e.getMessage());
@@ -375,5 +387,51 @@ public class VideosStreamerManager {
     private String getAbsolutePath(String relativePath) {
         File file = new File(relativePath);
         return file.getAbsolutePath();
+    }
+
+    /**
+     * Returns {@code true} if this manager has a configuration for the provided server ID.
+     */
+    public boolean handlesServer(int serverId) {
+        return serverConfigs.stream().anyMatch(config -> config.getId() != -1 && config.getId() == serverId);
+    }
+
+    /**
+     * Returns {@code true} if this manager has a configuration that matches the URL.
+     */
+    public boolean handlesUrl(String url) {
+        return serverConfigs.stream().anyMatch(config -> config.getId() != -1 && config.matchesUrl(url));
+    }
+
+    private File ensureUserDataDir(ServerConfig config) {
+        String name = config.getName() == null ? "default" : config.getName();
+        String sanitized = name.replaceAll("[^a-zA-Z0-9-_]", "_");
+        File profileDir = new File("ChromeProfiles" + File.separator + sanitized);
+        if (!profileDir.exists() && !profileDir.mkdirs()) {
+            System.err.println("Unable to create profile directory: " + profileDir.getAbsolutePath());
+        }
+        return profileDir;
+    }
+
+    private File resolveAddonFile(String addonPath) {
+        if (addonPath == null || addonPath.isEmpty()) {
+            return null;
+        }
+
+        File addon = new File(addonPath);
+        if (addon.exists()) {
+            return addon;
+        }
+
+        // Attempt to resolve relative to the working directory for absolute Windows paths when running on Unix-like systems
+        if (addonPath.contains(":")) {
+            String normalizedPath = addonPath.replace("\\", File.separator);
+            addon = new File(normalizedPath);
+            if (addon.exists()) {
+                return addon;
+            }
+        }
+
+        return null;
     }
 }
