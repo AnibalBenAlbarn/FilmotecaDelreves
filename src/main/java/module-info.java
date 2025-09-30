@@ -24,6 +24,7 @@ module org.example.filmotecadelreves {
     requires org.apache.commons.io;
     requires org.seleniumhq.selenium.support;
     requires org.seleniumhq.selenium.chrome_driver;
+    requires org.jsoup;
 
     opens org.example.filmotecadelreves to javafx.fxml;
     opens org.example.filmotecadelreves.UI to javafx.fxml;

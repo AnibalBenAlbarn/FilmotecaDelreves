@@ -1868,7 +1868,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
 
         TableView<TorrentLogEntry> tableView = new TableView<>();
-        tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         tableView.setItems(FXCollections.observableArrayList(entries));
 
         TableColumn<TorrentLogEntry, String> timeColumn = new TableColumn<>("Hora");

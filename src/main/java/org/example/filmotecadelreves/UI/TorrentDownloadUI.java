@@ -736,9 +736,10 @@ public class TorrentDownloadUI {
 
                 if (selectedQuality == null && !qualityOptions.isEmpty()) {
                     selectedQuality = qualityOptions.get(qualityOptions.size() - 1);
+                    ConnectDataBase.Quality finalSelectedQuality = selectedQuality;
                     movie.findTorrentFileByQualityId(selectedQuality.getId())
                             .ifPresent(torrentFile -> {
-                                movie.setQuality(selectedQuality.getQuality());
+                                movie.setQuality(finalSelectedQuality.getQuality());
                                 movie.setTorrentLink(torrentFile.getTorrentLink());
                             });
                 }
