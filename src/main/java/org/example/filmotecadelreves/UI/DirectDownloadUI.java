@@ -2055,8 +2055,7 @@ public class DirectDownloadUI {
             Set<String> languages = new HashSet<>();
 
             for (DirectFile file : files) {
-                // Obtener el idioma del enlace
-                String language = getLanguageFromLink(file.getLink());
+                String language = file.getLanguage();
                 if (language != null && !language.isEmpty()) {
                     languages.add(language);
                 }
@@ -2094,7 +2093,7 @@ public class DirectDownloadUI {
 
             // Contar cuántos enlaces hay para cada servidor con el idioma seleccionado
             for (DirectFile file : files) {
-                String fileLanguage = getLanguageFromLink(file.getLink());
+                String fileLanguage = file.getLanguage();
                 if (language.equals(fileLanguage)) {
                     String server = file.getServer();
                     serverCounts.put(server, serverCounts.getOrDefault(server, 0) + 1);
@@ -2375,42 +2374,6 @@ public class DirectDownloadUI {
     }
 
     /**
-     * Obtiene el idioma de un enlace
-     */
-    private String getLanguageFromLink(String link) {
-        try {
-            // Consultar la base de datos para obtener el idioma de este enlace
-            String query = "SELECT language FROM links_files_download WHERE link = ?";
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setString(1, link);
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    return rs.getString("language");
-                }
-            }
-
-            // Si no se encuentra en la base de datos, usar la lógica de fallback
-            if (link.contains("hqq.tv")) {
-                return "Audio Español";
-            } else if (link.contains("powvideo") && link.contains("mrjazi7gex6o")) {
-                return "Subtítulo Español";
-            } else if (link.contains("powvideo")) {
-                return "Audio Español";
-            } else if (link.contains("streamplay.to")) {
-                return "Audio Latino";
-            } else if (link.contains("vidmoly")) {
-                return "Audio Español";
-            } else {
-                return "Audio Español"; // Default
-            }
-        } catch (Exception e) {
-            System.err.println("Error getting language from link: " + e.getMessage());
-            e.printStackTrace();
-            return "Audio Español"; // Default
-        }
-    }
-
-    /**
      * Verifica si un servidor es compatible para descarga directa
      */
     private boolean isServerCompatible(String server) {
@@ -2443,10 +2406,7 @@ public class DirectDownloadUI {
         try {
             ObservableList<DirectFile> files = getMovieDirectFilesCached(movieId);
             List<DirectFile> filteredFiles = files.stream()
-                    .filter(f -> {
-                        String fileLanguage = getLanguageFromLink(f.getLink());
-                        return f.getServer().equalsIgnoreCase(baseServer) && fileLanguage.equals(language);
-                    })
+                    .filter(f -> f.getServer().equalsIgnoreCase(baseServer) && language.equals(f.getLanguage()))
                     .collect(Collectors.toList());
 
             return (index < filteredFiles.size()) ? filteredFiles.get(index).getLink() : "";
@@ -2763,15 +2723,17 @@ public class DirectDownloadUI {
         private final Integer episodeId;
         private final int qualityId;
         private final String link;
+        private final String language;
         private final String server;
         private final String quality;
 
-        public DirectFile(int id, int fileId, Integer episodeId, int qualityId, String link, String server, String quality) {
+        public DirectFile(int id, int fileId, Integer episodeId, int qualityId, String link, String language, String server, String quality) {
             this.id = id;
             this.fileId = fileId;
             this.episodeId = episodeId;
             this.qualityId = qualityId;
             this.link = link;
+            this.language = language;
             this.server = server;
             this.quality = quality;
         }
@@ -2781,6 +2743,7 @@ public class DirectDownloadUI {
         public Integer getEpisodeId() { return episodeId; }
         public int getQualityId() { return qualityId; }
         public String getLink() { return link; }
+        public String getLanguage() { return language; }
         public String getServer() { return server; }
         public String getQuality() { return quality; }
     }
