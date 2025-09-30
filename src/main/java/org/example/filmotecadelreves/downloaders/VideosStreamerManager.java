@@ -26,8 +26,8 @@ import java.util.concurrent.TimeUnit;
  */
 public class VideosStreamerManager {
     private WebDriver driver;
-    private static final String CHROME_DRIVER_PATH = "lib/chromedriver-win64/chromedriver.exe";
-    private static final String CHROME_PATH = "lib/chrome-win64/chrome.exe";
+    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
+    private static final String CHROME_PATH = "Chrome Test/chrome.exe";
 
     // Addon paths
     private static final String POPUP_BLOCKER_PATH = "lib/PopUp Strict.crx";

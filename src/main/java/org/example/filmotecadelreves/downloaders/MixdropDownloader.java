@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MixdropDownloader implements DirectDownloader {
     // Configuración
-    private static final String CHROME_DRIVER_PATH = "lib/chromedriver-win64/chromedriver.exe";
-    private static final String CHROME_BINARY_PATH = "lib/chrome-win64/chrome.exe";
+    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
+    private static final String CHROME_BINARY_PATH = "Chrome Test/chrome.exe";
     private static final int WAIT_TIME_SECONDS = 10; // Tiempo de espera para Mixdrop
     private static final int MAX_ATTEMPTS = 3;      // Número máximo de intentos
 

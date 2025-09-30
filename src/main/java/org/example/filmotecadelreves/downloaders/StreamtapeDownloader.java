@@ -24,8 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Implementación de descargador para el servidor Streamtape
  */
 public class StreamtapeDownloader implements DirectDownloader {
-    private static final String CHROME_DRIVER_PATH = "lib/chromedriver-win64/chromedriver.exe";
-    private static final String CHROME_PATH = "lib/chrome-win64/chrome.exe";
+    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
+    private static final String CHROME_PATH = "Chrome Test/chrome.exe";
     private static final String EXTENSION_PATH = "lib/Streamtape.crx";
 
     private static final int WAIT_TIME_SECONDS = 5;

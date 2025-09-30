@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Implementación del descargador para el servidor Powvideo
  */
 public class SeleniumPowvideo implements DirectDownloader {
-    private static final String CHROME_DRIVER_PATH = "lib/chromedriver-win64/chromedriver.exe";
-    private static final String CHROME_PATH = "lib/chrome-win64/chrome.exe";
+    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
+    private static final String CHROME_PATH = "Chrome Test/chrome.exe";
     private static final String POPUP_EXTENSION_PATH = "lib/PopUp Strict.crx";
     private static final String NOPECHA_EXTENSION_PATH = "lib/nopecha.crx";
 
