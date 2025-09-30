@@ -11,6 +11,11 @@ import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import org.example.filmotecadelreves.downloaders.streams.DefaultStreamServerHandler;
+import org.example.filmotecadelreves.downloaders.streams.FallbackStreamServerHandler;
+import org.example.filmotecadelreves.downloaders.streams.StreamServerHandler;
+import org.example.filmotecadelreves.downloaders.streams.StreamtapeStreamHandler;
+
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -33,13 +38,17 @@ public class VideosStreamerManager {
     private static final String POPUP_BLOCKER_PATH = "lib/PopUp Strict.crx";
     private static final String ADBLOCK_PATH = "lib/adblock2.crx";
     private static final String STREAMTAPE_ADDON_PATH = "lib/Streamtape.crx";
+    private static final String STREAMTAPE_DOWNLOADER_EXTENSION_PATH =
+            "C:/Users/Anibal/IdeaProjects/FilmotecaDelreves/Extension/StreamtapeDownloader.crx";
+
+    private static final String TEST_PROFILE_DIR = "ChromeProfile";
 
     // Thread to monitor for ESC key
     private Thread escMonitorThread;
     private boolean running = false;
 
-    // List of server configurations
-    private final List<ServerConfig> serverConfigs;
+    private final List<StreamServerHandler> handlers;
+    private final StreamServerHandler fallbackHandler;
 
     /**
      * Initializes the VideosStreamerManager with server configurations.
@@ -48,69 +57,34 @@ public class VideosStreamerManager {
         // Set the path to the ChromeDriver
         System.setProperty("webdriver.chrome.driver", getAbsolutePath(CHROME_DRIVER_PATH));
 
-        // Initialize server configurations
-        serverConfigs = new ArrayList<>();
+        handlers = new ArrayList<>();
 
-        // Configure servers based on requirements
-        // powvideo.org (ID: 1)
-        serverConfigs.add(new ServerConfig(
-                1,
-                "powvideo.org",
-                "powvideo.org",
-                true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
-        ));
+        handlers.add(new DefaultStreamServerHandler(1, "PowVideo",
+                List.of("powvideo.org"),
+                List.of(POPUP_BLOCKER_PATH, ADBLOCK_PATH)));
 
-        // streamplay.to (ID: 21)
-        serverConfigs.add(new ServerConfig(
-                21,
-                "streamplay.to",
-                "streamplay.to",
-                true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
-        ));
+        handlers.add(new DefaultStreamServerHandler(21, "StreamPlay",
+                List.of("streamplay.to"),
+                List.of(POPUP_BLOCKER_PATH, ADBLOCK_PATH)));
 
-        // streamtape.com (ID: 497)
-        serverConfigs.add(new ServerConfig(
-                497,
-                "streamtape.com",
-                "streamtape.com",
-                true,
-                POPUP_BLOCKER_PATH,
-                STREAMTAPE_ADDON_PATH
-        ));
+        handlers.add(new StreamtapeStreamHandler(497, "Streamtape",
+                List.of("streamtape.com", "streamtape.net"),
+                List.of(
+                        POPUP_BLOCKER_PATH,
+                        STREAMTAPE_DOWNLOADER_EXTENSION_PATH,
+                        STREAMTAPE_ADDON_PATH
+                )));
 
-        // mixdrop.bz (ID: 15)
-        serverConfigs.add(new ServerConfig(
-                15,
-                "mixdrop.bz",
-                "mixdrop.bz",
-                true,
-                POPUP_BLOCKER_PATH,
-                STREAMTAPE_ADDON_PATH
-        ));
+        handlers.add(new DefaultStreamServerHandler(15, "Mixdrop",
+                List.of("mixdrop.bz"),
+                List.of(POPUP_BLOCKER_PATH, STREAMTAPE_ADDON_PATH)));
 
-        // vidmoly.me (ID: 3)
-        serverConfigs.add(new ServerConfig(
-                3,
-                "vidmoly.me",
-                "vidmoly.to",
-                true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
-        ));
+        handlers.add(new DefaultStreamServerHandler(3, "Vidmoly",
+                List.of("vidmoly.me", "vidmoly.to"),
+                List.of(POPUP_BLOCKER_PATH, ADBLOCK_PATH)));
 
-        // Default configuration for other servers
-        serverConfigs.add(new ServerConfig(
-                -1,
-                "default",
-                "",
-                true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
-        ));
+        fallbackHandler = new FallbackStreamServerHandler("Default",
+                List.of(POPUP_BLOCKER_PATH, ADBLOCK_PATH));
     }
 
     /**
@@ -123,18 +97,10 @@ public class VideosStreamerManager {
         try {
             System.out.println("Starting video stream for: " + url + " (Server ID: " + serverId + ")");
 
-            // Find the appropriate server configuration
-            ServerConfig config = findServerConfig(url, serverId);
-            System.out.println("Using server configuration: " + config.getName());
+            StreamServerHandler handler = findHandler(url, serverId);
+            System.out.println("Using server handler: " + handler.getName());
 
-            // Close any existing Chrome processes
-            closeAllChromeProcesses();
-
-            // Wait a moment to ensure all processes are closed
-            Thread.sleep(1000);
-
-            // Configure Chrome options
-            ChromeOptions options = setupChromeOptions(config);
+            ChromeOptions options = setupChromeOptions(handler);
 
             // Initialize the WebDriver with our options
             driver = new ChromeDriver(options);
@@ -146,17 +112,19 @@ public class VideosStreamerManager {
             // Wait for extensions to load and close any extension tabs
             handleExtensionTabs();
 
+            handler.onDriverCreated(driver);
+
             // Navigate to the URL
             driver.get(url);
 
             // Wait for the page to load
             Thread.sleep(2000);
 
-            // Enter fullscreen mode if configured
-            if (config.useFullscreen()) {
-                Thread.sleep(2000); // Wait a bit before going fullscreen
-                Actions actions = new Actions(driver);
-                actions.sendKeys(Keys.F11).perform();
+            handler.afterPageLoad(driver);
+
+            if (handler.useBrowserFullscreen()) {
+                Thread.sleep(2000);
+                new Actions(driver).sendKeys(Keys.F11).perform();
                 System.out.println("Entered fullscreen mode");
             }
 
@@ -183,26 +151,17 @@ public class VideosStreamerManager {
      * @param serverId The server ID
      * @return The server configuration to use
      */
-    private ServerConfig findServerConfig(String url, int serverId) {
-        // First try to match by server ID
-        for (ServerConfig config : serverConfigs) {
-            if (config.getId() == serverId) {
-                // Double check URL pattern for extra validation
-                if (config.matchesUrl(url)) {
-                    return config;
+    private StreamServerHandler findHandler(String url, int serverId) {
+        for (StreamServerHandler handler : handlers) {
+            try {
+                if (handler.supports(url, serverId)) {
+                    return handler;
                 }
+            } catch (Exception e) {
+                System.err.println("Error checking handler " + handler.getName() + ": " + e.getMessage());
             }
         }
-
-        // If no match by ID or URL doesn't match the ID's pattern, try matching by URL
-        for (ServerConfig config : serverConfigs) {
-            if (config.matchesUrl(url)) {
-                return config;
-            }
-        }
-
-        // If no match found, return default configuration
-        return serverConfigs.get(serverConfigs.size() - 1);
+        return fallbackHandler;
     }
 
     /**
@@ -211,7 +170,7 @@ public class VideosStreamerManager {
      * @param config The server configuration
      * @return Configured ChromeOptions
      */
-    private ChromeOptions setupChromeOptions(ServerConfig config) {
+    private ChromeOptions setupChromeOptions(StreamServerHandler handler) {
         ChromeOptions options = new ChromeOptions();
 
         // Set binary location to our custom Chrome
@@ -229,6 +188,13 @@ public class VideosStreamerManager {
         options.addArguments("--disable-notifications");
         options.addArguments("--autoplay-policy=no-user-gesture-required");
 
+        // Use dedicated profile to avoid interfering with the user's main Chrome
+        File profileDir = new File(TEST_PROFILE_DIR);
+        if (!profileDir.exists() && !profileDir.mkdirs()) {
+            System.err.println("Unable to create profile directory: " + profileDir.getAbsolutePath());
+        }
+        options.addArguments("--user-data-dir=" + profileDir.getAbsolutePath());
+
         // Configuration to avoid extension installation popups
         Map<String, Object> prefs = new HashMap<>();
         prefs.put("extensions.ui.developer_mode", false);
@@ -243,16 +209,7 @@ public class VideosStreamerManager {
         options.setExperimentalOption("excludeSwitches", Arrays.asList("enable-automation", "enable-logging"));
         options.setExperimentalOption("useAutomationExtension", false);
 
-        // Add extensions based on server configuration
-        for (String addonPath : config.getAddons()) {
-            File addon = new File(addonPath);
-            if (addon.exists()) {
-                options.addExtensions(addon);
-                System.out.println("Added extension: " + addon.getAbsolutePath());
-            } else {
-                System.out.println("Warning: Extension not found at: " + addon.getAbsolutePath());
-            }
-        }
+        handler.configure(options);
 
         return options;
     }
@@ -273,19 +230,6 @@ public class VideosStreamerManager {
             }
         }
         driver.switchTo().window(originalHandle);
-    }
-
-    /**
-     * Closes all Chrome processes before starting a new one.
-     */
-    private void closeAllChromeProcesses() {
-        try {
-            Runtime.getRuntime().exec("taskkill /F /IM chrome.exe");
-            Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe");
-            Thread.sleep(500);
-        } catch (Exception e) {
-            System.err.println("Error killing Chrome processes: " + e.getMessage());
-        }
     }
 
     /**
@@ -348,14 +292,6 @@ public class VideosStreamerManager {
 
                 // Give it a moment to close
                 Thread.sleep(500);
-
-                // Force kill any remaining Chrome processes on Windows
-                try {
-                    Runtime.getRuntime().exec("taskkill /F /IM chrome.exe");
-                    Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe");
-                } catch (Exception e) {
-                    System.err.println("Error killing Chrome processes: " + e.getMessage());
-                }
 
                 System.out.println("Chrome browser closed successfully");
             } catch (Exception e) {
