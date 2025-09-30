@@ -119,6 +119,15 @@ public class DirectDownloadUI {
      */
     private final Map<Integer, Map<String, List<String>>> movieServerCache = new HashMap<>();
 
+    /**
+     * Mantiene una asociación directa entre el nombre mostrado del servidor y el
+     * {@link DirectFile} correspondiente para cada combinación de película e
+     * idioma. Gracias a este mapa podemos recuperar el enlace correcto incluso
+     * cuando un mismo servidor ofrece varios enlaces (enumerados como
+     * "Servidor 1", "Servidor 2", etc.).
+     */
+    private final Map<Integer, Map<String, Map<String, DirectFile>>> movieServerSelectionCache = new HashMap<>();
+
     // ==================== DOWNLOAD STATUS ====================
     private final LongProperty totalBytes = new SimpleLongProperty(0);
     private final LongProperty downloadedBytes = new SimpleLongProperty(0);
@@ -218,6 +227,7 @@ public class DirectDownloadUI {
         movieDirectFilesCache.clear();
         movieLanguageCache.clear();
         movieServerCache.clear();
+        movieServerSelectionCache.clear();
         episodesBySeason.clear();
         filesByEpisode.clear();
         loadInitialData();
@@ -2055,8 +2065,7 @@ public class DirectDownloadUI {
             Set<String> languages = new HashSet<>();
 
             for (DirectFile file : files) {
-                // Obtener el idioma del enlace
-                String language = getLanguageFromLink(file.getLink());
+                String language = file.getLanguage();
                 if (language != null && !language.isEmpty()) {
                     languages.add(language);
                 }
@@ -2090,34 +2099,41 @@ public class DirectDownloadUI {
         // Consultar la base de datos para servidores basados en idioma para esta película
         try {
             ObservableList<DirectFile> files = getMovieDirectFilesCached(movieId);
-            Map<String, Integer> serverCounts = new HashMap<>();
+            Map<String, List<DirectFile>> groupedByServer = new LinkedHashMap<>();
 
-            // Contar cuántos enlaces hay para cada servidor con el idioma seleccionado
+            // Agrupar los enlaces por servidor manteniendo el orden de inserción
             for (DirectFile file : files) {
-                String fileLanguage = getLanguageFromLink(file.getLink());
-                if (language.equals(fileLanguage)) {
-                    String server = file.getServer();
-                    serverCounts.put(server, serverCounts.getOrDefault(server, 0) + 1);
+                if (!language.equals(file.getLanguage())) {
+                    continue;
                 }
+
+                String server = file.getServer();
+                groupedByServer.computeIfAbsent(server, k -> new ArrayList<>()).add(file);
             }
 
-            // Crear lista de servidores con enumeración para duplicados
             List<String> servers = new ArrayList<>();
-            for (Map.Entry<String, Integer> entry : serverCounts.entrySet()) {
-                String server = entry.getKey();
-                int count = entry.getValue();
+            Map<String, DirectFile> serverSelection = new LinkedHashMap<>();
 
-                if (count == 1) {
-                    servers.add(server);
+            for (Map.Entry<String, List<DirectFile>> entry : groupedByServer.entrySet()) {
+                String baseServer = entry.getKey();
+                List<DirectFile> serverFiles = entry.getValue();
+
+                if (serverFiles.size() == 1) {
+                    String displayName = baseServer;
+                    servers.add(displayName);
+                    serverSelection.put(displayName, serverFiles.get(0));
                 } else {
-                    for (int i = 1; i <= count; i++) {
-                        servers.add(server + " " + i);
+                    for (int i = 0; i < serverFiles.size(); i++) {
+                        String displayName = baseServer + " " + (i + 1);
+                        servers.add(displayName);
+                        serverSelection.put(displayName, serverFiles.get(i));
                     }
                 }
             }
 
             // Guardar en caché
             movieServerCache.computeIfAbsent(movieId, k -> new HashMap<>()).put(language, servers);
+            movieServerSelectionCache.computeIfAbsent(movieId, k -> new HashMap<>()).put(language, serverSelection);
             // Retornar el resultado sin imprimir en consola para mejorar rendimiento
             return servers;
         } catch (Exception e) {
@@ -2134,6 +2150,8 @@ public class DirectDownloadUI {
                 fallback = Arrays.asList("streamtape.com 1", "mixdrop.bz 1");
             }
             movieServerCache.computeIfAbsent(movieId, k -> new HashMap<>()).put(language, fallback);
+            Map<String, Map<String, DirectFile>> byLanguage = movieServerSelectionCache.computeIfAbsent(movieId, k -> new HashMap<>());
+            byLanguage.remove(language);
             return fallback;
         }
     }
@@ -2375,42 +2393,6 @@ public class DirectDownloadUI {
     }
 
     /**
-     * Obtiene el idioma de un enlace
-     */
-    private String getLanguageFromLink(String link) {
-        try {
-            // Consultar la base de datos para obtener el idioma de este enlace
-            String query = "SELECT language FROM links_files_download WHERE link = ?";
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setString(1, link);
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    return rs.getString("language");
-                }
-            }
-
-            // Si no se encuentra en la base de datos, usar la lógica de fallback
-            if (link.contains("hqq.tv")) {
-                return "Audio Español";
-            } else if (link.contains("powvideo") && link.contains("mrjazi7gex6o")) {
-                return "Subtítulo Español";
-            } else if (link.contains("powvideo")) {
-                return "Audio Español";
-            } else if (link.contains("streamplay.to")) {
-                return "Audio Latino";
-            } else if (link.contains("vidmoly")) {
-                return "Audio Español";
-            } else {
-                return "Audio Español"; // Default
-            }
-        } catch (Exception e) {
-            System.err.println("Error getting language from link: " + e.getMessage());
-            e.printStackTrace();
-            return "Audio Español"; // Default
-        }
-    }
-
-    /**
      * Verifica si un servidor es compatible para descarga directa
      */
     private boolean isServerCompatible(String server) {
@@ -2441,15 +2423,45 @@ public class DirectDownloadUI {
         int index = parts.length > 1 ? Integer.parseInt(parts[1]) - 1 : 0;
 
         try {
+            Map<String, Map<String, DirectFile>> byLanguage = movieServerSelectionCache.get(movieId);
+            if (byLanguage != null) {
+                Map<String, DirectFile> serverMapping = byLanguage.get(language);
+                if (serverMapping != null) {
+                    DirectFile file = serverMapping.get(serverWithIndex);
+                    if (file == null && index >= 0) {
+                        // Compatibilidad con servidores sin enumeración almacenados
+                        String fallbackKey = baseServer;
+                        if (index > 0) {
+                            fallbackKey = baseServer + " " + (index + 1);
+                        }
+                        file = serverMapping.get(fallbackKey);
+                    }
+                    if (file != null) {
+                        return file.getLink();
+                    }
+                }
+            }
+
             ObservableList<DirectFile> files = getMovieDirectFilesCached(movieId);
             List<DirectFile> filteredFiles = files.stream()
-                    .filter(f -> {
-                        String fileLanguage = getLanguageFromLink(f.getLink());
-                        return f.getServer().equalsIgnoreCase(baseServer) && fileLanguage.equals(language);
-                    })
+                    .filter(f -> f.getServer().equalsIgnoreCase(baseServer) && language.equals(f.getLanguage()))
                     .collect(Collectors.toList());
 
-            return (index < filteredFiles.size()) ? filteredFiles.get(index).getLink() : "";
+            if (!filteredFiles.isEmpty()) {
+                movieServerSelectionCache
+                        .computeIfAbsent(movieId, k -> new HashMap<>())
+                        .computeIfAbsent(language, k -> new LinkedHashMap<>());
+
+                Map<String, DirectFile> mapping = movieServerSelectionCache.get(movieId).get(language);
+                for (int i = 0; i < filteredFiles.size(); i++) {
+                    String displayName = baseServer + (filteredFiles.size() > 1 ? " " + (i + 1) : "");
+                    mapping.put(displayName.trim(), filteredFiles.get(i));
+                }
+
+                return (index < filteredFiles.size()) ? filteredFiles.get(index).getLink() : "";
+            }
+
+            return "";
         } catch (Exception e) {
             System.err.println("Error getting link for server and language: " + e.getMessage());
             e.printStackTrace();
@@ -2763,15 +2775,17 @@ public class DirectDownloadUI {
         private final Integer episodeId;
         private final int qualityId;
         private final String link;
+        private final String language;
         private final String server;
         private final String quality;
 
-        public DirectFile(int id, int fileId, Integer episodeId, int qualityId, String link, String server, String quality) {
+        public DirectFile(int id, int fileId, Integer episodeId, int qualityId, String link, String language, String server, String quality) {
             this.id = id;
             this.fileId = fileId;
             this.episodeId = episodeId;
             this.qualityId = qualityId;
             this.link = link;
+            this.language = language;
             this.server = server;
             this.quality = quality;
         }
@@ -2781,6 +2795,7 @@ public class DirectDownloadUI {
         public Integer getEpisodeId() { return episodeId; }
         public int getQualityId() { return qualityId; }
         public String getLink() { return link; }
+        public String getLanguage() { return language; }
         public String getServer() { return server; }
         public String getQuality() { return quality; }
     }

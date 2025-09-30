@@ -715,7 +715,7 @@ public class ConnectDataBase {
             return directFiles;
         }
 
-        String query = "SELECT l.id, l.movie_id, l.episode_id, l.quality_id, l.link, s.name as server, q.quality " +
+        String query = "SELECT l.id, l.movie_id, l.episode_id, l.quality_id, l.link, l.language, s.name as server, q.quality " +
                 "FROM links_files_download l " +
                 "JOIN qualities q ON l.quality_id = q.quality_id " +
                 "JOIN servers s ON l.server_id = s.id " +
@@ -733,10 +733,11 @@ public class ConnectDataBase {
                     Integer epId = rs.getInt("episode_id");
                     int qualityId = rs.getInt("quality_id");
                     String link = rs.getString("link");
+                    String language = rs.getString("language");
                     String server = rs.getString("server");
                     String quality = rs.getString("quality");
 
-                    directFiles.add(new DirectDownloadUI.DirectFile(id, fileId, epId, qualityId, link, server, quality));
+                    directFiles.add(new DirectDownloadUI.DirectFile(id, fileId, epId, qualityId, link, language, server, quality));
                 }
             }
 
@@ -757,7 +758,7 @@ public class ConnectDataBase {
             return directFiles;
         }
 
-        String query = "SELECT l.id, l.movie_id, l.episode_id, l.quality_id, l.link, s.name as server, q.quality " +
+        String query = "SELECT l.id, l.movie_id, l.episode_id, l.quality_id, l.link, l.language, s.name as server, q.quality " +
                 "FROM links_files_download l " +
                 "JOIN qualities q ON l.quality_id = q.quality_id " +
                 "JOIN servers s ON l.server_id = s.id " +
@@ -775,10 +776,11 @@ public class ConnectDataBase {
                     Integer epId = rs.getObject("episode_id") != null ? rs.getInt("episode_id") : null;
                     int qualityId = rs.getInt("quality_id");
                     String link = rs.getString("link");
+                    String language = rs.getString("language");
                     String server = rs.getString("server");
                     String quality = rs.getString("quality");
 
-                    directFiles.add(new DirectDownloadUI.DirectFile(id, fileId, epId, qualityId, link, server, quality));
+                    directFiles.add(new DirectDownloadUI.DirectFile(id, fileId, epId, qualityId, link, language, server, quality));
                 }
             }
 
