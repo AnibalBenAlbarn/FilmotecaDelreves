@@ -2,41 +2,42 @@ package org.example.filmotecadelreves.downloaders;
 
 import org.example.filmotecadelreves.DirectDownloader;
 import org.example.filmotecadelreves.UI.DescargasUI;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.select.Elements;
 
-import org.openqa.selenium.*;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
-
-import java.awt.Toolkit;
-import java.awt.datatransfer.DataFlavor;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Implementación de descargador para el servidor Streamtape
+ * Implementación de descargador para Streamtape SIN Selenium: resuelve el enlace directo
+ * por scraping con Jsoup y descarga el archivo automáticamente (sin escribir en BD).
  */
 public class StreamtapeDownloader implements DirectDownloader {
-    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
-    private static final String CHROME_PATH = "Chrome Test/chrome.exe";
-    private static final String EXTENSION_PATH = "lib/Streamtape.crx";
 
-    private static final int WAIT_TIME_SECONDS = 5;
-    private static final int MAX_ATTEMPTS = 3;
+    private static final int CONNECT_TIMEOUT_MS = (int) Duration.ofSeconds(15).toMillis();
+    private static final int READ_TIMEOUT_MS = (int) Duration.ofSeconds(60).toMillis();
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
-
-    private WebDriver driver;
-    private WebDriverWait wait;
     private Thread downloadThread;
+
+    // Guarda en memoria el último enlace resuelto (no BD)
+    private volatile String lastResolvedUrl = null;
+
+    public String getLastResolvedUrl() {
+        return lastResolvedUrl;
+    }
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -45,243 +46,208 @@ public class StreamtapeDownloader implements DirectDownloader {
 
         downloadThread = new Thread(() -> {
             try {
-                updateDownloadStatus(directDownload, "Processing", 0, 0, 0, 0);
-                initializeBrowser();
-                String downloadUrl = handleCopyAndGetUrl(videoUrl);
+                updateDownloadStatus(directDownload, "Processing", 0, 0, 0.0, 0);
 
-                if (downloadUrl == null || downloadUrl.isEmpty()) {
-                    updateDownloadStatus(directDownload, "Error", 0, 0, 0, 0);
+                // 1) Resolver URL de descarga directa desde el enlace original (probablemente el de la BD)
+                String downloadUrl = resolveStreamtapeDownloadUrl(videoUrl);
+                if (downloadUrl == null) {
+                    updateDownloadStatus(directDownload, "Error", 0, 0, 0.0, 0);
                     return;
                 }
 
-                System.out.println("Esperando " + WAIT_TIME_SECONDS + " segundos...");
-                for (int i = 0; i < WAIT_TIME_SECONDS; i++) {
-                    if (isCancelled.get()) {
-                        updateDownloadStatus(directDownload, "Cancelled", 0, 0, 0, 0);
-                        return;
-                    }
-                    Thread.sleep(1000);
-                }
+                // Guardar en memoria (campo de instancia)
+                this.lastResolvedUrl = downloadUrl;
 
-                updateDownloadStatus(directDownload, "Downloading", 1, 0, 0, 0);
+                // 3) Preparar nombre de archivo
                 String fileName = directDownload.getName();
+                if (fileName == null || fileName.isBlank()) {
+                    fileName = "streamtape_video";
+                }
                 if (!fileName.toLowerCase().endsWith(".mp4")) {
                     fileName += ".mp4";
                 }
 
+                // 4) Descargar
+                updateDownloadStatus(directDownload, "Downloading", 1, 0, 0.0, 0);
                 downloadWithProgress(downloadUrl, destinationPath, fileName, directDownload);
 
+                if (!isCancelled.get()) {
+                    updateDownloadStatus(directDownload, "Completed", 100, directDownload.getDownloadedBytes(), 0.0, 0);
+                }
+
             } catch (Exception e) {
-                System.err.println("Error en la descarga: " + e.getMessage());
-                updateDownloadStatus(directDownload, "Error", 0, 0, 0, 0);
-            } finally {
-                closeBrowser();
+                e.printStackTrace();
+                updateDownloadStatus(directDownload, "Error", directDownload.getProgress(), directDownload.getDownloadedBytes(), directDownload.getDownloadSpeed(), directDownload.getRemainingTime());
             }
-        });
+        }, "StreamtapeDownloaderThread");
+
         downloadThread.start();
     }
 
-    private void downloadWithProgress(String fileUrl, String outputPath, String fileName, DescargasUI.DirectDownload directDownload) throws Exception {
-        URL url = new URL(fileUrl);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("Referer", "https://streamtape.com/");
-        connection.setRequestProperty("User-Agent", "Mozilla/5.0");
-
-        long fileSize = connection.getContentLengthLong();
-        directDownload.setFileSize(fileSize);
-
-        long startTime = System.currentTimeMillis();
-        File destDir = new File(outputPath);
-        if (!destDir.exists() && !destDir.mkdirs()) {
-            throw new Exception("No se pudo crear el directorio: " + outputPath);
-        }
-
-        File outputFile = new File(destDir, fileName);
-
-        try (InputStream in = connection.getInputStream();
-             FileOutputStream out = new FileOutputStream(outputFile)) {
-
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            long totalRead = 0;
-            long lastUpdateTime = System.currentTimeMillis();
-            long lastDownloadedBytes = 0;
-
-            System.out.println("\nIniciando descarga:");
-            System.out.println("URL: " + fileUrl);
-            System.out.println("Tamaño: " + formatSize(fileSize));
-
-            while ((bytesRead = in.read(buffer)) != -1) {
-                if (isCancelled.get()) {
-                    System.out.println("Descarga cancelada por el usuario");
-                    updateDownloadStatus(directDownload, "Cancelled",
-                            getProgress(totalRead, fileSize), totalRead, 0, 0);
-                    return;
-                }
-
-                while (isPaused.get()) {
-                    Thread.sleep(500);
-                    if (isCancelled.get()) {
-                        System.out.println("Descarga cancelada durante pausa");
-                        updateDownloadStatus(directDownload, "Cancelled",
-                                getProgress(totalRead, fileSize), totalRead, 0, 0);
-                        return;
-                    }
-                }
-
-                out.write(buffer, 0, bytesRead);
-                totalRead += bytesRead;
-
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastUpdateTime >= 1000) {
-                    double elapsedSeconds = (currentTime - lastUpdateTime) / 1000.0;
-                    double bytesPerSecond = (totalRead - lastDownloadedBytes) / elapsedSeconds;
-                    double speedMBps = bytesPerSecond / (1024 * 1024);
-                    long remainingSeconds = (long) ((fileSize - totalRead) / bytesPerSecond);
-
-                    updateDownloadStatus(directDownload, "Downloading",
-                            getProgress(totalRead, fileSize), totalRead, speedMBps, remainingSeconds);
-
-                    lastUpdateTime = currentTime;
-                    lastDownloadedBytes = totalRead;
-                    printProgress(startTime, totalRead, fileSize);
-                }
-            }
-
-            System.out.println("\nDescarga completada con éxito!");
-            updateDownloadStatus(directDownload, "Completed", 100, totalRead, 0, 0);
-
-        } catch (Exception e) {
-            System.err.println("Error en la descarga: " + e.getMessage());
-            updateDownloadStatus(directDownload, "Error",
-                    getProgress(outputFile.length(), fileSize), outputFile.length(), 0, 0);
-            throw e;
-        }
-    }
-
-    private int getProgress(long downloaded, long total) {
-        return (int) ((double) downloaded / total * 100);
-    }
-
-    // Resto de métodos se mantienen igual hasta initializeBrowser()
-
-    private void initializeBrowser() {
-        System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
-        ChromeOptions options = new ChromeOptions();
-        options.setBinary(CHROME_PATH);
-        options.addExtensions(new File(EXTENSION_PATH));
-        options.addArguments(
-                "--disable-notifications",
-                "--window-size=1920,1080",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--remote-allow-origins=*"
-        );
-        driver = new ChromeDriver(options);
-        wait = new WebDriverWait(driver, Duration.ofSeconds(15));
-    }
-
-    private String handleCopyAndGetUrl(String videoUrl) throws Exception {
-        int attempts = 0;
-        String downloadUrl = null;
-
-        while (attempts < MAX_ATTEMPTS && downloadUrl == null) {
-            attempts++;
-            try {
-                driver.get(videoUrl);
-                wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
-                WebElement copyBtn = wait.until(ExpectedConditions.elementToBeClickable(By.id("copyButton")));
-                copyBtn.click();
-
-                try {
-                    Alert alert = wait.until(ExpectedConditions.alertIsPresent());
-                    alert.accept();
-                } catch (TimeoutException e) {
-                    System.out.println("Alerta no detectada");
-                }
-
-                Thread.sleep(1500);
-                downloadUrl = getClipboardContent();
-
-                if (downloadUrl == null || downloadUrl.isEmpty()) {
-                    System.out.println("Intento " + attempts + ": URL no obtenida");
-                    continue;
-                }
-
-                return downloadUrl;
-
-            } catch (Exception e) {
-                System.err.println("Intento " + attempts + " fallido: " + e.getMessage());
-                if (attempts >= MAX_ATTEMPTS) throw e;
-                Thread.sleep(2000);
-            }
-        }
-        return null;
-    }
-
-    private String getClipboardContent() throws Exception {
+    /**
+     * Resuelve el enlace de descarga directa de Streamtape:
+     *  - Normaliza /e/ -> /v/
+     *  - Extrae token de la sección norobot y el host oculto en #ideoooolink
+     */
+    private String resolveStreamtapeDownloadUrl(String link) {
         try {
-            return (String) Toolkit.getDefaultToolkit()
-                    .getSystemClipboard()
-                    .getData(DataFlavor.stringFlavor);
+            if (link == null || link.isBlank()) {
+                return null;
+            }
+
+            if (link.contains("/e/")) {
+                link = link.replace("/e/", "/v/");
+            }
+
+            Document doc = Jsoup.connect(link)
+                    .userAgent("Mozilla/5.0")
+                    .timeout(CONNECT_TIMEOUT_MS)
+                    .get();
+
+            String html = doc.html();
+
+            // document.getElementById('norobotlink').innerHTML = ...
+            Pattern norobotLinkPattern = Pattern.compile("document\\.getElementById\\('norobotlink'\\)\\.innerHTML = (.+?);", Pattern.DOTALL);
+            Matcher norobotLinkMatcher = norobotLinkPattern.matcher(html);
+            if (!norobotLinkMatcher.find()) {
+                return null;
+            }
+            String norobotLinkContent = norobotLinkMatcher.group(1);
+
+            // token=XXXX
+            Pattern tokenPattern = Pattern.compile("token=([^&']+)");
+            Matcher tokenMatcher = tokenPattern.matcher(norobotLinkContent);
+            if (!tokenMatcher.find()) {
+                return null;
+            }
+            String token = tokenMatcher.group(1);
+
+            Elements el = doc.select("div#ideoooolink[style='display:none;']");
+            if (el.isEmpty()) {
+                return null;
+            }
+            String streamHost = Objects.requireNonNull(el.first()).text().trim();
+
+            // Ensamblar URL final
+            String base = "https:/" + streamHost; // streamHost ya contiene una barra inicial
+            return base + "&token=" + token + "&dl=1";
         } catch (Exception e) {
-            System.err.println("Error en portapapeles: " + e.getMessage());
+            System.err.println("Error resolviendo Streamtape: " + e.getMessage());
             return null;
         }
     }
 
-    private void printProgress(long startTime, long downloaded, long total) {
-        long elapsed = System.currentTimeMillis() - startTime;
-        double speed = (downloaded / 1024.0) / (elapsed / 1000.0);
-        double percent = (downloaded * 100.0) / total;
-        long remaining = (long) ((total - downloaded) / (speed * 1024));
+    private void downloadWithProgress(String fileUrl, String outputPath, String fileName, DescargasUI.DirectDownload dd) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(fileUrl).openConnection();
+        connection.setInstanceFollowRedirects(true);
+        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        connection.setReadTimeout(READ_TIMEOUT_MS);
+        connection.setRequestProperty("Referer", "https://streamtape.com/");
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0");
 
-        System.out.printf("\rProgreso: %.2f%% | Velocidad: %.2f MB/s | Tiempo restante: %02d:%02d",
-                percent, speed / 1024, remaining / 60, remaining % 60);
-    }
+        long fileSize = connection.getContentLengthLong();
+        dd.setFileSize(fileSize);
 
-    private String formatSize(long bytes) {
-        if (bytes <= 0) return "0 B";
-        String[] units = {"B", "KB", "MB", "GB"};
-        int digitGroups = (int) (Math.log(bytes) / Math.log(1024));
-        return String.format("%.2f %s", bytes / Math.pow(1024, digitGroups), units[digitGroups]);
-    }
+        File destDir = new File(outputPath);
+        if (!destDir.exists() && !destDir.mkdirs()) {
+            throw new Exception("No se pudo crear el directorio: " + outputPath);
+        }
+        File outputFile = new File(destDir, sanitize(fileName));
 
-    private void closeBrowser() {
-        if (driver != null) {
-            try {
-                driver.quit();
-            } catch (Exception e) {
-                System.err.println("Error cerrando navegador: " + e.getMessage());
+        long lastUpdateTime = System.currentTimeMillis();
+        long lastDownloadedBytes = 0L;
+
+        try (InputStream in = connection.getInputStream();
+             FileOutputStream out = new FileOutputStream(outputFile)) {
+
+            byte[] buf = new byte[8192];
+            int n;
+            long totalRead = 0L;
+
+            while ((n = in.read(buf)) != -1) {
+                if (isCancelled.get()) {
+                    updateDownloadStatus(dd, "Cancelled", dd.getProgress(), dd.getDownloadedBytes(), 0.0, dd.getRemainingTime());
+                    return;
+                }
+                while (isPaused.get()) {
+                    Thread.sleep(200);
+                    if (isCancelled.get()) {
+                        updateDownloadStatus(dd, "Cancelled", dd.getProgress(), dd.getDownloadedBytes(), 0.0, dd.getRemainingTime());
+                        return;
+                    }
+                }
+
+                out.write(buf, 0, n);
+                totalRead += n;
+                dd.setDownloadedBytes(totalRead);
+
+                long now = System.currentTimeMillis();
+                if (now - lastUpdateTime >= 500) {
+                    long deltaBytes = totalRead - lastDownloadedBytes;
+                    long elapsedMs = now - lastUpdateTime;
+                    long speedBps = elapsedMs > 0 ? (deltaBytes * 1000) / elapsedMs : 0;
+                    int progress = fileSize > 0 ? (int) Math.min(100, (totalRead * 100 / fileSize)) : dd.getProgress();
+                    long remainingSeconds = (speedBps > 0 && fileSize > 0)
+                            ? Math.max(0, (fileSize - totalRead) / speedBps)
+                            : dd.getRemainingTime();
+                    updateDownloadStatus(dd, "Downloading", progress, totalRead, bytesPerSecondToMBps(speedBps), remainingSeconds);
+                    lastUpdateTime = now;
+                    lastDownloadedBytes = totalRead;
+                }
             }
-            driver = null;
+
+            dd.setDownloadedBytes(totalRead);
+            updateDownloadStatus(dd, "Completed", 100, totalRead, 0.0, 0);
+        } finally {
+            connection.disconnect();
         }
     }
 
-    private void updateDownloadStatus(DescargasUI.DirectDownload download, String status, int progress,
-                                      long downloadedBytes, double speed, long remainingTime) {
+    private String sanitize(String name) {
+        String cleaned = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        // Evitar nombres problemáticos en Windows
+        if (cleaned.matches("(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])$")) {
+            cleaned = "_" + cleaned;
+        }
+        return new String(cleaned.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+    }
+
+    private double bytesPerSecondToMBps(long bytesPerSecond) {
+        return bytesPerSecond / (1024.0 * 1024.0);
+    }
+
+    private void updateDownloadStatus(DescargasUI.DirectDownload download, String status,
+                                      int progress, long downloadedBytes, double speedMBps, long remainingSeconds) {
         CompletableFuture.runAsync(() -> {
-            download.setStatus(status);
-            download.setProgress(progress);
-            download.setDownloadedBytes(downloadedBytes);
-            download.setDownloadSpeed(speed);
-            download.setRemainingTime(remainingTime);
+            try {
+                download.setStatus(status);
+                if (progress >= 0) {
+                    download.setProgress(progress);
+                }
+                if (downloadedBytes >= 0) {
+                    download.setDownloadedBytes(downloadedBytes);
+                }
+                if (speedMBps >= 0) {
+                    download.setDownloadSpeed(speedMBps);
+                }
+                if (remainingSeconds >= 0) {
+                    download.setRemainingTime(remainingSeconds);
+                }
+            } catch (Exception ignored) {
+            }
         });
     }
 
     @Override
     public void pauseDownload(DescargasUI.DirectDownload download) {
         isPaused.set(true);
-        updateDownloadStatus(download, "Paused", download.getProgress(),
-                download.getDownloadedBytes(), 0, download.getRemainingTime());
+        updateDownloadStatus(download, "Paused", download.getProgress(), download.getDownloadedBytes(), 0.0, download.getRemainingTime());
     }
 
     @Override
     public void resumeDownload(DescargasUI.DirectDownload download) {
         isPaused.set(false);
-        updateDownloadStatus(download, "Downloading", download.getProgress(),
-                download.getDownloadedBytes(), download.getDownloadSpeed(), download.getRemainingTime());
+        updateDownloadStatus(download, "Downloading", download.getProgress(), download.getDownloadedBytes(), download.getDownloadSpeed(), download.getRemainingTime());
     }
 
     @Override
@@ -290,17 +256,16 @@ public class StreamtapeDownloader implements DirectDownloader {
         if (downloadThread != null && downloadThread.isAlive()) {
             downloadThread.interrupt();
         }
-        updateDownloadStatus(download, "Cancelled", download.getProgress(),
-                download.getDownloadedBytes(), 0, 0);
+        updateDownloadStatus(download, "Cancelled", download.getProgress(), download.getDownloadedBytes(), 0.0, download.getRemainingTime());
     }
 
     @Override
     public boolean isAvailable(String url) {
         try {
-            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setRequestMethod("HEAD");
-            connection.setConnectTimeout(5000);
-            return connection.getResponseCode() == HttpURLConnection.HTTP_OK;
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("HEAD");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
         } catch (Exception e) {
             System.err.println("Error verificando disponibilidad: " + e.getMessage());
             return false;
