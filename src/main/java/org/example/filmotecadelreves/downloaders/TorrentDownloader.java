@@ -1,23 +1,8 @@
 package org.example.filmotecadelreves.downloaders;
 
+import com.frostwire.jlibtorrent.*;
 import org.example.filmotecadelreves.moviesad.TorrentState;
 
-import com.frostwire.jlibtorrent.AddTorrentParams;
-import com.frostwire.jlibtorrent.AlertListener;
-import com.frostwire.jlibtorrent.AnnounceEntry;
-import com.frostwire.jlibtorrent.FileStorage;
-import com.frostwire.jlibtorrent.SessionHandle;
-import com.frostwire.jlibtorrent.SessionManager;
-import com.frostwire.jlibtorrent.SessionParams;
-import com.frostwire.jlibtorrent.SessionStats;
-import com.frostwire.jlibtorrent.SettingsPack;
-import com.frostwire.jlibtorrent.Sha1Hash;
-import com.frostwire.jlibtorrent.PeerInfo;
-import com.frostwire.jlibtorrent.TcpEndpoint;
-import com.frostwire.jlibtorrent.TorrentHandle;
-import com.frostwire.jlibtorrent.TorrentFlags;
-import com.frostwire.jlibtorrent.TorrentInfo;
-import com.frostwire.jlibtorrent.TorrentStatus;
 import com.frostwire.jlibtorrent.alerts.Alert;
 import com.frostwire.jlibtorrent.alerts.MetadataReceivedAlert;
 import com.frostwire.jlibtorrent.alerts.StateChangedAlert;
