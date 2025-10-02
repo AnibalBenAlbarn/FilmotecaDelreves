@@ -1,11 +1,9 @@
 package org.example.filmotecadelreves.downloaders;
 
 import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.interactions.Actions;
 
 import java.io.File;
 import java.io.IOException;
@@ -216,14 +214,6 @@ public class VideosStreamerManager {
             // Wait for the page to load
             Thread.sleep(2000);
 
-            // Enter fullscreen mode if configured
-            if (config.useFullscreen()) {
-                Thread.sleep(2000); // Wait a bit before going fullscreen
-                Actions actions = new Actions(driver);
-                actions.sendKeys(Keys.F11).perform();
-                System.out.println("Entered fullscreen mode");
-            }
-
             System.out.println("Stream started successfully");
             System.out.println("Press ESC to close the browser");
 
@@ -304,7 +294,6 @@ public class VideosStreamerManager {
         options.addArguments("--disable-features=IsolateOrigins,site-per-process");
 
         options.addArguments("--disable-dev-shm-usage");
-        options.addArguments("--start-maximized");
         options.addArguments("--disable-notifications");
         options.addArguments("--autoplay-policy=no-user-gesture-required");
 
