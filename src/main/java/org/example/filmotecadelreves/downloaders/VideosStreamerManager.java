@@ -8,12 +8,14 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.interactions.Actions;
 
 import java.io.File;
-import java.time.Duration;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -277,14 +279,47 @@ public class VideosStreamerManager {
         options.setExperimentalOption("useAutomationExtension", false);
 
         // Add extensions based on server configuration
+        Set<String> packagedExtensions = new LinkedHashSet<>();
+        Set<String> unpackedExtensions = new LinkedHashSet<>();
+
         for (String addonPath : config.getAddons()) {
+            if (addonPath == null || addonPath.isEmpty()) {
+                continue;
+            }
+
             File addon = resolveAddonFile(addonPath);
             if (addon != null && addon.exists()) {
-                options.addExtensions(addon);
-                System.out.println("Added extension: " + addon.getAbsolutePath());
+                File canonicalAddon = toCanonicalFile(addon);
+                String canonicalPath = canonicalAddon.getAbsolutePath();
+
+                if (canonicalAddon.isDirectory()) {
+                    if (!unpackedExtensions.add(canonicalPath)) {
+                        System.out.println("Skipping duplicate unpacked extension: " + canonicalPath);
+                    }
+                } else {
+                    if (!packagedExtensions.add(canonicalPath)) {
+                        System.out.println("Skipping duplicate extension: " + canonicalPath);
+                    }
+                }
             } else {
                 System.out.println("Warning: Extension not found at: " + addonPath);
             }
+        }
+
+        for (String extensionPath : packagedExtensions) {
+            options.addExtensions(new File(extensionPath));
+            System.out.println("Added extension: " + extensionPath);
+        }
+
+        if (!unpackedExtensions.isEmpty()) {
+            options.addArguments("--load-extension=" + String.join(",", unpackedExtensions));
+            for (String extensionPath : unpackedExtensions) {
+                System.out.println("Added unpacked extension: " + extensionPath);
+            }
+        }
+
+        if (packagedExtensions.isEmpty() && unpackedExtensions.isEmpty()) {
+            System.out.println("No extensions were loaded for this configuration.");
         }
 
         return options;
@@ -411,6 +446,14 @@ public class VideosStreamerManager {
             System.err.println("Unable to create profile directory: " + profileDir.getAbsolutePath());
         }
         return profileDir;
+    }
+
+    private File toCanonicalFile(File addon) {
+        try {
+            return addon.getCanonicalFile();
+        } catch (IOException e) {
+            return addon.getAbsoluteFile();
+        }
     }
 
     private File resolveAddonFile(String addonPath) {

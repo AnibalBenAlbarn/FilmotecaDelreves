@@ -1,5 +1,6 @@
 package org.example.filmotecadelreves.downloaders;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,8 +15,12 @@ import java.util.List;
 public class StreamtapeStreamManager extends VideosStreamerManager {
 
     private static final String STREAMTAPE_EXTENSION_WINDOWS =
-            "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\StreamtapeDownloader.crx";
+            "C\\\\Users\\\\Anibal\\\\IdeaProjects\\\\FilmotecaDelreves\\\\Extension\\\\StreamtapeDownloader.crx";
     private static final String STREAMTAPE_EXTENSION_RELATIVE = "Extension/StreamtapeDownloader.crx";
+    private static final String[] STREAMTAPE_EXTENSION_UNPACKED_CANDIDATES = {
+            "Extension/streamtape-extension-master",
+            "Extension/StreamtapeDownloader"
+    };
 
     public StreamtapeStreamManager() {
         super(createConfigs());
@@ -24,10 +29,7 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
     private static List<ServerConfig> createConfigs() {
         List<ServerConfig> configs = new ArrayList<>();
 
-        List<String> addons = new ArrayList<>();
-        addons.add(POPUP_BLOCKER_PATH);
-        addons.add(STREAMTAPE_EXTENSION_WINDOWS);
-        addons.add(STREAMTAPE_EXTENSION_RELATIVE);
+        List<String> addons = buildStreamtapeAddons();
 
         configs.add(new ServerConfig(
                 497,
@@ -38,5 +40,50 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
         ));
 
         return configs;
+    }
+
+    private static List<String> buildStreamtapeAddons() {
+        List<String> addons = new ArrayList<>();
+
+        boolean hasUnpacked = false;
+        for (String candidate : STREAMTAPE_EXTENSION_UNPACKED_CANDIDATES) {
+            File unpackedDir = new File(candidate);
+            if (unpackedDir.isDirectory()) {
+                addons.add(candidate);
+                hasUnpacked = true;
+            }
+        }
+
+        if (hasUnpacked) {
+            addIfExists(addons, STREAMTAPE_EXTENSION_WINDOWS);
+        } else {
+            boolean packagedFound = addIfExists(addons, STREAMTAPE_EXTENSION_RELATIVE)
+                    | addIfExists(addons, STREAMTAPE_EXTENSION_WINDOWS);
+
+            if (!packagedFound) {
+                // Keep the relative path as a fallback to show a clear warning when missing.
+                addons.add(STREAMTAPE_EXTENSION_RELATIVE);
+            }
+        }
+
+        if (addons.isEmpty()) {
+            addons.add(STREAMTAPE_EXTENSION_RELATIVE);
+        }
+
+        return addons;
+    }
+
+    private static boolean addIfExists(List<String> addons, String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+
+        File candidate = new File(path);
+        if (candidate.exists()) {
+            addons.add(path);
+            return true;
+        }
+
+        return false;
     }
 }
