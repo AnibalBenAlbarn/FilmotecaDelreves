@@ -14,14 +14,6 @@ import java.util.List;
  */
 public class StreamtapeStreamManager extends VideosStreamerManager {
 
-    private static final String STREAMTAPE_EXTENSION_WINDOWS =
-            "C\\\\Users\\\\Anibal\\\\IdeaProjects\\\\FilmotecaDelreves\\\\Extension\\\\StreamtapeDownloader.crx";
-    private static final String STREAMTAPE_EXTENSION_RELATIVE = "Extension/StreamtapeDownloader.crx";
-    private static final String[] STREAMTAPE_EXTENSION_UNPACKED_CANDIDATES = {
-            "Extension/streamtape-extension-master",
-            "Extension/StreamtapeDownloader"
-    };
-
     public StreamtapeStreamManager() {
         super(createConfigs());
     }
@@ -46,7 +38,7 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
         List<String> addons = new ArrayList<>();
 
         boolean hasUnpacked = false;
-        for (String candidate : STREAMTAPE_EXTENSION_UNPACKED_CANDIDATES) {
+        for (String candidate : getStreamtapeUnpackedCandidates()) {
             File unpackedDir = new File(candidate);
             if (unpackedDir.isDirectory()) {
                 addons.add(candidate);
@@ -55,10 +47,14 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
         }
 
         if (hasUnpacked) {
-            addIfExists(addons, STREAMTAPE_EXTENSION_WINDOWS);
+            for (String candidate : getStreamtapePackagedCandidates()) {
+                addIfExists(addons, candidate);
+            }
         } else {
-            boolean packagedFound = addIfExists(addons, STREAMTAPE_EXTENSION_RELATIVE)
-                    | addIfExists(addons, STREAMTAPE_EXTENSION_WINDOWS);
+            boolean packagedFound = false;
+            for (String candidate : getStreamtapePackagedCandidates()) {
+                packagedFound = addIfExists(addons, candidate) | packagedFound;
+            }
 
             if (!packagedFound) {
                 // Keep the relative path as a fallback to show a clear warning when missing.

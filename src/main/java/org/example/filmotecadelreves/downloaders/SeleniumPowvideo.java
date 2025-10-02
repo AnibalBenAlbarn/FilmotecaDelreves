@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class SeleniumPowvideo implements DirectDownloader {
     private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
     private static final String CHROME_PATH = "Chrome Test/chrome.exe";
-    private static final String POPUP_EXTENSION_PATH = "lib/PopUp Strict.crx";
     private static final String NOPECHA_EXTENSION_PATH = "lib/nopecha.crx";
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
@@ -247,7 +246,9 @@ public class SeleniumPowvideo implements DirectDownloader {
         options.setBinary(CHROME_PATH);
 
         // Cargar extensiones
-        options.addExtensions(new File(POPUP_EXTENSION_PATH));
+        if (!addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates())) {
+            System.out.println("Advertencia: no se pudo cargar la extensión de bloqueo de popups para Powvideo.");
+        }
 
         // Solo cargar la extensión NoPecha si no se requiere interacción del usuario
         if (!userInteraction) {
@@ -268,6 +269,43 @@ public class SeleniumPowvideo implements DirectDownloader {
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+    }
+
+    private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
+        if (candidates == null) {
+            return false;
+        }
+
+        for (String candidate : candidates) {
+            File addon = resolveAddonFile(candidate);
+            if (addon != null && addon.exists() && addon.isFile()) {
+                options.addExtensions(addon);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private File resolveAddonFile(String addonPath) {
+        if (addonPath == null || addonPath.isEmpty()) {
+            return null;
+        }
+
+        File addon = new File(addonPath);
+        if (addon.exists()) {
+            return addon;
+        }
+
+        if (addonPath.contains(":")) {
+            String normalized = addonPath.replace("\\", File.separator);
+            addon = new File(normalized);
+            if (addon.exists()) {
+                return addon;
+            }
+        }
+
+        return null;
     }
 
     /**
