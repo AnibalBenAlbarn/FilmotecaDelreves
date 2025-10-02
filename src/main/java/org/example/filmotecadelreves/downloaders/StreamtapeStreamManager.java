@@ -37,11 +37,22 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
     private static List<String> buildStreamtapeAddons() {
         List<String> addons = new ArrayList<>();
 
+        boolean popupFound = false;
+        for (String candidate : getPopupExtensionCandidates()) {
+            popupFound = addIfExists(addons, candidate) | popupFound;
+        }
+        if (!popupFound) {
+            addIfMissing(addons, POPUP_EXTENSION_RELATIVE);
+        }
+
         boolean hasUnpacked = false;
         for (String candidate : getStreamtapeUnpackedCandidates()) {
             File unpackedDir = new File(candidate);
             if (unpackedDir.isDirectory()) {
-                addons.add(candidate);
+                String absolutePath = unpackedDir.getAbsolutePath();
+                if (!addons.contains(absolutePath)) {
+                    addons.add(absolutePath);
+                }
                 hasUnpacked = true;
             }
         }
@@ -58,12 +69,12 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
 
             if (!packagedFound) {
                 // Keep the relative path as a fallback to show a clear warning when missing.
-                addons.add(STREAMTAPE_EXTENSION_RELATIVE);
+                addIfMissing(addons, STREAMTAPE_EXTENSION_RELATIVE);
             }
         }
 
         if (addons.isEmpty()) {
-            addons.add(STREAMTAPE_EXTENSION_RELATIVE);
+            addIfMissing(addons, STREAMTAPE_EXTENSION_RELATIVE);
         }
 
         return addons;
@@ -76,10 +87,22 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
 
         File candidate = new File(path);
         if (candidate.exists()) {
-            addons.add(path);
+            if (!addons.contains(path)) {
+                addons.add(path);
+            }
             return true;
         }
 
         return false;
+    }
+
+    private static void addIfMissing(List<String> addons, String path) {
+        if (path == null || path.isEmpty()) {
+            return;
+        }
+
+        if (!addons.contains(path)) {
+            addons.add(path);
+        }
     }
 }
