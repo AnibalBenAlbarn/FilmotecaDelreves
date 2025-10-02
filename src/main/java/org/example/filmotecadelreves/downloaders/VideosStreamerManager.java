@@ -28,9 +28,32 @@ public class VideosStreamerManager {
     protected static final String CHROME_PATH = "Chrome Test/chrome.exe";
 
     // Addon paths
-    protected static final String POPUP_BLOCKER_PATH = "lib/PopUp Strict.crx";
+    protected static final String POPUP_EXTENSION_RELATIVE = "Extension/PopUpStrictOld.crx";
+    protected static final String POPUP_EXTENSION_WINDOWS =
+            "C\\\\Users\\\\Anibal\\\\IdeaProjects\\\\FilmotecaDelreves\\\\Extension\\\\PopUpStrictOld.crx";
+    protected static final String POPUP_EXTENSION_LEGACY = "lib/PopUp Strict.crx";
+    protected static final String[] POPUP_EXTENSION_CANDIDATES = {
+            POPUP_EXTENSION_RELATIVE,
+            POPUP_EXTENSION_WINDOWS,
+            POPUP_EXTENSION_LEGACY
+    };
+
+    protected static final String STREAMTAPE_EXTENSION_RELATIVE = "Extension/StreamtapeDownloader.crx";
+    protected static final String STREAMTAPE_EXTENSION_WINDOWS =
+            "C\\\\Users\\\\Anibal\\\\IdeaProjects\\\\FilmotecaDelreves\\\\Extension\\\\StreamtapeDownloader.crx";
+    protected static final String STREAMTAPE_EXTENSION_LEGACY = "lib/Streamtape.crx";
+    protected static final String[] STREAMTAPE_PACKAGED_CANDIDATES = {
+            STREAMTAPE_EXTENSION_RELATIVE,
+            STREAMTAPE_EXTENSION_WINDOWS,
+            STREAMTAPE_EXTENSION_LEGACY
+    };
+
+    protected static final String[] STREAMTAPE_UNPACKED_CANDIDATES = {
+            "Extension/streamtape-extension-master",
+            "Extension/StreamtapeDownloader"
+    };
+
     protected static final String ADBLOCK_PATH = "lib/adblock2.crx";
-    protected static final String STREAMTAPE_ADDON_PATH = "lib/Streamtape.crx";
 
     // Thread to monitor for ESC key
     private Thread escMonitorThread;
@@ -63,6 +86,33 @@ public class VideosStreamerManager {
         }
     }
 
+    protected static String[] getPopupExtensionCandidates() {
+        return POPUP_EXTENSION_CANDIDATES.clone();
+    }
+
+    protected static String[] getStreamtapePackagedCandidates() {
+        return STREAMTAPE_PACKAGED_CANDIDATES.clone();
+    }
+
+    protected static String[] getStreamtapeUnpackedCandidates() {
+        return STREAMTAPE_UNPACKED_CANDIDATES.clone();
+    }
+
+    private String[] buildAddonList(boolean includeAdblock, boolean includeStreamtape) {
+        List<String> addons = new ArrayList<>();
+        addons.addAll(Arrays.asList(getPopupExtensionCandidates()));
+
+        if (includeAdblock) {
+            addons.add(ADBLOCK_PATH);
+        }
+
+        if (includeStreamtape) {
+            addons.addAll(Arrays.asList(getStreamtapePackagedCandidates()));
+        }
+
+        return addons.toArray(new String[0]);
+    }
+
     /**
      * Builds the default list of server configurations.
      */
@@ -76,8 +126,7 @@ public class VideosStreamerManager {
                 "powvideo.org",
                 "powvideo.org",
                 true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
+                buildAddonList(true, false)
         ));
 
         // streamplay.to (ID: 21)
@@ -86,8 +135,7 @@ public class VideosStreamerManager {
                 "streamplay.to",
                 "streamplay.to",
                 true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
+                buildAddonList(true, false)
         ));
 
         // streamtape.com (ID: 497)
@@ -96,8 +144,7 @@ public class VideosStreamerManager {
                 "streamtape.com",
                 "streamtape.com",
                 true,
-                POPUP_BLOCKER_PATH,
-                STREAMTAPE_ADDON_PATH
+                buildAddonList(false, true)
         ));
 
         // mixdrop.bz (ID: 15)
@@ -106,8 +153,7 @@ public class VideosStreamerManager {
                 "mixdrop.bz",
                 "mixdrop.bz",
                 true,
-                POPUP_BLOCKER_PATH,
-                STREAMTAPE_ADDON_PATH
+                buildAddonList(false, true)
         ));
 
         // vidmoly.me (ID: 3)
@@ -116,8 +162,7 @@ public class VideosStreamerManager {
                 "vidmoly.me",
                 "vidmoly.to",
                 true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
+                buildAddonList(true, false)
         ));
 
         // Default configuration for other servers
@@ -126,8 +171,7 @@ public class VideosStreamerManager {
                 "default",
                 "",
                 true,
-                POPUP_BLOCKER_PATH,
-                ADBLOCK_PATH
+                buildAddonList(true, false)
         ));
 
         return configs;
