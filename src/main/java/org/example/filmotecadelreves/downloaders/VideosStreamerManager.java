@@ -208,8 +208,18 @@ public class VideosStreamerManager {
             // Wait for extensions to load and close any extension tabs
             handleExtensionTabs();
 
+            // Allow subclasses to adjust the URL when required by a specific server
+            String preparedUrl = prepareUrlForStreaming(url, config);
+            if (preparedUrl == null || preparedUrl.isBlank()) {
+                preparedUrl = url;
+            }
+
+            if (preparedUrl == null || preparedUrl.isBlank()) {
+                throw new IllegalArgumentException("No valid URL provided for streaming");
+            }
+
             // Navigate to the URL
-            driver.get(url);
+            driver.get(preparedUrl);
 
             // Wait for the page to load
             Thread.sleep(2000);
@@ -476,6 +486,17 @@ public class VideosStreamerManager {
      */
     public boolean handlesUrl(String url) {
         return serverConfigs.stream().anyMatch(config -> config.getId() != -1 && config.matchesUrl(url));
+    }
+
+    /**
+     * Gives subclasses a chance to tweak the URL before it is opened in the browser.
+     *
+     * <p>The base implementation simply returns the original value. Subclasses can override
+     * this method to apply provider-specific normalisation without having to reimplement the
+     * whole streaming logic.</p>
+     */
+    protected String prepareUrlForStreaming(String url, ServerConfig config) {
+        return url;
     }
 
     private File ensureUserDataDir(ServerConfig config) {

@@ -18,6 +18,32 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
         super(createConfigs());
     }
 
+    @Override
+    protected String prepareUrlForStreaming(String url, ServerConfig config) {
+        String prepared = super.prepareUrlForStreaming(url, config);
+        if (prepared == null) {
+            return null;
+        }
+
+        boolean isStreamtapeConfig = false;
+        if (config != null) {
+            String pattern = config.getUrlPattern();
+            if (pattern != null) {
+                isStreamtapeConfig = pattern.toLowerCase().contains("streamtape");
+            }
+        }
+
+        if (!isStreamtapeConfig && !prepared.toLowerCase().contains("streamtape")) {
+            return prepared;
+        }
+
+        if (prepared.contains("/e/")) {
+            return prepared.replace("/e/", "/v/");
+        }
+
+        return prepared;
+    }
+
     private static List<ServerConfig> createConfigs() {
         List<ServerConfig> configs = new ArrayList<>();
 
