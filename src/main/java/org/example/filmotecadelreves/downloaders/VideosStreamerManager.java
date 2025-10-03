@@ -28,13 +28,16 @@ public class VideosStreamerManager {
     protected static final String CHROME_PATH = buildRelativePath("chrome-win", "chrome.exe");
 
     // Addon paths
-    private static final String POPUP_EXTENSION = buildRelativePath("Extension", "PopUpStrictOld.crx");
+    protected static final String POPUP_EXTENSION_RELATIVE = buildRelativePath("Extension", "PopUpStrictOld.crx");
+    private static final String POPUP_EXTENSION = POPUP_EXTENSION_RELATIVE;
+
     protected static final String[] POPUP_EXTENSION_CANDIDATES = {
             POPUP_EXTENSION,
             "lib/PopUp Strict.crx"
     };
 
-    private static final String STREAMTAPE_EXTENSION = buildRelativePath("Extension", "StreamtapeDownloader.crx");
+    protected static final String STREAMTAPE_EXTENSION_RELATIVE = buildRelativePath("Extension", "StreamtapeDownloader.crx");
+    private static final String STREAMTAPE_EXTENSION = STREAMTAPE_EXTENSION_RELATIVE;
     protected static final String[] STREAMTAPE_PACKAGED_CANDIDATES = {
             STREAMTAPE_EXTENSION,
             "lib/Streamtape.crx"
