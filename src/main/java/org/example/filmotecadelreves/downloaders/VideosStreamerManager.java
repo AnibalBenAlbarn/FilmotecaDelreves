@@ -30,6 +30,7 @@ public class VideosStreamerManager {
     // Addon paths
     protected static final String POPUP_EXTENSION_RELATIVE = buildRelativePath("Extension", "PopUpStrictOld.crx");
     private static final String POPUP_EXTENSION = POPUP_EXTENSION_RELATIVE;
+
     protected static final String[] POPUP_EXTENSION_CANDIDATES = {
             POPUP_EXTENSION,
             "lib/PopUp Strict.crx"
