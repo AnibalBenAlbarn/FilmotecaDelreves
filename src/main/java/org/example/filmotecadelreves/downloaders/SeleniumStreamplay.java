@@ -16,6 +16,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -25,8 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Implementación de descargador para el servidor Streamplay
  */
 public class SeleniumStreamplay implements DirectDownloader {
-    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
-    private static final String CHROME_PATH = "Chrome Test/chrome.exe";
+    private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
+    private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final String NOPECHA_EXTENSION_PATH = "lib/nopecha.crx";
 
     private static final int WAIT_TIME_SECONDS = 2; // Tiempo de espera para Streamplay
@@ -490,5 +492,13 @@ public class SeleniumStreamplay implements DirectDownloader {
      */
     private void updateDownloadStatus(DescargasUI.DirectDownload download, String status, int progress) {
         updateDownloadStatus(download, status, progress, 0, 0, 0);
+    }
+
+    private static String resolvePath(String first, String... more) {
+        Path path = Paths.get(first, more);
+        if (!path.isAbsolute()) {
+            path = Paths.get(System.getProperty("user.dir")).resolve(path).normalize();
+        }
+        return path.toAbsolutePath().toString();
     }
 }

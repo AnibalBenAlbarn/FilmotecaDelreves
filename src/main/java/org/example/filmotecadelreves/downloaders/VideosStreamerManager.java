@@ -7,6 +7,8 @@ import org.openqa.selenium.chrome.ChromeOptions;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,28 +24,20 @@ import java.util.concurrent.TimeUnit;
  */
 public class VideosStreamerManager {
     private WebDriver driver;
-    protected static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
-    protected static final String CHROME_PATH = "Chrome Test/chrome.exe";
+    protected static final String CHROME_DRIVER_PATH = buildRelativePath("ChromeDriver", "chromedriver.exe");
+    protected static final String CHROME_PATH = buildRelativePath("chrome-win", "chrome.exe");
 
     // Addon paths
-    protected static final String POPUP_EXTENSION_RELATIVE = "Extension/PopUpStrictOld.crx";
-    protected static final String POPUP_EXTENSION_WINDOWS =
-            "C\\\\Users\\\\Anibal\\\\IdeaProjects\\\\FilmotecaDelreves\\\\Extension\\\\PopUpStrictOld.crx";
-    protected static final String POPUP_EXTENSION_LEGACY = "lib/PopUp Strict.crx";
+    private static final String POPUP_EXTENSION = buildRelativePath("Extension", "PopUpStrictOld.crx");
     protected static final String[] POPUP_EXTENSION_CANDIDATES = {
-            POPUP_EXTENSION_RELATIVE,
-            POPUP_EXTENSION_WINDOWS,
-            POPUP_EXTENSION_LEGACY
+            POPUP_EXTENSION,
+            "lib/PopUp Strict.crx"
     };
 
-    protected static final String STREAMTAPE_EXTENSION_RELATIVE = "Extension/StreamtapeDownloader.crx";
-    protected static final String STREAMTAPE_EXTENSION_WINDOWS =
-            "C\\\\Users\\\\Anibal\\\\IdeaProjects\\\\FilmotecaDelreves\\\\Extension\\\\StreamtapeDownloader.crx";
-    protected static final String STREAMTAPE_EXTENSION_LEGACY = "lib/Streamtape.crx";
+    private static final String STREAMTAPE_EXTENSION = buildRelativePath("Extension", "StreamtapeDownloader.crx");
     protected static final String[] STREAMTAPE_PACKAGED_CANDIDATES = {
-            STREAMTAPE_EXTENSION_RELATIVE,
-            STREAMTAPE_EXTENSION_WINDOWS,
-            STREAMTAPE_EXTENSION_LEGACY
+            STREAMTAPE_EXTENSION,
+            "lib/Streamtape.crx"
     };
 
     protected static final String[] STREAMTAPE_UNPACKED_CANDIDATES = {
@@ -97,7 +91,8 @@ public class VideosStreamerManager {
     }
 
     private String[] buildAddonList(boolean includeAdblock, boolean includeStreamtape) {
-        List<String> addons = new ArrayList<>();
+        LinkedHashSet<String> addons = new LinkedHashSet<>();
+        addons.add(POPUP_EXTENSION);
         addons.addAll(Arrays.asList(getPopupExtensionCandidates()));
 
         if (includeAdblock) {
@@ -105,7 +100,9 @@ public class VideosStreamerManager {
         }
 
         if (includeStreamtape) {
+            addons.add(STREAMTAPE_EXTENSION);
             addons.addAll(Arrays.asList(getStreamtapePackagedCandidates()));
+            addons.addAll(Arrays.asList(getStreamtapeUnpackedCandidates()));
         }
 
         return addons.toArray(new String[0]);
@@ -151,7 +148,7 @@ public class VideosStreamerManager {
                 "mixdrop.bz",
                 "mixdrop.bz",
                 true,
-                buildAddonList(false, true)
+                buildAddonList(false, false)
         ));
 
         // vidmoly.me (ID: 3)
@@ -452,9 +449,16 @@ public class VideosStreamerManager {
      * @param relativePath The relative path
      * @return The absolute path
      */
+    private static String buildRelativePath(String first, String... more) {
+        return Paths.get(first, more).toString();
+    }
+
     private String getAbsolutePath(String relativePath) {
-        File file = new File(relativePath);
-        return file.getAbsolutePath();
+        Path path = Paths.get(relativePath);
+        if (!path.isAbsolute()) {
+            path = Paths.get(System.getProperty("user.dir")).resolve(path).normalize();
+        }
+        return path.toAbsolutePath().toString();
     }
 
     /**
@@ -497,15 +501,6 @@ public class VideosStreamerManager {
         File addon = new File(addonPath);
         if (addon.exists()) {
             return addon;
-        }
-
-        // Attempt to resolve relative to the working directory for absolute Windows paths when running on Unix-like systems
-        if (addonPath.contains(":")) {
-            String normalizedPath = addonPath.replace("\\", File.separator);
-            addon = new File(normalizedPath);
-            if (addon.exists()) {
-                return addon;
-            }
         }
 
         return null;

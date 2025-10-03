@@ -8,6 +8,7 @@ import org.example.filmotecadelreves.moviesad.TorrentState;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
+import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -44,6 +45,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.Objects;
 
 public class TorrentDownloadUI {
     private Tab tab;
@@ -684,71 +686,62 @@ public class TorrentDownloadUI {
         directorCol.setCellValueFactory(new PropertyValueFactory<>("director"));
         directorCol.setPrefWidth(150);
 
-        // Columna de calidad con selector desplegable
-        TableColumn<Movie, String> qualityCol = new TableColumn<>("Calidad");
-        qualityCol.setCellFactory(column -> new TableCell<Movie, String>() {
-            private final ComboBox<ConnectDataBase.Quality> qualityCombo = new ComboBox<>();
+        TableColumn<Movie, Movie> torrentsCol = new TableColumn<>("Torrents");
+        torrentsCol.setCellValueFactory(param -> new ReadOnlyObjectWrapper<>(param.getValue()));
+        torrentsCol.setCellFactory(column -> new TableCell<Movie, Movie>() {
+            private final VBox container = new VBox(4);
 
             {
-                qualityCombo.setOnAction(event -> {
-                    Movie movie = getTableRow() != null ? getTableRow().getItem() : null;
-                    if (movie == null) {
-                        return;
-                    }
-                    ConnectDataBase.Quality selectedQuality = qualityCombo.getValue();
-                    if (selectedQuality == null) {
-                        return;
-                    }
-                    movie.findTorrentFileByQualityId(selectedQuality.getId())
-                            .ifPresent(torrentFile -> {
-                                movie.setQuality(selectedQuality.getQuality());
-                                movie.setTorrentLink(torrentFile.getTorrentLink());
-                                getTableView().refresh();
-                            });
-                });
+                container.setFillWidth(true);
             }
 
             @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-
-                if (empty) {
+            protected void updateItem(Movie movie, boolean empty) {
+                super.updateItem(movie, empty);
+                if (empty || movie == null) {
                     setGraphic(null);
                     return;
                 }
 
-                Movie movie = getTableRow() != null ? getTableRow().getItem() : null;
-                if (movie == null) {
-                    setGraphic(null);
-                    return;
+                container.getChildren().clear();
+
+                List<TorrentFile> files = movie.getSortedTorrentFiles();
+                if (files.isEmpty()) {
+                    Label noLinks = new Label("Sin enlaces disponibles");
+                    noLinks.setStyle("-fx-text-fill: #7f8c8d;");
+                    container.getChildren().add(noLinks);
+                } else {
+                    for (TorrentFile file : files) {
+                        Button button = new Button(formatTorrentLabel(file));
+                        button.setMaxWidth(Double.MAX_VALUE);
+                        button.setOnAction(event -> {
+                            movie.selectTorrentFile(file);
+                            if (peliculasTable != null) {
+                                peliculasTable.refresh();
+                            }
+                        });
+
+                        if (Objects.equals(movie.getSelectedTorrentFileId(), file.getId())) {
+                            button.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
+                        } else {
+                            button.setStyle("-fx-background-color: #ecf0f1; -fx-text-fill: #2c3e50;");
+                        }
+
+                        container.getChildren().add(button);
+                    }
                 }
 
-                ObservableList<ConnectDataBase.Quality> qualityOptions = movie.buildQualityOptions();
-                qualityCombo.setItems(qualityOptions);
+                setGraphic(container);
+            }
 
-                ConnectDataBase.Quality selectedQuality = null;
-                if (movie.getQuality() != null) {
-                    selectedQuality = qualityOptions.stream()
-                            .filter(q -> q.getQuality().equals(movie.getQuality()))
-                            .findFirst()
-                            .orElse(null);
-                }
-
-                if (selectedQuality == null && !qualityOptions.isEmpty()) {
-                    selectedQuality = qualityOptions.get(qualityOptions.size() - 1);
-                    ConnectDataBase.Quality finalSelectedQuality = selectedQuality;
-                    movie.findTorrentFileByQualityId(selectedQuality.getId())
-                            .ifPresent(torrentFile -> {
-                                movie.setQuality(finalSelectedQuality.getQuality());
-                                movie.setTorrentLink(torrentFile.getTorrentLink());
-                            });
-                }
-
-                qualityCombo.setDisable(qualityOptions.isEmpty());
-                qualityCombo.setValue(selectedQuality);
-                setGraphic(qualityOptions.isEmpty() ? null : qualityCombo);
+            private String formatTorrentLabel(TorrentFile file) {
+                String quality = file.getQuality() != null ? file.getQuality() : "N/D";
+                return file.getTorrentId() + " - " + quality;
             }
         });
+
+        TableColumn<Movie, String> qualityCol = new TableColumn<>("Calidad");
+        qualityCol.setCellValueFactory(new PropertyValueFactory<>("quality"));
 
         TableColumn<Movie, String> linkCol = new TableColumn<>("Enlace");
         linkCol.setCellValueFactory(new PropertyValueFactory<>("torrentLink"));
@@ -801,7 +794,7 @@ public class TorrentDownloadUI {
             }
         });
 
-        peliculasTable.getColumns().addAll(nameCol, yearCol, genreCol, directorCol, qualityCol, linkCol, actionsCol);
+        peliculasTable.getColumns().addAll(nameCol, yearCol, genreCol, directorCol, torrentsCol, qualityCol, linkCol, actionsCol);
 
         layout.getChildren().addAll(busquedaSection, resultsLabel, peliculasTable);
         VBox.setVgrow(peliculasTable, Priority.ALWAYS);
@@ -1426,6 +1419,7 @@ public class TorrentDownloadUI {
         private final Map<Integer, TorrentFile> torrentFilesByQuality;
         private String quality;
         private String torrentLink;
+        private Integer selectedTorrentFileId;
 
         public Movie(int id, String title, String year, String genre, String director) {
             this.id = id;
@@ -1436,6 +1430,7 @@ public class TorrentDownloadUI {
             this.torrentFilesByQuality = new LinkedHashMap<>();
             this.quality = null;
             this.torrentLink = null;
+            this.selectedTorrentFileId = null;
         }
 
         public void addTorrentFile(TorrentFile torrentFile) {
@@ -1447,6 +1442,12 @@ public class TorrentDownloadUI {
 
         public Collection<TorrentFile> getTorrentFiles() {
             return torrentFilesByQuality.values();
+        }
+
+        public List<TorrentFile> getSortedTorrentFiles() {
+            return torrentFilesByQuality.values().stream()
+                    .sorted(Comparator.comparingInt(TorrentFile::getQualityId))
+                    .collect(Collectors.toList());
         }
 
         public Optional<TorrentFile> findTorrentFileByQualityId(int qualityId) {
@@ -1464,10 +1465,20 @@ public class TorrentDownloadUI {
         public void selectBestAvailableQuality() {
             torrentFilesByQuality.values().stream()
                     .max(Comparator.comparingInt(TorrentFile::getQualityId))
-                    .ifPresent(file -> {
-                        this.quality = file.getQuality();
-                        this.torrentLink = file.getTorrentLink();
-                    });
+                    .ifPresent(this::selectTorrentFile);
+        }
+
+        public void selectTorrentFile(TorrentFile file) {
+            if (file == null) {
+                return;
+            }
+            this.selectedTorrentFileId = file.getId();
+            this.quality = file.getQuality();
+            this.torrentLink = file.getTorrentLink();
+        }
+
+        public Integer getSelectedTorrentFileId() {
+            return selectedTorrentFileId;
         }
 
         // Getter para calidad

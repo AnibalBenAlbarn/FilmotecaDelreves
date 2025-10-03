@@ -690,16 +690,8 @@ public class DirectDownloadUI {
                 comboBox.setOnAction(event -> {
                     if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
                         Movie movie = getTableRow().getItem();
-                        String newLanguage = comboBox.getValue();
-
-                        // Actualizar el idioma seleccionado
-                        movie.selectedLanguageProperty().set(newLanguage);
-
-                        // Cargar los servidores disponibles para este idioma
-                        List<String> servers = getServersForLanguage(movie.getId(), newLanguage);
-                        movie.setAvailableServers(servers);
-
-                        // Actualizar la tabla para refrescar el combobox de servidores
+                        movie.selectedLanguageProperty().set(comboBox.getValue());
+                        ensureMovieDetailsLoaded(movie);
                         getTableView().refresh();
                     }
                 });
@@ -713,38 +705,22 @@ public class DirectDownloadUI {
                 } else {
                     Movie movie = getTableRow().getItem();
                     if (movie != null) {
-                        // Obtener los idiomas disponibles para esta película. Si la película ya tiene
-                        // idiomas precalculados (establecidos desde la consulta inicial), usarlos para
-                        // evitar nuevas consultas a la base de datos. En caso contrario, consultar.
-                        List<String> languages;
-                        if (movie.getAvailableLanguages() != null && !movie.getAvailableLanguages().isEmpty()) {
-                            languages = movie.getAvailableLanguages();
-                        } else {
+                        ensureMovieDetailsLoaded(movie);
+
+                        List<String> languages = movie.getAvailableLanguages();
+                        if (languages.isEmpty()) {
                             languages = getAvailableLanguages(movie.getId());
-                            // Guardar en la película para uso futuro
                             movie.setAvailableLanguages(languages);
                         }
 
-                        // Limpiar y configurar los elementos
-                        comboBox.getItems().clear();
-                        comboBox.getItems().addAll(languages);
+                        comboBox.getItems().setAll(languages);
 
-                        // Establecer el valor seleccionado
-                        if (item != null && !item.isEmpty() && comboBox.getItems().contains(item)) {
-                            comboBox.setValue(item);
+                        String currentLanguage = movie.getSelectedLanguage();
+                        if (currentLanguage != null && comboBox.getItems().contains(currentLanguage)) {
+                            comboBox.setValue(currentLanguage);
                         } else if (!comboBox.getItems().isEmpty()) {
                             comboBox.setValue(comboBox.getItems().get(0));
                             movie.selectedLanguageProperty().set(comboBox.getValue());
-
-                            // Cargar los servidores disponibles para este idioma. Si ya están
-                            // precalculados para la película e idioma seleccionado, reutilizarlos.
-                            List<String> servers;
-                            if (movie.getAvailableServers() != null && !movie.getAvailableServers().isEmpty()) {
-                                servers = movie.getAvailableServers();
-                            } else {
-                                servers = getServersForLanguage(movie.getId(), comboBox.getValue());
-                                movie.setAvailableServers(servers);
-                            }
                         }
 
                         setGraphic(comboBox);
@@ -765,26 +741,8 @@ public class DirectDownloadUI {
                 comboBox.setOnAction(event -> {
                     if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
                         Movie movie = getTableRow().getItem();
-                        String newServer = comboBox.getValue();
-
-                        // Actualizar el servidor seleccionado
-                        movie.selectedServerProperty().set(newServer);
-
-                        // Actualizar el enlace y la calidad basados en el servidor seleccionado
-                        String selectedLanguage = movie.getSelectedLanguage();
-                        String selectedServer = newServer;
-
-                        // Obtener el enlace para este servidor y idioma
-                        String link = getLinkForServerAndLanguage(movie.getId(), selectedServer, selectedLanguage);
-                        if (link != null && !link.isEmpty()) {
-                            movie.linkProperty().set(link);
-
-                            // También actualizar la calidad si es necesario
-                            String quality = getQualityForLink(movie.getId(), link);
-                            if (quality != null && !quality.isEmpty()) {
-                                movie.qualityProperty().set(quality);
-                            }
-                        }
+                        movie.selectedServerProperty().set(comboBox.getValue());
+                        getTableView().refresh();
                     }
                 });
             }
@@ -797,38 +755,18 @@ public class DirectDownloadUI {
                 } else {
                     Movie movie = getTableRow().getItem();
                     if (movie != null) {
-                        // Obtener los servidores disponibles para el idioma seleccionado.
-                        String selectedLanguage = movie.getSelectedLanguage();
-                        List<String> servers;
-                        if (movie.getAvailableServers() != null && !movie.getAvailableServers().isEmpty()) {
-                            servers = movie.getAvailableServers();
-                        } else {
-                            servers = getServersForLanguage(movie.getId(), selectedLanguage);
-                            movie.setAvailableServers(servers);
-                        }
+                        ensureMovieDetailsLoaded(movie);
+                        movie.ensureServersForSelectedLanguage();
 
-                        // Limpiar y configurar los elementos
-                        comboBox.getItems().clear();
-                        comboBox.getItems().addAll(servers);
+                        ObservableList<String> servers = movie.getAvailableServers();
+                        comboBox.getItems().setAll(servers);
 
-                        // Establecer el valor seleccionado
-                        if (item != null && !item.isEmpty() && comboBox.getItems().contains(item)) {
-                            comboBox.setValue(item);
+                        String currentServer = movie.getSelectedServer();
+                        if (currentServer != null && comboBox.getItems().contains(currentServer)) {
+                            comboBox.setValue(currentServer);
                         } else if (!comboBox.getItems().isEmpty()) {
                             comboBox.setValue(comboBox.getItems().get(0));
                             movie.selectedServerProperty().set(comboBox.getValue());
-
-                            // Actualizar el enlace y la calidad basados en el servidor seleccionado
-                            String link = getLinkForServerAndLanguage(movie.getId(), comboBox.getValue(), selectedLanguage);
-                            if (link != null && !link.isEmpty()) {
-                                movie.linkProperty().set(link);
-
-                                // También actualizar la calidad si es necesario
-                                String quality = getQualityForLink(movie.getId(), link);
-                                if (quality != null && !quality.isEmpty()) {
-                                    movie.qualityProperty().set(quality);
-                                }
-                            }
                         }
 
                         setGraphic(comboBox);
@@ -2156,6 +2094,31 @@ public class DirectDownloadUI {
         }
     }
 
+    private void ensureMovieDetailsLoaded(Movie movie) {
+        if (movie == null || movie.hasServerLinksLoaded()) {
+            return;
+        }
+
+        try {
+            ObservableList<DirectFile> files = getMovieDirectFilesCached(movie.getId());
+            List<Movie.ServerLink> links = files.stream()
+                    .map(file -> new Movie.ServerLink(
+                            file.getLanguage(),
+                            file.getServer(),
+                            file.getLink(),
+                            file.getQuality()))
+                    .collect(Collectors.toList());
+
+            movie.loadServerLinks(links);
+
+            if (movie.getAvailableLanguages().isEmpty()) {
+                movie.setAvailableLanguages(getAvailableLanguages(movie.getId()));
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading movie details: " + e.getMessage());
+        }
+    }
+
     /**
      * Devuelve la lista de DirectFile para una película desde caché. Si no
      * existe en caché se consulta a la base de datos y se almacena.
@@ -2533,6 +2496,7 @@ public class DirectDownloadUI {
         private final ObservableList<String> availableLanguages = FXCollections.observableArrayList();
         private final ObservableList<String> availableServers = FXCollections.observableArrayList();
         private final Map<String, List<ServerLink>> serverLinksByLanguage = new HashMap<>();
+        private boolean serverLinksLoaded = false;
 
         public static class ServerLink {
             private final String language;
@@ -2540,11 +2504,22 @@ public class DirectDownloadUI {
             private final String link;
             private final String quality;
 
+            private final String displayName;
+
             public ServerLink(String language, String server, String link, String quality) {
+                this(language, server, link, quality, null);
+            }
+
+            private ServerLink(String language, String server, String link, String quality, String displayName) {
                 this.language = language;
                 this.server = server;
                 this.link = link;
                 this.quality = quality;
+                this.displayName = displayName;
+            }
+
+            public ServerLink withDisplayName(String displayName) {
+                return new ServerLink(language, server, link, quality, displayName);
             }
 
             // Getters
@@ -2552,6 +2527,7 @@ public class DirectDownloadUI {
             public String getServer() { return server; }
             public String getLink() { return link; }
             public String getQuality() { return quality; }
+            public String getDisplayName() { return displayName != null ? displayName : server; }
         }
 
         public Movie(int id, String title, String year, String genre, String language, String quality, String server, String link) {
@@ -2580,16 +2556,18 @@ public class DirectDownloadUI {
             selectedLanguage.addListener((obs, oldLang, newLang) -> {
                 if (newLang != null && !newLang.isEmpty()) {
                     updateAvailableServers(newLang);
-                    if (!availableServers.isEmpty()) {
-                        selectedServer.set(availableServers.get(0));
-                    }
+                } else {
+                    availableServers.clear();
                 }
             });
 
             // Listener para cambios de servidor
             selectedServer.addListener((obs, oldServer, newServer) -> {
                 if (newServer != null && !newServer.isEmpty()) {
-                    updateLinkAndQuality(newServer);
+                    applyServerSelection(newServer);
+                } else {
+                    link.set(null);
+                    quality.set(null);
                 }
             });
         }
@@ -2599,49 +2577,41 @@ public class DirectDownloadUI {
             List<ServerLink> links = serverLinksByLanguage.get(language);
             if (links != null) {
                 for (ServerLink link : links) {
-                    if (!availableServers.contains(link.getServer())) {
-                        availableServers.add(link.getServer());
+                    String displayName = link.getDisplayName();
+                    if (!availableServers.contains(displayName)) {
+                        availableServers.add(displayName);
                     }
                 }
             }
-        }
-
-        private void updateLinkAndQuality(String server) {
-            String currentLanguage = selectedLanguage.get();
-            if (currentLanguage != null && !currentLanguage.isEmpty()) {
-                List<ServerLink> links = serverLinksByLanguage.get(currentLanguage);
-                if (links != null) {
-                    for (ServerLink serverLink : links) {
-                        if (serverLink.getServer().equals(server)) {
-                            link.set(serverLink.getLink());
-                            quality.set(serverLink.getQuality());
-                            break;
-                        }
-                    }
+            if (!availableServers.isEmpty()) {
+                String current = selectedServer.get();
+                if (current == null || !availableServers.contains(current)) {
+                    selectedServer.set(availableServers.get(0));
+                } else {
+                    applyServerSelection(current);
                 }
             }
         }
 
         public void setAvailableLanguages(List<String> languages) {
-            availableLanguages.clear();
-            if (languages != null) {
-                availableLanguages.addAll(languages);
-            }
+            availableLanguages.setAll(languages != null ? languages : Collections.emptyList());
 
-            // Establecer el idioma seleccionado si no está establecido
-            if ((selectedLanguage.get() == null || selectedLanguage.get().isEmpty()) && !availableLanguages.isEmpty()) {
+            if (availableLanguages.isEmpty()) {
+                selectedLanguage.set(null);
+                availableServers.clear();
+            } else if (selectedLanguage.get() == null || !availableLanguages.contains(selectedLanguage.get())) {
                 selectedLanguage.set(availableLanguages.get(0));
+            } else {
+                updateAvailableServers(selectedLanguage.get());
             }
         }
 
         public void setAvailableServers(List<String> servers) {
-            availableServers.clear();
-            if (servers != null) {
-                availableServers.addAll(servers);
-            }
+            availableServers.setAll(servers != null ? servers : Collections.emptyList());
 
-            // Establecer el servidor seleccionado si no está establecido
-            if ((selectedServer.get() == null || selectedServer.get().isEmpty()) && !availableServers.isEmpty()) {
+            if (availableServers.isEmpty()) {
+                selectedServer.set(null);
+            } else if (selectedServer.get() == null || !availableServers.contains(selectedServer.get())) {
                 selectedServer.set(availableServers.get(0));
             }
         }
@@ -2649,23 +2619,78 @@ public class DirectDownloadUI {
         public void loadServerLinks(List<ServerLink> links) {
             serverLinksByLanguage.clear();
             availableLanguages.clear();
+            availableServers.clear();
 
-            // Agrupar enlaces por idioma
-            Map<String, List<ServerLink>> groupedLinks = new HashMap<>();
+            Map<String, List<ServerLink>> groupedLinks = new LinkedHashMap<>();
+            Map<String, Map<String, Integer>> counters = new LinkedHashMap<>();
+
             for (ServerLink link : links) {
-                String language = link.getLanguage();
-                if (!groupedLinks.containsKey(language)) {
-                    groupedLinks.put(language, new ArrayList<>());
+                if (link.getLanguage() == null || link.getLanguage().isEmpty()) {
+                    continue;
                 }
-                groupedLinks.get(language).add(link);
+
+                Map<String, Integer> serverCount = counters
+                        .computeIfAbsent(link.getLanguage(), k -> new LinkedHashMap<>());
+                int index = serverCount.merge(link.getServer().toLowerCase(), 1, Integer::sum);
+                String displayName = index > 1 ? link.getServer() + " " + index : link.getServer();
+
+                groupedLinks
+                        .computeIfAbsent(link.getLanguage(), k -> new ArrayList<>())
+                        .add(link.withDisplayName(displayName));
             }
 
             serverLinksByLanguage.putAll(groupedLinks);
             availableLanguages.addAll(groupedLinks.keySet());
+            serverLinksLoaded = true;
 
-            // Selección inicial
             if (!availableLanguages.isEmpty()) {
-                selectedLanguage.set(availableLanguages.get(0));
+                if (selectedLanguage.get() == null || !availableLanguages.contains(selectedLanguage.get())) {
+                    selectedLanguage.set(availableLanguages.get(0));
+                } else {
+                    updateAvailableServers(selectedLanguage.get());
+                }
+            } else {
+                selectedLanguage.set(null);
+                availableServers.clear();
+            }
+        }
+
+        private void applyServerSelection(String serverDisplayName) {
+            String currentLanguage = selectedLanguage.get();
+            if (currentLanguage == null || currentLanguage.isEmpty()) {
+                return;
+            }
+
+            List<ServerLink> links = serverLinksByLanguage.get(currentLanguage);
+            if (links == null || links.isEmpty()) {
+                return;
+            }
+
+            for (ServerLink serverLink : links) {
+                if (serverLink.getDisplayName().equalsIgnoreCase(serverDisplayName)) {
+                    link.set(serverLink.getLink());
+                    quality.set(serverLink.getQuality());
+                    if (!Objects.equals(selectedServer.get(), serverLink.getDisplayName())) {
+                        selectedServer.set(serverLink.getDisplayName());
+                    }
+                    return;
+                }
+            }
+
+            String fallback = links.get(0).getDisplayName();
+            if (!Objects.equals(fallback, serverDisplayName)) {
+                selectedServer.set(fallback);
+            }
+        }
+
+        public boolean hasServerLinksLoaded() {
+            return serverLinksLoaded;
+        }
+
+        public void ensureServersForSelectedLanguage() {
+            String currentLanguage = selectedLanguage.get();
+            if (currentLanguage != null && !currentLanguage.isEmpty()) {
+                updateAvailableServers(currentLanguage);
             }
         }
 
