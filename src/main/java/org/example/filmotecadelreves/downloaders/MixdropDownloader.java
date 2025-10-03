@@ -15,6 +15,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -25,8 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MixdropDownloader implements DirectDownloader {
     // Configuración
-    private static final String CHROME_DRIVER_PATH = "ChromeDriver/chromedriver.exe";
-    private static final String CHROME_BINARY_PATH = "Chrome Test/chrome.exe";
+    private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
+    private static final String CHROME_BINARY_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final int WAIT_TIME_SECONDS = 10; // Tiempo de espera para Mixdrop
     private static final int MAX_ATTEMPTS = 3;      // Número máximo de intentos
 
@@ -296,5 +298,13 @@ public class MixdropDownloader implements DirectDownloader {
             download.setStatus(status);
             download.setProgress(progress);
         });
+    }
+
+    private static String resolvePath(String first, String... more) {
+        Path path = Paths.get(first, more);
+        if (!path.isAbsolute()) {
+            path = Paths.get(System.getProperty("user.dir")).resolve(path).normalize();
+        }
+        return path.toAbsolutePath().toString();
     }
 }
