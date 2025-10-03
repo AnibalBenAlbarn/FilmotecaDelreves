@@ -15,6 +15,7 @@ import javafx.scene.control.TabPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -67,6 +68,10 @@ public class MainUI extends Application {
         createRequiredDirectories();
 
         primaryStage.setTitle("MovieDownloader");
+        primaryStage.initStyle(StageStyle.DECORATED);
+        primaryStage.setResizable(true);
+        primaryStage.setMinWidth(1024);
+        primaryStage.setMinHeight(720);
 
         // Usar BorderPane para poder colocar el panel de estado en la parte inferior
         BorderPane mainLayout = new BorderPane();
@@ -139,6 +144,7 @@ public class MainUI extends Application {
         ajustesUI.applyCurrentTheme();
 
         primaryStage.setScene(scene);
+        primaryStage.setMaximized(true);
         primaryStage.show();
 
         Platform.runLater(() -> {
