@@ -63,6 +63,8 @@ public class DirectDownloadUI {
     private TableView seriesTable;
     private TableView moviesTable;
     private VBox busquedaSection;
+    private TextField movieSearchField;
+    private TextField seriesSearchField;
 
     // ==================== DOWNLOADERS ====================
     private StreamtapeDownloader streamtapeDownloader;
@@ -642,8 +644,8 @@ public class DirectDownloadUI {
 
         Label searchLabel = new Label("Search:");
         searchLabel.setStyle("-fx-font-weight: bold;");
-        TextField searchField = new TextField();
-        searchField.setPromptText("Search...");
+        movieSearchField = new TextField();
+        movieSearchField.setPromptText("Search...");
 
         HBox filtersLayout = new HBox(10);
         Label filterLabel = new Label("Filter by:");
@@ -663,9 +665,10 @@ public class DirectDownloadUI {
 
         Button searchButton = new Button("Search");
         searchButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-        searchButton.setOnAction(e -> performSearch(searchField.getText()));
+        searchButton.setOnAction(e -> performSearch(movieSearchField.getText()));
+        movieSearchField.setOnAction(e -> searchButton.fire());
 
-        searchSection.getChildren().addAll(searchLabel, searchField, filtersLayout, searchButton);
+        searchSection.getChildren().addAll(searchLabel, movieSearchField, filtersLayout, searchButton);
 
         // Sección de resultados
         Label resultsLabel = new Label("Results:");
@@ -784,6 +787,31 @@ public class DirectDownloadUI {
         actionsCol.setCellFactory(param -> createActionButtonsCell());
 
         moviesTable.getColumns().addAll(nameCol, yearCol, genreCol, languageCol, serverCol, qualityCol, actionsCol);
+
+        TableUtils.enableCopyPasteSupport(moviesTable, text -> {
+            if (movieSearchField != null) {
+                movieSearchField.setText(text);
+                movieSearchField.positionCaret(text.length());
+            }
+        });
+
+        moviesTable.setRowFactory(table -> {
+            TableRow<Movie> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(moviesTable, row);
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(moviesTable, text -> {
+                if (movieSearchField != null) {
+                    movieSearchField.setText(text);
+                    movieSearchField.positionCaret(text.length());
+                }
+            });
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
+
+            return row;
+        });
 
         layout.getChildren().addAll(searchSection, resultsLabel, moviesTable);
         VBox.setVgrow(moviesTable, Priority.ALWAYS);
@@ -981,8 +1009,8 @@ public class DirectDownloadUI {
 
         Label searchLabel = new Label("Search:");
         searchLabel.setStyle("-fx-font-weight: bold;");
-        TextField searchField = new TextField();
-        searchField.setPromptText("Search...");
+        seriesSearchField = new TextField();
+        seriesSearchField.setPromptText("Search...");
 
         HBox filtersLayout = new HBox(10);
         Label filterLabel = new Label("Filter by:");
@@ -1004,7 +1032,7 @@ public class DirectDownloadUI {
         searchButton.setOnAction(e -> {
             String selectedFilter = filterComboBoxSeries.getValue();
             String filterValue = filterOptionsComboBoxSeries.getValue();
-            String searchValue = searchField.getText();
+            String searchValue = seriesSearchField.getText();
 
             if (selectedFilter != null && filterValue != null && !filterValue.isEmpty()) {
                 switch (selectedFilter) {
@@ -1025,7 +1053,9 @@ public class DirectDownloadUI {
             }
         });
 
-        searchSection.getChildren().addAll(searchLabel, searchField, filtersLayout, searchButton);
+        seriesSearchField.setOnAction(e -> searchButton.fire());
+
+        searchSection.getChildren().addAll(searchLabel, seriesSearchField, filtersLayout, searchButton);
 
         // Guardar la sección de búsqueda para poder restaurarla después
         busquedaSection = searchSection;
@@ -1053,8 +1083,16 @@ public class DirectDownloadUI {
 
         seriesTable.getColumns().addAll(nameCol, yearCol, ratingCol, genreCol);
 
+        TableUtils.enableCopyPasteSupport(seriesTable, text -> {
+            if (seriesSearchField != null) {
+                seriesSearchField.setText(text);
+                seriesSearchField.positionCaret(text.length());
+            }
+        });
+
         seriesTable.setRowFactory(tv -> {
             TableRow<Series> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(seriesTable, row);
             row.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2 && (!row.isEmpty())) {
                     Series rowData = row.getItem();
@@ -1072,6 +1110,17 @@ public class DirectDownloadUI {
                     row.setCursor(javafx.scene.Cursor.DEFAULT);
                 }
             });
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(seriesTable, text -> {
+                if (seriesSearchField != null) {
+                    seriesSearchField.setText(text);
+                    seriesSearchField.positionCaret(text.length());
+                }
+            });
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
 
             return row;
         });
