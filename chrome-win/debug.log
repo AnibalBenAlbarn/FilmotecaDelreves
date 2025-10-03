@@ -1,0 +1,13 @@
+[1003/123203.569:ERROR:third_party\crashpad\crashpad\util\win\registration_protocol_win.cc:136] TransactNamedPipe: Ha terminado la canalización. (0x6D)
+[1003/123442.468:ERROR:chrome\test\base\process_inspector_win.cc:188] Failed to read process memory: Solo se completó una parte de una solicitud ReadProcessMemory o WriteProcessMemory. (0x12B)
+[1003/123442.469:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:145] There is an always on top window on the desktop. This may have been caused by a previous test and may cause this test to fail; window class name: ThumbnailDeviceHelperWnd; owning process lineage: (process_id: 7756, command_line: "C:\Windows\Explorer.EXE");
+[1003/123442.471:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:153] Stripped WS_EX_TOPMOST.
+[1003/123442.472:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:158] Minimized window.
+[1003/123442.472:ERROR:chrome\test\base\process_inspector_win.cc:188] Failed to read process memory: Solo se completó una parte de una solicitud ReadProcessMemory o WriteProcessMemory. (0x12B)
+[1003/123442.472:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:145] There is an always on top window on the desktop. This may have been caused by a previous test and may cause this test to fail; window class name: ThumbnailDeviceHelperWnd; owning process lineage: (process_id: 7756, command_line: "C:\Windows\Explorer.EXE");
+[1003/123442.473:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:153] Stripped WS_EX_TOPMOST.
+[1003/123442.473:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:158] Minimized window.
+[1003/123442.474:ERROR:chrome\test\base\process_inspector_win.cc:188] Failed to read process memory: Solo se completó una parte de una solicitud ReadProcessMemory o WriteProcessMemory. (0x12B)
+[1003/123442.474:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:145] There is an always on top window on the desktop. This may have been caused by a previous test and may cause this test to fail; window class name: ThumbnailDeviceHelperWnd; owning process lineage: (process_id: 7756, command_line: "C:\Windows\Explorer.EXE");
+[1003/123442.475:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:153] Stripped WS_EX_TOPMOST.
+[1003/123442.475:ERROR:chrome\test\base\always_on_top_window_killer_win.cc:158] Minimized window.
