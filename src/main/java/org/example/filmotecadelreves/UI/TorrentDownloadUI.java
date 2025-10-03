@@ -60,6 +60,8 @@ public class TorrentDownloadUI {
     private TableView<Series> seriesTable;
     private TableView<Movie> peliculasTable;
     private VBox busquedaSection;
+    private TextField peliculasSearchField;
+    private TextField seriesSearchField;
 
     // Carrito de descargas
     private final ObservableList<DownloadBasketItem> downloadBasket = FXCollections.observableArrayList();
@@ -621,8 +623,8 @@ public class TorrentDownloadUI {
         busquedaSection.setStyle("-fx-border-color: #3498db; -fx-border-width: 1; -fx-border-radius: 5; -fx-background-color: #f8f9fa;");
         Label busquedaLabel = new Label("Búsqueda:");
         busquedaLabel.setStyle("-fx-font-weight: bold;");
-        TextField searchField = new TextField();
-        searchField.setPromptText("Buscar...");
+        peliculasSearchField = new TextField();
+        peliculasSearchField.setPromptText("Buscar...");
         HBox filtersMoviesLayout = new HBox(10);
         Label filterLabelMovies = new Label("Filtrar por:");
         filterComboBox = new ComboBox<>();
@@ -638,7 +640,7 @@ public class TorrentDownloadUI {
         searchMoviesButton.setOnAction(e -> {
             String selectedFilter = filterComboBox.getValue();
             String filterValue = filterOptionsComboBox.getValue();
-            String searchValue = searchField.getText();
+            String searchValue = peliculasSearchField.getText();
 
             if (selectedFilter != null && filterValue != null && !filterValue.isEmpty()) {
                 switch (selectedFilter) {
@@ -662,7 +664,9 @@ public class TorrentDownloadUI {
             }
         });
 
-        busquedaSection.getChildren().addAll(busquedaLabel, searchField, filtersMoviesLayout, searchMoviesButton);
+        peliculasSearchField.setOnAction(e -> searchMoviesButton.fire());
+
+        busquedaSection.getChildren().addAll(busquedaLabel, peliculasSearchField, filtersMoviesLayout, searchMoviesButton);
 
         // Resultados
         Label resultsLabel = new Label("Resultados:");
@@ -796,6 +800,31 @@ public class TorrentDownloadUI {
 
         peliculasTable.getColumns().addAll(nameCol, yearCol, genreCol, directorCol, torrentsCol, qualityCol, linkCol, actionsCol);
 
+        TableUtils.enableCopyPasteSupport(peliculasTable, text -> {
+            if (peliculasSearchField != null) {
+                peliculasSearchField.setText(text);
+                peliculasSearchField.positionCaret(text.length());
+            }
+        });
+
+        peliculasTable.setRowFactory(table -> {
+            TableRow<Movie> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(peliculasTable, row);
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(peliculasTable, text -> {
+                if (peliculasSearchField != null) {
+                    peliculasSearchField.setText(text);
+                    peliculasSearchField.positionCaret(text.length());
+                }
+            });
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
+
+            return row;
+        });
+
         layout.getChildren().addAll(busquedaSection, resultsLabel, peliculasTable);
         VBox.setVgrow(peliculasTable, Priority.ALWAYS);
 
@@ -816,8 +845,8 @@ public class TorrentDownloadUI {
         busquedaSection.setStyle("-fx-border-color: #3498db; -fx-border-width: 1; -fx-border-radius: 5; -fx-background-color: #f8f9fa;");
         Label busquedaLabel = new Label("Búsqueda:");
         busquedaLabel.setStyle("-fx-font-weight: bold;");
-        TextField searchField = new TextField();
-        searchField.setPromptText("Buscar...");
+        seriesSearchField = new TextField();
+        seriesSearchField.setPromptText("Buscar...");
         HBox filtersSeriesLayout = new HBox(10);
         Label filterLabelSeries = new Label("Filtrar por:");
         ComboBox<String> filterComboBoxSeries = new ComboBox<>();
@@ -827,10 +856,12 @@ public class TorrentDownloadUI {
         filterOptionsComboBoxSeries.setEditable(true);
         filtersSeriesLayout.getChildren().addAll(filterLabelSeries, filterComboBoxSeries, filterOptionsComboBoxSeries);
 
-        Button searchSeriesButton = getButton(filterComboBoxSeries, filterOptionsComboBoxSeries, searchField);
+        Button searchSeriesButton = getButton(filterComboBoxSeries, filterOptionsComboBoxSeries, seriesSearchField);
         searchSeriesButton.setStyle("-fx-background-color: #3498db; -fx-text-fill:white;");
 
-        busquedaSection.getChildren().addAll(busquedaLabel, searchField, filtersSeriesLayout, searchSeriesButton);
+        seriesSearchField.setOnAction(e -> searchSeriesButton.fire());
+
+        busquedaSection.getChildren().addAll(busquedaLabel, seriesSearchField, filtersSeriesLayout, searchSeriesButton);
 
         // Resultados
         Label resultsLabel = new Label("Resultados:");
@@ -906,8 +937,16 @@ public class TorrentDownloadUI {
 
         seriesTable.getColumns().addAll(nameCol, yearCol, ratingCol, genreCol, directorCol, qualityCol);
 
+        TableUtils.enableCopyPasteSupport(seriesTable, text -> {
+            if (seriesSearchField != null) {
+                seriesSearchField.setText(text);
+                seriesSearchField.positionCaret(text.length());
+            }
+        });
+
         seriesTable.setRowFactory(tv -> {
             TableRow<Series> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(seriesTable, row);
             row.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2 && (!row.isEmpty())) {
                     Series rowData = row.getItem();
@@ -942,6 +981,17 @@ public class TorrentDownloadUI {
                     row.setCursor(javafx.scene.Cursor.DEFAULT);
                 }
             });
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(seriesTable, text -> {
+                if (seriesSearchField != null) {
+                    seriesSearchField.setText(text);
+                    seriesSearchField.positionCaret(text.length());
+                }
+            });
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
 
             return row;
         });

@@ -608,6 +608,60 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         );
 
         torrentsTable.setItems(filteredTorrentDownloads);
+
+        TableUtils.enableCopyPasteSupport(torrentsTable, text -> {
+            if (searchField != null) {
+                searchField.setText(text);
+                searchField.positionCaret(text.length());
+            }
+        });
+
+        torrentsTable.setRowFactory(table -> {
+            TableRow<TorrentState> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(torrentsTable, row);
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(torrentsTable, text -> {
+                if (searchField != null) {
+                    searchField.setText(text);
+                    searchField.positionCaret(text.length());
+                }
+            });
+
+            MenuItem pauseItem = new MenuItem("Pausar");
+            pauseItem.setOnAction(event -> {
+                TorrentState torrent = row.getItem();
+                if (torrent != null) {
+                    pauseTorrent(torrent);
+                }
+            });
+
+            MenuItem resumeItem = new MenuItem("Reanudar");
+            resumeItem.setOnAction(event -> {
+                TorrentState torrent = row.getItem();
+                if (torrent != null) {
+                    resumeTorrent(torrent);
+                }
+            });
+
+            MenuItem removeItem = new MenuItem("Eliminar");
+            removeItem.setOnAction(event -> {
+                TorrentState torrent = row.getItem();
+                if (torrent != null) {
+                    removeTorrent(torrent);
+                }
+            });
+
+            contextMenu.getItems().addAll(new SeparatorMenuItem(), pauseItem, resumeItem, removeItem);
+
+            row.itemProperty().addListener((obs, oldItem, newItem) ->
+                    updateTorrentContextMenuItems(pauseItem, resumeItem, removeItem, newItem));
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
+
+            return row;
+        });
     }
 
     /**
@@ -808,6 +862,50 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         directTable.setItems(filteredDirectDownloads);
 
+        TableUtils.enableCopyPasteSupport(directTable, null);
+
+        directTable.setRowFactory(table -> {
+            TableRow<DirectDownload> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(directTable, row);
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(directTable, null);
+
+            MenuItem pauseItem = new MenuItem("Pausar");
+            pauseItem.setOnAction(event -> {
+                DirectDownload download = row.getItem();
+                if (download != null) {
+                    pauseDirectDownload(download);
+                }
+            });
+
+            MenuItem resumeItem = new MenuItem("Reanudar");
+            resumeItem.setOnAction(event -> {
+                DirectDownload download = row.getItem();
+                if (download != null) {
+                    resumeDirectDownload(download);
+                }
+            });
+
+            MenuItem removeItem = new MenuItem("Eliminar");
+            removeItem.setOnAction(event -> {
+                DirectDownload download = row.getItem();
+                if (download != null) {
+                    removeDirectDownload(download);
+                }
+            });
+
+            contextMenu.getItems().addAll(new SeparatorMenuItem(), pauseItem, resumeItem, removeItem);
+
+            row.itemProperty().addListener((obs, oldItem, newItem) ->
+                    updateDirectContextMenuItems(pauseItem, resumeItem, removeItem, newItem));
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
+
+            return row;
+        });
+
         // Ajustar automáticamente el ancho de las columnas al contenido
         directTable.widthProperty().addListener((source, oldWidth, newWidth) -> {
             double totalWidth = newWidth.doubleValue();
@@ -821,6 +919,40 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 column.setPrefWidth(column.getPrefWidth() / totalPrefWidth * totalWidth);
             }
         });
+    }
+
+    private void updateTorrentContextMenuItems(MenuItem pauseItem, MenuItem resumeItem, MenuItem removeItem, TorrentState torrent) {
+        if (torrent == null) {
+            pauseItem.setDisable(true);
+            resumeItem.setDisable(true);
+            removeItem.setDisable(true);
+            return;
+        }
+
+        String status = torrent.getStatus();
+        boolean isPaused = "Pausado".equalsIgnoreCase(status);
+        boolean isCompleted = "Completado".equalsIgnoreCase(status);
+
+        pauseItem.setDisable(isPaused || isCompleted);
+        resumeItem.setDisable(!isPaused);
+        removeItem.setDisable(false);
+    }
+
+    private void updateDirectContextMenuItems(MenuItem pauseItem, MenuItem resumeItem, MenuItem removeItem, DirectDownload download) {
+        if (download == null) {
+            pauseItem.setDisable(true);
+            resumeItem.setDisable(true);
+            removeItem.setDisable(true);
+            return;
+        }
+
+        String status = download.getStatus();
+        boolean isPaused = "Paused".equalsIgnoreCase(status);
+        boolean isCompleted = "Completed".equalsIgnoreCase(status);
+
+        pauseItem.setDisable(isPaused || isCompleted);
+        resumeItem.setDisable(!isPaused);
+        removeItem.setDisable(false);
     }
 
     /**
@@ -851,6 +983,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         searchButton = new Button("Buscar");
         searchButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
         searchButton.setOnAction(e -> searchTorrents());
+        searchField.setOnAction(e -> searchButton.fire());
 
         Button addTorrentButton = new Button("Añadir archivo .torrent");
         addTorrentButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
@@ -970,6 +1103,31 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         actionsCol.setPrefWidth(100);
 
         resultsTable.getColumns().addAll(nameCol, sizeCol, seedsCol, peersCol, actionsCol);
+
+        TableUtils.enableCopyPasteSupport(resultsTable, text -> {
+            if (searchField != null) {
+                searchField.setText(text);
+                searchField.positionCaret(text.length());
+            }
+        });
+
+        resultsTable.setRowFactory(table -> {
+            TableRow<TorrentSearchResult> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(resultsTable, row);
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(resultsTable, text -> {
+                if (searchField != null) {
+                    searchField.setText(text);
+                    searchField.positionCaret(text.length());
+                }
+            });
+
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
+
+            return row;
+        });
 
         // Datos simulados
         ObservableList<TorrentSearchResult> results = FXCollections.observableArrayList(
@@ -1870,6 +2028,20 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         TableView<TorrentLogEntry> tableView = new TableView<>();
         tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         tableView.setItems(FXCollections.observableArrayList(entries));
+
+        TableUtils.enableCopyPasteSupport(tableView, null);
+
+        tableView.setRowFactory(tv -> {
+            TableRow<TorrentLogEntry> row = new TableRow<>();
+            TableUtils.installRowSelectionOnRightClick(tableView, row);
+
+            ContextMenu contextMenu = TableUtils.createCopyPasteContextMenu(tableView, null);
+            row.contextMenuProperty().bind(Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu));
+
+            return row;
+        });
 
         TableColumn<TorrentLogEntry, String> timeColumn = new TableColumn<>("Hora");
         timeColumn.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getFormattedTimestamp()));
