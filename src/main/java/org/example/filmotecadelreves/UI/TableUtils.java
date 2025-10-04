@@ -8,7 +8,6 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TablePosition;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TablePositionBase;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
@@ -95,20 +94,20 @@ public final class TableUtils {
      * @param <T>   table item type
      */
     public static <T> void copySelectionToClipboard(TableView<T> table) {
-        ObservableList<TablePosition<?, ?>> selectedCells = table.getSelectionModel().getSelectedCells();
+        ObservableList<TablePosition> selectedCells = table.getSelectionModel().getSelectedCells();
         if (selectedCells.isEmpty()) {
             return;
         }
 
-        List<TablePosition<?, ?>> positions = new ArrayList<>(selectedCells);
+        List<TablePosition> positions = new ArrayList<>(selectedCells);
         positions.sort(Comparator
-                .comparingInt(TablePositionBase::getRow)
-                .thenComparingInt(TablePositionBase::getColumn));
+                .comparingInt((TablePosition position) -> position.getRow())
+                .thenComparingInt(position -> position.getColumn()));
 
         StringBuilder clipboardContent = new StringBuilder();
         int previousRow = -1;
 
-        for (TablePosition<?, ?> position : positions) {
+        for (TablePosition position : positions) {
             if (previousRow == position.getRow()) {
                 clipboardContent.append('\t');
             } else if (previousRow != -1) {
