@@ -1,9 +1,12 @@
 package org.example.filmotecadelreves.downloaders;
 
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Point;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.UnsupportedCommandException;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,6 +29,9 @@ public class VideosStreamerManager {
     private WebDriver driver;
     protected static final String CHROME_DRIVER_PATH = buildRelativePath("ChromeDriver", "chromedriver.exe");
     protected static final String CHROME_PATH = buildRelativePath("chrome-win", "chrome.exe");
+
+    private static final long EXTENSION_INITIALIZATION_DELAY_MS = 3000L;
+    private static final long POST_NAVIGATION_DELAY_MS = 500L;
 
     // Addon paths
     protected static final String POPUP_EXTENSION_RELATIVE = buildRelativePath("Extension", "PopUpStrictOld.crx");
@@ -201,12 +207,15 @@ public class VideosStreamerManager {
             // Initialize the WebDriver with our options
             driver = new ChromeDriver(options);
 
+            // Keep the browser in the background while extensions are installed
+            minimizeBrowserWindow();
+
             // Set timeouts
             driver.manage().timeouts().pageLoadTimeout(30, TimeUnit.SECONDS);
             driver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
 
-            // Wait for extensions to load and close any extension tabs
-            handleExtensionTabs();
+            // Wait for extensions to load in the background and close any extension tabs
+            handleExtensionTabs(EXTENSION_INITIALIZATION_DELAY_MS);
 
             // Allow subclasses to adjust the URL when required by a specific server
             String preparedUrl = prepareUrlForStreaming(url, config);
@@ -218,11 +227,14 @@ public class VideosStreamerManager {
                 throw new IllegalArgumentException("No valid URL provided for streaming");
             }
 
-            // Navigate to the URL
+            // Navigate to the URL while keeping the browser in the background
             driver.get(preparedUrl);
 
-            // Wait for the page to load
-            Thread.sleep(2000);
+            // Give the page a brief moment to stabilise before showing it to the user
+            Thread.sleep(POST_NAVIGATION_DELAY_MS);
+
+            // Bring the browser window to the foreground for the user
+            bringBrowserToForeground();
 
             System.out.println("Stream started successfully");
             System.out.println("Press ESC to close the browser");
@@ -295,6 +307,7 @@ public class VideosStreamerManager {
         File userDataDir = ensureUserDataDir(config);
         options.addArguments("--user-data-dir=" + userDataDir.getAbsolutePath());
         options.addArguments("--profile-directory=Default");
+        options.addArguments("--start-minimized");
 
         // Basic configuration to avoid issues
         options.addArguments("--no-sandbox");
@@ -371,9 +384,10 @@ public class VideosStreamerManager {
     /**
      * Handles extension tabs that may open during startup.
      */
-    private void handleExtensionTabs() throws InterruptedException {
-        // Wait for extensions to load (blank page)
-        Thread.sleep(2000);
+    private void handleExtensionTabs(long initialDelayMs) throws InterruptedException {
+        if (initialDelayMs > 0) {
+            Thread.sleep(initialDelayMs);
+        }
 
         // Close any extension tabs that may have opened
         String originalHandle = driver.getWindowHandle();
@@ -384,6 +398,53 @@ public class VideosStreamerManager {
             }
         }
         driver.switchTo().window(originalHandle);
+    }
+
+    private void minimizeBrowserWindow() {
+        if (driver == null) {
+            return;
+        }
+        try {
+            driver.manage().window().minimize();
+        } catch (UnsupportedCommandException | WebDriverException e) {
+            try {
+                driver.manage().window().setPosition(new Point(-2000, 0));
+            } catch (WebDriverException ignored) {
+                // Ignore if we cannot reposition the window
+            }
+        }
+    }
+
+    private void bringBrowserToForeground() {
+        if (driver == null) {
+            return;
+        }
+
+        try {
+            driver.manage().window().setPosition(new Point(0, 0));
+        } catch (WebDriverException ignored) {
+            // Ignore if positioning is not supported
+        }
+
+        try {
+            driver.manage().window().maximize();
+        } catch (WebDriverException ignored) {
+            // Ignore if maximizing is not supported
+        }
+
+        try {
+            driver.switchTo().window(driver.getWindowHandle());
+        } catch (WebDriverException ignored) {
+            // Ignore if focusing the window fails
+        }
+
+        try {
+            if (driver instanceof JavascriptExecutor jsExecutor) {
+                jsExecutor.executeScript("window.focus();");
+            }
+        } catch (Exception ignored) {
+            // Ignore if focusing via script fails
+        }
     }
 
     /**
