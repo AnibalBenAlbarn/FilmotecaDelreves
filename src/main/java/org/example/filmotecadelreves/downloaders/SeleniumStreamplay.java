@@ -29,7 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class SeleniumStreamplay implements DirectDownloader {
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
-    private static final String NOPECHA_EXTENSION_PATH = "lib/nopecha.crx";
+    private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
+            "Extension/NopeCaptcha.crx",
+            "lib/nopecha.crx",
+            "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
+    };
+    private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
 
     private static final int WAIT_TIME_SECONDS = 2; // Tiempo de espera para Streamplay
     private static final int MAX_ATTEMPTS = 30; // Número máximo de intentos
@@ -40,6 +45,7 @@ public class SeleniumStreamplay implements DirectDownloader {
     private WebDriver driver;
     private WebDriverWait wait;
     private Thread downloadThread;
+    private boolean isNopechaInstalled = false;
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -210,7 +216,10 @@ public class SeleniumStreamplay implements DirectDownloader {
         if (!addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates())) {
             System.out.println("Advertencia: no se pudo cargar la extensión de bloqueo de popups para Streamplay.");
         }
-        options.addExtensions(new File(NOPECHA_EXTENSION_PATH));
+        isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
+        if (!isNopechaInstalled) {
+            System.out.println("Advertencia: no se pudo cargar la extensión NoPeCaptcha para Streamplay.");
+        }
 
         options.addArguments(
                 "--no-sandbox",
@@ -247,6 +256,7 @@ public class SeleniumStreamplay implements DirectDownloader {
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        isNopechaInstalled = false;
     }
 
     private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
@@ -296,8 +306,12 @@ public class SeleniumStreamplay implements DirectDownloader {
         driver.get(videoUrl);
         wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
 
-        // Esperar 10 segundos para que la página se cargue completamente
-        Thread.sleep(10000);
+        // Esperar a que la extensión resuelva el captcha inicial
+        if (isNopechaInstalled) {
+            waitForNopechaResolution("Streamplay");
+        } else {
+            System.out.println("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
+        }
 
         int attempt = 1;
         while (attempt <= MAX_ATTEMPTS) {
@@ -356,6 +370,46 @@ public class SeleniumStreamplay implements DirectDownloader {
         String videoSrc = videoPlayer.getAttribute("src");
         System.out.println("Enlace del video: " + videoSrc);
         return videoSrc;
+    }
+
+    private void waitForNopechaResolution(String providerName) {
+        if (driver == null) {
+            return;
+        }
+
+        WebDriverWait captchaWait = new WebDriverWait(driver, CAPTCHA_WAIT_TIMEOUT);
+        try {
+            captchaWait.until(webDriver -> {
+                try {
+                    Object solved = ((JavascriptExecutor) webDriver).executeScript(
+                            "const hasVideo = !!document.querySelector('video[src]');" +
+                                    "if (hasVideo) { return true; }" +
+                                    "const hasMp4 = document.documentElement.innerHTML.includes('.mp4');" +
+                                    "if (hasMp4) { return true; }" +
+                                    "const button = document.querySelector('#btn_download, #btn_downl, #btn_continue');" +
+                                    "if (button && !button.disabled) { return true; }" +
+                                    "const frames = Array.from(document.querySelectorAll('iframe')).filter(frame => {" +
+                                    "  const src = (frame.getAttribute('src') || '').toLowerCase();" +
+                                    "  const id = (frame.id || '').toLowerCase();" +
+                                    "  const cls = (frame.className || '').toLowerCase();" +
+                                    "  return src.includes('captcha') || src.includes('hcaptcha') || src.includes('recaptcha') ||" +
+                                    "         id.includes('captcha') || cls.includes('captcha');" +
+                                    "});" +
+                                    "if (frames.length === 0) {" +
+                                    "  const challenges = Array.from(document.querySelectorAll('[data-sitekey]'));" +
+                                    "  return challenges.length === 0;" +
+                                    "}" +
+                                    "return false;"
+                    );
+                    return solved instanceof Boolean && (Boolean) solved;
+                } catch (JavascriptException e) {
+                    return false;
+                }
+            });
+            System.out.println("Captcha inicial resuelto automáticamente para " + providerName + ".");
+        } catch (TimeoutException e) {
+            System.out.println("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
+        }
     }
 
     /**

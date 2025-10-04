@@ -29,7 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class SeleniumPowvideo implements DirectDownloader {
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
-    private static final String NOPECHA_EXTENSION_PATH = "lib/nopecha.crx";
+    private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
+            "Extension/NopeCaptcha.crx",
+            "lib/nopecha.crx",
+            "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
+    };
+    private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
@@ -37,6 +42,7 @@ public class SeleniumPowvideo implements DirectDownloader {
     private WebDriver driver;
     private WebDriverWait wait;
     private Thread downloadThread;
+    private boolean isNopechaInstalled = false;
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -121,8 +127,12 @@ public class SeleniumPowvideo implements DirectDownloader {
                     driver.get(videoUrl);
                     wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
 
-                    // Esperar 4 segundos para que la extensión resuelva el captcha
-                    Thread.sleep(4000);
+                    // Esperar a que la extensión resuelva el captcha inicial antes de continuar
+                    if (isNopechaInstalled) {
+                        waitForNopechaResolution("PowVideo");
+                    } else {
+                        System.out.println("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
+                    }
 
                     // Intentar obtener el enlace de descarga
                     Actions actions = new Actions(driver);
@@ -254,7 +264,12 @@ public class SeleniumPowvideo implements DirectDownloader {
 
         // Solo cargar la extensión NoPecha si no se requiere interacción del usuario
         if (!userInteraction) {
-            options.addExtensions(new File(NOPECHA_EXTENSION_PATH));
+            isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
+            if (!isNopechaInstalled) {
+                System.out.println("Advertencia: no se pudo cargar la extensión NoPeCaptcha para Powvideo.");
+            }
+        } else {
+            isNopechaInstalled = false;
         }
 
         options.addArguments(
@@ -271,6 +286,46 @@ public class SeleniumPowvideo implements DirectDownloader {
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+    }
+
+    private void waitForNopechaResolution(String providerName) {
+        if (driver == null) {
+            return;
+        }
+
+        WebDriverWait captchaWait = new WebDriverWait(driver, CAPTCHA_WAIT_TIMEOUT);
+        try {
+            captchaWait.until(webDriver -> {
+                try {
+                    Object solved = ((JavascriptExecutor) webDriver).executeScript(
+                            "const hasVideo = !!document.querySelector('video[src]');" +
+                                    "if (hasVideo) { return true; }" +
+                                    "const hasMp4 = document.documentElement.innerHTML.includes('.mp4');" +
+                                    "if (hasMp4) { return true; }" +
+                                    "const button = document.querySelector('#btn_download, #btn_downl, #btn_continue');" +
+                                    "if (button && !button.disabled) { return true; }" +
+                                    "const frames = Array.from(document.querySelectorAll('iframe')).filter(frame => {" +
+                                    "  const src = (frame.getAttribute('src') || '').toLowerCase();" +
+                                    "  const id = (frame.id || '').toLowerCase();" +
+                                    "  const cls = (frame.className || '').toLowerCase();" +
+                                    "  return src.includes('captcha') || src.includes('hcaptcha') || src.includes('recaptcha') ||" +
+                                    "         id.includes('captcha') || cls.includes('captcha');" +
+                                    "});" +
+                                    "if (frames.length === 0) {" +
+                                    "  const challenges = Array.from(document.querySelectorAll('[data-sitekey]'));" +
+                                    "  return challenges.length === 0;" +
+                                    "}" +
+                                    "return false;"
+                    );
+                    return solved instanceof Boolean && (Boolean) solved;
+                } catch (JavascriptException e) {
+                    return false;
+                }
+            });
+            System.out.println("Captcha inicial resuelto automáticamente para " + providerName + ".");
+        } catch (TimeoutException e) {
+            System.out.println("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
+        }
     }
 
     private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
