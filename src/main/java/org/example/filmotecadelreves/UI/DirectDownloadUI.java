@@ -11,6 +11,7 @@ import org.example.filmotecadelreves.moviesad.DownloadBasketItem;
 import org.example.filmotecadelreves.moviesad.DownloadManager;
 import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.util.UrlNormalizer;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -608,15 +609,16 @@ public class DirectDownloadUI {
     }
 
     private void openStreamAsync(String url, Integer serverId) {
-        if (url == null || url.isEmpty()) {
+        String normalizedUrl = UrlNormalizer.normalizeMediaUrl(url);
+        if (normalizedUrl == null || normalizedUrl.isEmpty()) {
             return;
         }
 
         runWithLoading(() -> {
                     if (serverId != null) {
-                        videoStream.stream(url, serverId);
+                        videoStream.stream(normalizedUrl, serverId);
                     } else {
-                        videoStream.stream(url);
+                        videoStream.stream(normalizedUrl);
                     }
                     return null;
                 },

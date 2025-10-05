@@ -1,5 +1,6 @@
 package org.example.filmotecadelreves.moviesad;
 
+import org.example.filmotecadelreves.util.UrlNormalizer;
 
 /**
  * Representa un elemento en la cesta de descargas
@@ -33,7 +34,7 @@ public class DownloadBasketItem {
         this.name = name;
         this.type = type;
         this.quality = quality;
-        this.link = link;
+        this.link = UrlNormalizer.normalizeMediaUrl(link);
         this.server = server;
         this.seriesName = seriesName;
         this.seasonNumber = seasonNumber;
@@ -93,7 +94,7 @@ public class DownloadBasketItem {
      * @param link Nuevo enlace
      */
     public void setLink(String link) {
-        this.link = link;
+        this.link = UrlNormalizer.normalizeMediaUrl(link);
     }
 
     /**
