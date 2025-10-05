@@ -8,6 +8,7 @@ import org.example.filmotecadelreves.downloaders.MixdropDownloader;
 import org.example.filmotecadelreves.downloaders.SeleniumPowvideo;
 import org.example.filmotecadelreves.downloaders.SeleniumStreamplay;
 import org.example.filmotecadelreves.downloaders.StreamtapeDownloader;
+import org.example.filmotecadelreves.util.UrlNormalizer;
 
 import java.io.File;
 import java.util.HashMap;
@@ -66,6 +67,8 @@ public class DownloadManager {
                 return false;
             }
 
+            String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
+
             // Verificar límites de descarga para PowVideo y StreamPlay
             String serverLower = item.getServer().toLowerCase();
             if ((serverLower.contains("powvideo") || serverLower.contains("streamplay")) &&
@@ -79,7 +82,7 @@ public class DownloadManager {
                         0,
                         "Waiting",
                         item.getServer(),
-                        item.getLink(),
+                        normalizedLink,
                         "",
                         downloader
                 );
@@ -110,7 +113,7 @@ public class DownloadManager {
                     0,
                     "Waiting",
                     item.getServer(),
-                    item.getLink(),
+                    normalizedLink,
                     movieFolder,
                     downloader
             );
@@ -119,7 +122,7 @@ public class DownloadManager {
             descargasUI.addDirectDownload(directDownload);
 
             // Iniciar descarga
-            downloader.download(item.getLink(), movieFolder, directDownload);
+            downloader.download(normalizedLink, movieFolder, directDownload);
 
             // Incrementar contador si es PowVideo o StreamPlay
             if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
@@ -150,6 +153,8 @@ public class DownloadManager {
                 return false;
             }
 
+            String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
+
             // Verificar límites de descarga para PowVideo y StreamPlay
             String serverLower = item.getServer().toLowerCase();
             if ((serverLower.contains("powvideo") || serverLower.contains("streamplay")) &&
@@ -163,7 +168,7 @@ public class DownloadManager {
                         0,
                         "Waiting",
                         item.getServer(),
-                        item.getLink(),
+                        normalizedLink,
                         "",
                         downloader
                 );
@@ -194,7 +199,7 @@ public class DownloadManager {
                     0,
                     "Waiting",
                     item.getServer(),
-                    item.getLink(),
+                    normalizedLink,
                     destinationPath,
                     downloader
             );
@@ -203,7 +208,7 @@ public class DownloadManager {
             descargasUI.addDirectDownload(directDownload);
 
             // Iniciar descarga
-            downloader.download(item.getLink(), destinationPath, directDownload);
+            downloader.download(normalizedLink, destinationPath, directDownload);
 
             // Incrementar contador si es PowVideo o StreamPlay
             if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
