@@ -406,7 +406,13 @@ public class VideosStreamerManager {
         }
         try {
             driver.manage().window().minimize();
-        } catch (UnsupportedCommandException | WebDriverException e) {
+        } catch (UnsupportedCommandException e) {
+            try {
+                driver.manage().window().setPosition(new Point(-2000, 0));
+            } catch (WebDriverException ignored) {
+                // Ignore if we cannot reposition the window
+            }
+        } catch (WebDriverException e) {
             try {
                 driver.manage().window().setPosition(new Point(-2000, 0));
             } catch (WebDriverException ignored) {
@@ -439,7 +445,8 @@ public class VideosStreamerManager {
         }
 
         try {
-            if (driver instanceof JavascriptExecutor jsExecutor) {
+            if (driver instanceof JavascriptExecutor) {
+                JavascriptExecutor jsExecutor = (JavascriptExecutor) driver;
                 jsExecutor.executeScript("window.focus();");
             }
         } catch (Exception ignored) {
