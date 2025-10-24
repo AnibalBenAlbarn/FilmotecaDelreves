@@ -8,7 +8,6 @@ import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
@@ -20,6 +19,9 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -35,6 +37,8 @@ public class SeleniumPowvideo implements DirectDownloader {
             "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
     };
     private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
+
+    private static final int CAPTCHA_GRACE_SECONDS = 10;
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
@@ -60,6 +64,9 @@ public class SeleniumPowvideo implements DirectDownloader {
                 // Configurar navegador
                 setupBrowser(limitReached);
 
+                driver.get(videoUrl);
+                wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+
                 // Si se ha alcanzado el límite, mostrar navegador para que el usuario resuelva el captcha
                 if (limitReached) {
                     System.out.println("Límite de descargas alcanzado para PowVideo. El usuario debe resolver el captcha.");
@@ -73,9 +80,6 @@ public class SeleniumPowvideo implements DirectDownloader {
                     javafx.application.Platform.runLater(() -> {
                         progressDialog.show();
                     });
-
-                    // Abrir la URL y esperar a que el usuario resuelva el captcha
-                    driver.get(videoUrl);
 
                     // Esperar 2 minutos como máximo para que el usuario resuelva el captcha
                     long startTime = System.currentTimeMillis();
@@ -99,14 +103,19 @@ public class SeleniumPowvideo implements DirectDownloader {
                             progressDialog.updateCountdown(countdownText);
                         });
 
-                        // Verificar si ya se puede detectar el video
                         try {
-                            if (driver.getPageSource().contains(".mp4")) {
+                            WebElement btn = driver.findElement(By.id("btn_download"));
+                            if (btn.isDisplayed() && btn.isEnabled()) {
                                 System.out.println("Captcha resuelto por el usuario, continuando con la descarga.");
                                 break;
                             }
-                        } catch (Exception e) {
-                            // Ignorar errores durante la comprobación
+                        } catch (NoSuchElementException ignored) {
+                            // El botón aún no está disponible
+                        }
+
+                        if (driver.getPageSource().contains("v.mp4")) {
+                            System.out.println("Página de video detectada durante la espera manual.");
+                            break;
                         }
 
                         // Esperar un poco antes de la siguiente comprobación
@@ -123,65 +132,31 @@ public class SeleniumPowvideo implements DirectDownloader {
                         return;
                     }
                 } else {
-                    // Obtener enlace de descarga de forma automática
-                    driver.get(videoUrl);
-                    wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
-
                     // Esperar a que la extensión resuelva el captcha inicial antes de continuar
                     if (isNopechaInstalled) {
                         waitForNopechaResolution("PowVideo");
                     } else {
                         System.out.println("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
                     }
-
-                    // Intentar obtener el enlace de descarga
-                    Actions actions = new Actions(driver);
-                    int attempt = 1;
-                    while (true) {
-                        // En intento impar: click en el body
-                        if (attempt % 2 != 0) {
-                            try {
-                                actions.moveByOffset(10, 10).click().perform();
-                                System.out.println("Intento " + attempt + ": Click en el body realizado.");
-                            } catch (Exception e) {
-                                System.out.println("Intento " + attempt + ": Error al hacer click en el body: " + e.getMessage());
-                            }
-                        } else {
-                            // En intento par: click en el botón
-                            try {
-                                // Se vuelve a buscar el botón para evitar la referencia obsoleta
-                                WebElement btnDownload = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("btn_download")));
-                                btnDownload.click();
-                                System.out.println("Intento " + attempt + ": Click en el botón 'Continuar al video' realizado.");
-                            } catch (Exception e) {
-                                System.out.println("Intento " + attempt + ": Error al hacer click en el botón: " + e.getMessage());
-                            }
-                        }
-                        Thread.sleep(1000);
-
-                        // Después de cada click par se verifica si se detecta ".mp4" en el HTML
-                        if (attempt % 2 == 0) {
-                            if (driver.getPageSource().contains(".mp4")) {
-                                System.out.println("Archivo .mp4 detectado en el HTML.");
-                                break;
-                            }
-                        }
-                        attempt++;
-                    }
                 }
 
-                // Esperar 5 segundos para que se cargue la nueva página
-                Thread.sleep(5000);
+                // Dar un tiempo extra para que el captcha automático finalice
+                try {
+                    Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
 
-                // Buscar la etiqueta <video> y extraer la URL del mp4
-                WebElement videoPlayer = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("video")));
-                String videoSrc = videoPlayer.getAttribute("src");
-                System.out.println("Enlace del video: " + videoSrc);
+                clickProceedButton();
 
-                if (videoSrc == null || videoSrc.isEmpty()) {
+                Optional<String> downloadUrl = waitForMp4Url();
+                if (downloadUrl.isEmpty()) {
                     updateDownloadStatus(directDownload, "Error", 0);
                     return;
                 }
+
+                String videoSrc = downloadUrl.get();
+                System.out.println("Enlace del video: " + videoSrc);
 
                 // Crear directorio de destino si no existe
                 File destDir = new File(destinationPath);
@@ -326,6 +301,45 @@ public class SeleniumPowvideo implements DirectDownloader {
         } catch (TimeoutException e) {
             System.out.println("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
         }
+    }
+
+    private void clickProceedButton() {
+        try {
+            WebElement btnDownload = wait.until(ExpectedConditions.elementToBeClickable(By.id("btn_download")));
+            try {
+                btnDownload.click();
+            } catch (Exception clickEx) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btnDownload);
+            }
+            System.out.println("Botón 'Continuar al video' pulsado correctamente.");
+        } catch (TimeoutException timeoutException) {
+            System.out.println("No se pudo localizar el botón 'Continuar al video' después del tiempo de espera.");
+        }
+    }
+
+    private Optional<String> waitForMp4Url() {
+        Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
+        try {
+            WebDriverWait mp4Wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+            boolean found = mp4Wait.until(webDriver -> {
+                String pageSource = webDriver.getPageSource();
+                Matcher matcher = pattern.matcher(pageSource);
+                return matcher.find();
+            });
+
+            if (!found) {
+                return Optional.empty();
+            }
+
+            String pageSource = driver.getPageSource();
+            Matcher matcher = pattern.matcher(pageSource);
+            if (matcher.find()) {
+                return Optional.of(matcher.group(1));
+            }
+        } catch (TimeoutException e) {
+            System.out.println("Tiempo de espera agotado buscando el enlace mp4.");
+        }
+        return Optional.empty();
     }
 
     private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
