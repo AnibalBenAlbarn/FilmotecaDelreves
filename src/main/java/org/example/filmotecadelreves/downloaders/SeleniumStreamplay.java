@@ -7,7 +7,6 @@ import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
@@ -20,6 +19,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,8 +38,7 @@ public class SeleniumStreamplay implements DirectDownloader {
     };
     private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
 
-    private static final int WAIT_TIME_SECONDS = 2; // Tiempo de espera para Streamplay
-    private static final int MAX_ATTEMPTS = 30; // Número máximo de intentos
+    private static final int CAPTCHA_GRACE_SECONDS = 10; // Tiempo para que NoCaptcha resuelva automáticamente
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
@@ -306,70 +307,72 @@ public class SeleniumStreamplay implements DirectDownloader {
         driver.get(videoUrl);
         wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
 
-        // Esperar a que la extensión resuelva el captcha inicial
+        // Permitir que la extensión NoCaptcha resuelva el desafío inicial
         if (isNopechaInstalled) {
             waitForNopechaResolution("Streamplay");
         } else {
             System.out.println("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
         }
 
-        int attempt = 1;
-        while (attempt <= MAX_ATTEMPTS) {
-            if (attempt % 2 != 0) {
-                // Intento impar: hacer click en el body para descartar popups
-                try {
-                    new Actions(driver).moveByOffset(10, 10).click().perform();
-                    System.out.println("Intento " + attempt + ": Click en el body realizado.");
-                } catch (Exception e) {
-                    System.out.println("Intento " + attempt + ": Error al hacer click en el body: " + e.getMessage());
-                }
-            } else {
-                // Intento par: antes de clickear, esperar que desaparezca el overlay
-                try {
-                    wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                            By.xpath("//div[contains(@style, 'z-index: 2147483647')]")));
-                    System.out.println("Intento " + attempt + ": Overlay desaparecido.");
-                } catch (Exception e) {
-                    System.out.println("Intento " + attempt + ": No se pudo esperar al overlay: " + e.getMessage());
-                }
-                // Intentar click en el botón "Proceed to video"
-                try {
-                    WebElement btnDownload = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("btn_download")));
-                    try {
-                        btnDownload.click();
-                        System.out.println("Intento " + attempt + ": Click en el botón 'Proceed to video' realizado.");
-                    } catch (Exception clickEx) {
-                        System.out.println("Intento " + attempt + ": Error al hacer click (normal), se intenta JavaScript: " + clickEx.getMessage());
-                        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btnDownload);
-                        System.out.println("Intento " + attempt + ": Click en el botón 'Proceed to video' realizado con JavaScript.");
-                    }
-                } catch (Exception e) {
-                    System.out.println("Intento " + attempt + ": Error al localizar o clickear el botón: " + e.getMessage());
-                }
-            }
-            Thread.sleep(1000);
-
-            // Verificar si el reproductor de video ya está cargado
-            List<WebElement> videoList = driver.findElements(By.cssSelector("video"));
-            if (!videoList.isEmpty() && videoList.get(0).isDisplayed()) {
-                System.out.println("Reproductor de video cargado.");
-                break;
-            }
-            attempt++;
+        // Tiempo de gracia adicional solicitado (10 segundos)
+        try {
+            Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
 
-        // Si se alcanzó el máximo de intentos y aún no se cargó el reproductor, se notifica
-        if (attempt > MAX_ATTEMPTS) {
-            System.out.println("Se alcanzó el número máximo de intentos sin cargar el reproductor.");
+        clickProceedButton();
+
+        // Esperar a que la página posterior cargue el contenido del video
+        wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+
+        Optional<String> downloadUrl = waitForMp4Url();
+        if (downloadUrl.isEmpty()) {
+            System.out.println("No se encontró un enlace que termine en v.mp4 en la página de Streamplay.");
             return "";
         }
 
-        // Esperar unos segundos para que se estabilice la carga del video
-        Thread.sleep(5000);
-        WebElement videoPlayer = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("video")));
-        String videoSrc = videoPlayer.getAttribute("src");
-        System.out.println("Enlace del video: " + videoSrc);
-        return videoSrc;
+        System.out.println("Enlace del video: " + downloadUrl.get());
+        return downloadUrl.get();
+    }
+
+    private void clickProceedButton() {
+        try {
+            WebElement btnDownload = wait.until(ExpectedConditions.elementToBeClickable(By.id("btn_download")));
+            try {
+                btnDownload.click();
+            } catch (Exception clickEx) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btnDownload);
+            }
+            System.out.println("Botón 'Proceed to video' pulsado correctamente.");
+        } catch (TimeoutException timeoutException) {
+            System.out.println("No se pudo localizar el botón 'Proceed to video' después del tiempo de espera.");
+        }
+    }
+
+    private Optional<String> waitForMp4Url() {
+        Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
+        try {
+            WebDriverWait mp4Wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+            boolean found = mp4Wait.until(webDriver -> {
+                String pageSource = webDriver.getPageSource();
+                Matcher matcher = pattern.matcher(pageSource);
+                return matcher.find();
+            });
+
+            if (!found) {
+                return Optional.empty();
+            }
+
+            String pageSource = driver.getPageSource();
+            Matcher matcher = pattern.matcher(pageSource);
+            if (matcher.find()) {
+                return Optional.of(matcher.group(1));
+            }
+        } catch (TimeoutException e) {
+            System.out.println("Tiempo de espera agotado buscando el enlace mp4.");
+        }
+        return Optional.empty();
     }
 
     private void waitForNopechaResolution(String providerName) {
