@@ -4,6 +4,7 @@ import org.example.filmotecadelreves.DirectDownloader;
 import org.example.filmotecadelreves.UI.DescargasUI;
 import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.util.ChromeStealthConfigurator;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -213,6 +214,8 @@ public class SeleniumStreamplay implements DirectDownloader {
         ChromeOptions options = new ChromeOptions();
         options.setBinary(CHROME_PATH);
 
+        ChromeStealthConfigurator.applyHumanLikeDefaults(options, "streamplay", true);
+
         // Cargar extensiones
         if (!addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates())) {
             System.out.println("Advertencia: no se pudo cargar la extensión de bloqueo de popups para Streamplay.");
@@ -222,15 +225,8 @@ public class SeleniumStreamplay implements DirectDownloader {
             System.out.println("Advertencia: no se pudo cargar la extensión NoPeCaptcha para Streamplay.");
         }
 
-        options.addArguments(
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-                "--remote-allow-origins=*",
-                "--headless=new"
-        );
-
         driver = new ChromeDriver(options);
+        ChromeStealthConfigurator.maskAutomation(driver);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
     }
 
@@ -242,20 +238,15 @@ public class SeleniumStreamplay implements DirectDownloader {
         ChromeOptions options = new ChromeOptions();
         options.setBinary(CHROME_PATH);
 
+        ChromeStealthConfigurator.applyHumanLikeDefaults(options, "streamplay", false);
+
         // Cargar solo la extensión de bloqueo de popups
         if (!addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates())) {
             System.out.println("Advertencia: no se pudo cargar la extensión de bloqueo de popups para Streamplay (modo usuario).");
         }
 
-        // No se cargan extensiones para que el usuario pueda ver y resolver el captcha
-        options.addArguments(
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-                "--remote-allow-origins=*"
-        );
-
         driver = new ChromeDriver(options);
+        ChromeStealthConfigurator.maskAutomation(driver);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         isNopechaInstalled = false;
     }
