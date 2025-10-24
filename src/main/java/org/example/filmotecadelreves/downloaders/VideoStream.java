@@ -18,6 +18,8 @@ public class VideoStream {
     public VideoStream() {
         this.defaultStreamerManager = new VideosStreamerManager();
         this.serverManagers = new HashMap<>();
+        registerManager(1, new PowvideoStreamManager());
+        registerManager(21, new StreamplayStreamManager());
         registerManager(497, new StreamtapeStreamManager());
     }
 

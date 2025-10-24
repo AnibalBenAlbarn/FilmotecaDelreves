@@ -207,6 +207,8 @@ public class VideosStreamerManager {
             // Initialize the WebDriver with our options
             driver = new ChromeDriver(options);
 
+            onDriverCreated(driver, config);
+
             // Keep the browser in the background while extensions are installed
             minimizeBrowserWindow();
 
@@ -228,7 +230,9 @@ public class VideosStreamerManager {
             }
 
             // Navigate to the URL while keeping the browser in the background
+            beforeNavigateTo(driver, preparedUrl, config);
             driver.get(preparedUrl);
+            afterNavigateTo(driver, preparedUrl, config);
 
             // Give the page a brief moment to stabilise before showing it to the user
             Thread.sleep(POST_NAVIGATION_DELAY_MS);
@@ -565,6 +569,33 @@ public class VideosStreamerManager {
      */
     protected String prepareUrlForStreaming(String url, ServerConfig config) {
         return url;
+    }
+
+    /**
+     * Hook that allows subclasses to customise the freshly created driver instance before any
+     * navigation occurs. Subclasses can use this to register scripts, override the user agent or
+     * perform other provider specific tweaks that must run prior to loading the target page.
+     */
+    protected void onDriverCreated(WebDriver driver, ServerConfig config) {
+        // Default implementation does nothing.
+    }
+
+    /**
+     * Hook that allows subclasses to adjust the driver or page just before navigation happens.
+     * Implementations should avoid long running operations here to prevent delaying the stream
+     * start unnecessarily.
+     */
+    protected void beforeNavigateTo(WebDriver driver, String url, ServerConfig config) {
+        // Default implementation does nothing.
+    }
+
+    /**
+     * Hook that allows subclasses to run logic immediately after a successful navigation. This is
+     * useful to simulate small human-like delays or perform page specific preparation without
+     * having to reimplement the entire streaming workflow.
+     */
+    protected void afterNavigateTo(WebDriver driver, String url, ServerConfig config) {
+        // Default implementation does nothing.
     }
 
     private File ensureUserDataDir(ServerConfig config) {
