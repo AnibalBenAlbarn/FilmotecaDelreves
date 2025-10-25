@@ -4,13 +4,14 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import java.util.concurrent.ThreadLocalRandom;
+
 
 /**
  * Base class that adds a collection of "stealth" tweaks to Selenium driven Chrome sessions in
@@ -21,6 +22,7 @@ public abstract class StealthVideosStreamerManager extends VideosStreamerManager
 
     private static final String DEFAULT_ACCEPT_LANGUAGE = "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7";
     private static final String DEFAULT_PLATFORM = "Win32";
+
     private static final String STEALTH_SCRIPT = String.join("",
             "(() => {",
             "const navigatorProto = Object.getPrototypeOf(navigator);",
@@ -117,7 +119,6 @@ public abstract class StealthVideosStreamerManager extends VideosStreamerManager
         }
 
         ChromeDriver chromeDriver = (ChromeDriver) driver;
-
         enableNetworkDomain(chromeDriver);
         overrideUserAgent(chromeDriver, config);
         injectStealthScript(chromeDriver);
@@ -295,4 +296,5 @@ public abstract class StealthVideosStreamerManager extends VideosStreamerManager
         int spread = 800;
         return base + ThreadLocalRandom.current().nextInt(spread);
     }
+
 }
