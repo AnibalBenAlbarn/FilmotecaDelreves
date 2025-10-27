@@ -15,9 +15,15 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -29,6 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Implementación de descargador para el servidor Streamplay
  */
 public class SeleniumStreamplay implements DirectDownloader {
+    private static final String PROVIDER_NAME = "Streamplay";
+    private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
@@ -63,7 +71,7 @@ public class SeleniumStreamplay implements DirectDownloader {
 
                 // Si se ha alcanzado el límite, mostrar navegador para que el usuario resuelva el captcha
                 if (limitReached) {
-                    System.out.println("Límite de descargas alcanzado para Streamplay. El usuario debe resolver el captcha.");
+                    logWarn("Límite de descargas alcanzado. Se requiere intervención del usuario para resolver el captcha.");
 
                     // Mostrar diálogo de progreso con cuenta atrás
                     ProgressDialog progressDialog = new ProgressDialog(
@@ -107,7 +115,7 @@ public class SeleniumStreamplay implements DirectDownloader {
                         try {
                             List<WebElement> videoList = driver.findElements(By.cssSelector("video"));
                             if (!videoList.isEmpty() && videoList.get(0).isDisplayed()) {
-                                System.out.println("Captcha resuelto por el usuario, continuando con la descarga.");
+                                logDebug("Captcha resuelto por el usuario, continuando con la descarga.");
                                 break;
                             }
                         } catch (Exception e) {
@@ -124,7 +132,7 @@ public class SeleniumStreamplay implements DirectDownloader {
                     // Si se agotó el tiempo, mostrar error
                     if (System.currentTimeMillis() - startTime >= timeoutMillis) {
                         updateDownloadStatus(directDownload, "Error", 0);
-                        System.err.println("Tiempo agotado esperando que el usuario resuelva el captcha.");
+                        logError("Tiempo agotado esperando que el usuario resuelva el captcha.");
                         return;
                     }
                 } else {
@@ -155,8 +163,7 @@ public class SeleniumStreamplay implements DirectDownloader {
                 }
 
             } catch (Exception e) {
-                System.err.println("Error en la descarga de Streamplay: " + e.getMessage());
-                e.printStackTrace();
+                logException("Error en la descarga de Streamplay", e);
                 updateDownloadStatus(directDownload, "Error", 0);
             } finally {
                 if (driver != null) {
@@ -200,7 +207,7 @@ public class SeleniumStreamplay implements DirectDownloader {
             int responseCode = connection.getResponseCode();
             return (responseCode == HttpURLConnection.HTTP_OK);
         } catch (Exception e) {
-            System.err.println("Error verificando disponibilidad: " + e.getMessage());
+            logError("Error verificando disponibilidad: " + e.getMessage());
             return false;
         }
     }
@@ -212,14 +219,20 @@ public class SeleniumStreamplay implements DirectDownloader {
         System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
         ChromeOptions options = new ChromeOptions();
         options.setBinary(CHROME_PATH);
+        logDebug("Configurando navegador en modo headless para resolución automática.");
 
         // Cargar extensiones
-        if (!addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates())) {
-            System.out.println("Advertencia: no se pudo cargar la extensión de bloqueo de popups para Streamplay.");
+        boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
+        if (!popupExtensionLoaded) {
+            logWarn("No se pudo cargar la extensión de bloqueo de popups.");
+        } else {
+            logDebug("Extensión de bloqueo de popups cargada correctamente.");
         }
         isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
         if (!isNopechaInstalled) {
-            System.out.println("Advertencia: no se pudo cargar la extensión NoPeCaptcha para Streamplay.");
+            logWarn("No se pudo cargar la extensión NoPeCaptcha.");
+        } else {
+            logDebug("Extensión NoPeCaptcha cargada correctamente.");
         }
 
         options.addArguments(
@@ -232,6 +245,7 @@ public class SeleniumStreamplay implements DirectDownloader {
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        logDebug("Navegador inicializado en modo headless con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
 
     /**
@@ -241,10 +255,14 @@ public class SeleniumStreamplay implements DirectDownloader {
         System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
         ChromeOptions options = new ChromeOptions();
         options.setBinary(CHROME_PATH);
+        logDebug("Configurando navegador visible para interacción del usuario.");
 
         // Cargar solo la extensión de bloqueo de popups
-        if (!addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates())) {
-            System.out.println("Advertencia: no se pudo cargar la extensión de bloqueo de popups para Streamplay (modo usuario).");
+        boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
+        if (!popupExtensionLoaded) {
+            logWarn("No se pudo cargar la extensión de bloqueo de popups (modo usuario).");
+        } else {
+            logDebug("Extensión de bloqueo de popups cargada correctamente (modo usuario).");
         }
 
         // No se cargan extensiones para que el usuario pueda ver y resolver el captcha
@@ -258,6 +276,7 @@ public class SeleniumStreamplay implements DirectDownloader {
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         isNopechaInstalled = false;
+        logDebug("Navegador inicializado en modo visible para interacción del usuario.");
     }
 
     private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
@@ -304,14 +323,16 @@ public class SeleniumStreamplay implements DirectDownloader {
      * y, si es necesario, se usa un click vía JavaScript. El ciclo continúa hasta que se carga el reproductor de video.
      */
     private String getDownloadLink(String videoUrl) throws Exception {
+        logDebug("Abriendo enlace original: " + videoUrl);
         driver.get(videoUrl);
         wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+        logPageState("Página inicial cargada");
 
         // Permitir que la extensión NoCaptcha resuelva el desafío inicial
         if (isNopechaInstalled) {
             waitForNopechaResolution("Streamplay");
         } else {
-            System.out.println("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
+            logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
         }
 
         // Tiempo de gracia adicional solicitado (10 segundos)
@@ -322,17 +343,21 @@ public class SeleniumStreamplay implements DirectDownloader {
         }
 
         clickProceedButton();
+        logPageState("Estado tras pulsar botón principal");
 
         // Esperar a que la página posterior cargue el contenido del video
         wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+        logPageState("Página posterior cargada");
 
         Optional<String> downloadUrl = waitForMp4Url();
         if (downloadUrl.isEmpty()) {
-            System.out.println("No se encontró un enlace que termine en v.mp4 en la página de Streamplay.");
+            logWarn("No se encontró un enlace que termine en v.mp4.");
+            collectDebugArtifacts("mp4-no-encontrado");
             return "";
         }
 
-        System.out.println("Enlace del video: " + downloadUrl.get());
+        logDebug("Enlace del video detectado: " + downloadUrl.get());
+        logPageState("Estado tras detectar enlace de video");
         return downloadUrl.get();
     }
 
@@ -344,15 +369,17 @@ public class SeleniumStreamplay implements DirectDownloader {
             } catch (Exception clickEx) {
                 ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btnDownload);
             }
-            System.out.println("Botón 'Proceed to video' pulsado correctamente.");
+            logDebug("Botón 'Proceed to video' pulsado correctamente.");
         } catch (TimeoutException timeoutException) {
-            System.out.println("No se pudo localizar el botón 'Proceed to video' después del tiempo de espera.");
+            logWarn("No se pudo localizar el botón 'Proceed to video' después del tiempo de espera.");
+            collectDebugArtifacts("boton-proceed-no-disponible");
         }
     }
 
     private Optional<String> waitForMp4Url() {
         Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
         try {
+            logDebug("Iniciando espera activa para enlaces que terminen en v.mp4...");
             WebDriverWait mp4Wait = new WebDriverWait(driver, Duration.ofSeconds(30));
             boolean found = mp4Wait.until(webDriver -> {
                 String pageSource = webDriver.getPageSource();
@@ -361,16 +388,21 @@ public class SeleniumStreamplay implements DirectDownloader {
             });
 
             if (!found) {
+                logWarn("Finalizó la espera sin detectar enlaces v.mp4.");
                 return Optional.empty();
             }
 
             String pageSource = driver.getPageSource();
             Matcher matcher = pattern.matcher(pageSource);
             if (matcher.find()) {
-                return Optional.of(matcher.group(1));
+                String url = matcher.group(1);
+                logDebug("Enlace v.mp4 encontrado: " + url);
+                return Optional.of(url);
             }
         } catch (TimeoutException e) {
-            System.out.println("Tiempo de espera agotado buscando el enlace mp4.");
+            logWarn("Tiempo de espera agotado buscando el enlace mp4.");
+            logPageState("Estado al agotar la espera de mp4");
+            collectDebugArtifacts("timeout-buscando-mp4");
         }
         return Optional.empty();
     }
@@ -409,9 +441,10 @@ public class SeleniumStreamplay implements DirectDownloader {
                     return false;
                 }
             });
-            System.out.println("Captcha inicial resuelto automáticamente para " + providerName + ".");
+            logDebug("Captcha inicial resuelto automáticamente para " + providerName + ".");
         } catch (TimeoutException e) {
-            System.out.println("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
+            logWarn("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
+            collectDebugArtifacts("captcha-no-resuelto");
         }
     }
 
@@ -444,21 +477,20 @@ public class SeleniumStreamplay implements DirectDownloader {
                 long lastUpdateTime = System.currentTimeMillis();
                 long lastDownloadedBytes = 0;
 
-                System.out.println("\\nIniciando descarga...");
-                System.out.println("Tamaño: " + formatSize(fileSize));
+                logDebug("Iniciando descarga del archivo. Tamaño estimado: " + formatSize(fileSize));
 
                 updateDownloadStatus(directDownload, "Downloading", 1, 0, 0, 0);
 
                 while ((bytesRead = in.read(buffer)) != -1) {
                     if (isCancelled.get()) {
-                        System.out.println("Descarga cancelada por el usuario");
+                        logWarn("Descarga cancelada por el usuario.");
                         updateDownloadStatus(directDownload, "Cancelled", (int)((double)totalRead / fileSize * 100), totalRead, 0, 0);
                         return;
                     }
 
                     while (isPaused.get()) {
                         if (isCancelled.get()) {
-                            System.out.println("Descarga cancelada durante pausa");
+                            logWarn("Descarga cancelada durante la pausa.");
                             updateDownloadStatus(directDownload, "Cancelled", (int)((double)totalRead / fileSize * 100), totalRead, 0, 0);
                             return;
                         }
@@ -490,12 +522,11 @@ public class SeleniumStreamplay implements DirectDownloader {
                     }
                 }
 
-                System.out.println("\\nDescarga completada: " + fileName);
+                logDebug("Descarga completada: " + fileName);
                 updateDownloadStatus(directDownload, "Completed", 100, totalRead, 0, 0);
             }
         } catch (Exception e) {
-            System.err.println("Error en la descarga: " + e.getMessage());
-            e.printStackTrace();
+            logException("Error en la descarga", e);
             updateDownloadStatus(directDownload, "Error", directDownload.getProgress(), directDownload.getDownloadedBytes(), 0, 0);
         }
     }
@@ -557,5 +588,92 @@ public class SeleniumStreamplay implements DirectDownloader {
             path = Paths.get(System.getProperty("user.dir")).resolve(path).normalize();
         }
         return path.toAbsolutePath().toString();
+    }
+
+    private void logDebug(String message) {
+        System.out.printf("[%s][%s][DEBUG] %s%n", LocalDateTime.now().format(LOG_TIME_FORMATTER), PROVIDER_NAME, message);
+    }
+
+    private void logWarn(String message) {
+        System.out.printf("[%s][%s][WARN] %s%n", LocalDateTime.now().format(LOG_TIME_FORMATTER), PROVIDER_NAME, message);
+    }
+
+    private void logError(String message) {
+        System.err.printf("[%s][%s][ERROR] %s%n", LocalDateTime.now().format(LOG_TIME_FORMATTER), PROVIDER_NAME, message);
+    }
+
+    private void logException(String context, Exception exception) {
+        logError(context + ": " + exception.getMessage());
+        exception.printStackTrace(System.err);
+        collectDebugArtifacts("excepcion-" + sanitizeForFileName(context));
+    }
+
+    private void collectDebugArtifacts(String reason) {
+        if (driver == null) {
+            return;
+        }
+        String safeReason = sanitizeForFileName(reason);
+        savePageSourceForDebug(safeReason);
+        captureScreenshotForDebug(safeReason);
+    }
+
+    private void savePageSourceForDebug(String reason) {
+        if (driver == null) {
+            return;
+        }
+        try {
+            Path debugDir = Paths.get("debug");
+            Files.createDirectories(debugDir);
+            Path output = debugDir.resolve(PROVIDER_NAME.toLowerCase() + "-" + reason + "-" + System.currentTimeMillis() + ".html");
+            Files.write(output, driver.getPageSource().getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            logDebug("Volcado del DOM guardado en: " + output.toAbsolutePath());
+        } catch (Exception e) {
+            logError("No se pudo guardar el volcado del DOM: " + e.getMessage());
+        }
+    }
+
+    private void captureScreenshotForDebug(String reason) {
+        if (!(driver instanceof TakesScreenshot)) {
+            return;
+        }
+        try {
+            Path debugDir = Paths.get("debug");
+            Files.createDirectories(debugDir);
+            Path screenshotTarget = debugDir.resolve(PROVIDER_NAME.toLowerCase() + "-" + reason + "-" + System.currentTimeMillis() + ".png");
+            File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+            Files.copy(screenshot.toPath(), screenshotTarget, StandardCopyOption.REPLACE_EXISTING);
+            logDebug("Captura de pantalla guardada en: " + screenshotTarget.toAbsolutePath());
+        } catch (Exception e) {
+            logError("No se pudo guardar la captura de pantalla: " + e.getMessage());
+        }
+    }
+
+    private String sanitizeForFileName(String input) {
+        return input.replaceAll("[^a-zA-Z0-9-_]", "_");
+    }
+
+    private void logPageState(String context) {
+        if (driver == null) {
+            return;
+        }
+        try {
+            String currentUrl = driver.getCurrentUrl();
+            logDebug(context + " -> URL actual: " + currentUrl);
+            List<WebElement> videos = driver.findElements(By.tagName("video"));
+            long visibleVideos = videos.stream().filter(this::isElementVisible).count();
+            logDebug(context + " -> Videos detectados: total=" + videos.size() + ", visibles=" + visibleVideos);
+            List<WebElement> iframes = driver.findElements(By.tagName("iframe"));
+            logDebug(context + " -> Iframes detectados: " + iframes.size());
+        } catch (Exception e) {
+            logError("No se pudo registrar el estado de la página ('" + context + "'): " + e.getMessage());
+        }
+    }
+
+    private boolean isElementVisible(WebElement element) {
+        try {
+            return element.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
