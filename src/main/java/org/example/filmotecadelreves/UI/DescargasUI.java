@@ -27,8 +27,12 @@ import javafx.util.Callback;
 import org.example.filmotecadelreves.DirectDownloader;
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
+import org.example.filmotecadelreves.moviesad.DownloadManager;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.example.filmotecadelreves.moviesad.TorrentState;
+import org.example.filmotecadelreves.moviesad.DownloadPersistenceManager;
+import org.example.filmotecadelreves.moviesad.DownloadPersistenceManager.DirectDownloadRecord;
+import org.example.filmotecadelreves.moviesad.DownloadPersistenceManager.TorrentDownloadRecord;
 import org.json.simple.JSONObject;
 
 import java.awt.Desktop;
@@ -36,11 +40,16 @@ import java.io.File;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -84,6 +93,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
     /** Sección: Configuración de columnas */
     private Map<String, Boolean> torrentColumnsVisibility = new HashMap<>();
     private Map<String, Boolean> directColumnsVisibility = new HashMap<>();
+
+    /** Persistencia */
+    private final DownloadPersistenceManager persistenceManager = DownloadPersistenceManager.getInstance();
+    private final Set<String> pendingTorrentAutoResume = new HashSet<>();
 
     //==========================================================================
     // CONSTRUCTOR
@@ -135,6 +148,9 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         // Inicializar mapas de visibilidad de columnas
         initializeColumnVisibilityMaps();
+
+        // Restaurar descargas persistidas de sesiones previas
+        restorePersistedDownloads();
     }
 
     /**
@@ -260,6 +276,133 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 directColumnsVisibility.put(column.getText(), true);
             }
         }
+    }
+
+    private void restorePersistedDownloads() {
+        List<DirectDownloadRecord> directRecords = persistenceManager.loadDirectDownloads();
+        for (DirectDownloadRecord record : directRecords) {
+            DirectDownloader downloader = DownloadManager.getDownloaderForServer(record.getServer());
+            DirectDownload download = new DirectDownload(
+                    record.getId(),
+                    record.getName(),
+                    record.getProgress(),
+                    record.getStatus(),
+                    record.getServer(),
+                    record.getUrl(),
+                    record.getDestinationPath(),
+                    downloader,
+                    record.isManuallyPaused()
+            );
+            download.applySnapshot(record);
+            directDownloads.add(download);
+
+            if (downloader == null && record.getServer() != null && !record.getServer().isEmpty()) {
+                Logger.getLogger(DescargasUI.class.getName()).log(Level.WARNING,
+                        "No se encontró downloader para el servidor " + record.getServer() +
+                                " al restaurar la descarga " + record.getName());
+            }
+
+            if (shouldAutoRestartDirect(download)) {
+                autoRestartDirectDownload(download);
+            }
+        }
+
+        List<TorrentDownloadRecord> torrentRecords = persistenceManager.loadTorrentDownloads();
+        for (TorrentDownloadRecord record : torrentRecords) {
+            TorrentState state = new TorrentState(
+                    record.getId(),
+                    record.getSource(),
+                    record.getDestinationPath(),
+                    0,
+                    0,
+                    0
+            );
+            state.applySnapshot(record);
+            torrentDownloads.add(state);
+
+            if (shouldAutoRestartTorrent(state)) {
+                pendingTorrentAutoResume.add(state.getInstanceId());
+            }
+        }
+
+        resumePendingTorrentRestores();
+    }
+
+    private boolean shouldAutoRestartDirect(DirectDownload download) {
+        if (download == null || download.isUserPaused()) {
+            return false;
+        }
+        if (download.getDownloader() == null) {
+            return false;
+        }
+        String destination = download.getDestinationPath();
+        if (destination == null || destination.isBlank()) {
+            return false;
+        }
+        String status = download.getStatus();
+        if (status == null) {
+            return true;
+        }
+        String normalized = status.trim().toLowerCase();
+        return !(normalized.contains("completed") || normalized.contains("cancelled") || normalized.contains("cancelado"));
+    }
+
+    private void autoRestartDirectDownload(DirectDownload download) {
+        DirectDownloader downloader = download.getDownloader();
+        if (downloader == null) {
+            return;
+        }
+        download.setUserPaused(false);
+        Platform.runLater(() -> {
+            download.setStatus("Waiting");
+            downloader.download(download.getUrl(), download.getDestinationPath(), download);
+        });
+    }
+
+    private boolean shouldAutoRestartTorrent(TorrentState state) {
+        if (state == null || state.isUserPaused()) {
+            return false;
+        }
+        String source = state.getTorrentSource();
+        if (source == null || source.isBlank()) {
+            return false;
+        }
+        String status = state.getStatus();
+        if (status == null) {
+            return true;
+        }
+        String normalized = status.trim().toLowerCase();
+        return !(normalized.startsWith("completado") || normalized.contains("eliminado") || normalized.contains("cancelado"));
+    }
+
+    private void resumePendingTorrentRestores() {
+        if (torrentDownloader == null || pendingTorrentAutoResume.isEmpty()) {
+            return;
+        }
+
+        Iterator<String> iterator = pendingTorrentAutoResume.iterator();
+        while (iterator.hasNext()) {
+            String torrentId = iterator.next();
+            TorrentState state = findTorrentStateById(torrentId);
+            if (state != null) {
+                state.setStatus("En espera");
+                state.setUserPaused(false);
+                torrentDownloader.addTorrent(state);
+            }
+            iterator.remove();
+        }
+    }
+
+    private TorrentState findTorrentStateById(String instanceId) {
+        if (instanceId == null) {
+            return null;
+        }
+        for (TorrentState state : torrentDownloads) {
+            if (instanceId.equals(state.getInstanceId())) {
+                return state;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1377,6 +1520,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         if (torrentDownloader != null) {
             torrentDownloader.addNotificationListener(this);
         }
+
+        resumePendingTorrentRestores();
     }
 
     /**
@@ -1702,14 +1847,29 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
      * Limpia los torrents completados de la lista
      */
     private void clearCompletedTorrents() {
-        torrentDownloads.removeIf(torrent -> "Completado".equals(torrent.getStatus()));
+        Iterator<TorrentState> iterator = torrentDownloads.iterator();
+        while (iterator.hasNext()) {
+            TorrentState torrent = iterator.next();
+            if (torrent.getStatus() != null && torrent.getStatus().startsWith("Completado")) {
+                iterator.remove();
+                persistenceManager.deleteTorrent(torrent.getInstanceId());
+            }
+        }
     }
 
     /**
      * Limpia las descargas directas completadas de la lista
      */
     private void clearCompletedDirect() {
-        directDownloads.removeIf(download -> "Completed".equals(download.getStatus()));
+        Iterator<DirectDownload> iterator = directDownloads.iterator();
+        while (iterator.hasNext()) {
+            DirectDownload download = iterator.next();
+            String status = download.getStatus();
+            if (status != null && status.equalsIgnoreCase("Completed")) {
+                iterator.remove();
+                persistenceManager.deleteDirectDownload(download.getId());
+            }
+        }
     }
 
     /**
@@ -1719,12 +1879,14 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
      */
     private void pauseTorrent(TorrentState torrentState) {
         if (torrentDownloader != null) {
+            torrentState.setUserPaused(true);
             torrentDownloader.pauseDownload(torrentState);
             // No establecemos el estado aquí, dejamos que el TorrentDownloader lo haga
             // y actualice el estado a través de eventos
         } else {
             System.err.println("Error: TorrentDownloader no inicializado");
             torrentState.setStatus("Pausado");
+            torrentState.setUserPaused(true);
         }
 
         torrentsTable.refresh();
@@ -1737,12 +1899,14 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
      */
     private void resumeTorrent(TorrentState torrentState) {
         if (torrentDownloader != null) {
+            torrentState.setUserPaused(false);
             torrentDownloader.resumeDownload(torrentState);
             // No establecemos el estado aquí, dejamos que el TorrentDownloader lo haga
             // y actualice el estado a través de eventos
         } else {
             System.err.println("Error: TorrentDownloader no inicializado");
             torrentState.setStatus("Descargando");
+            torrentState.setUserPaused(false);
         }
 
         torrentsTable.refresh();
@@ -1757,6 +1921,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         if (torrentDownloader != null) {
             torrentState.setStatus("En espera");
             torrentState.setProgress(0);
+            torrentState.setUserPaused(false);
             torrentDownloader.resumeDownload(torrentState);
         } else {
             System.err.println("Error: TorrentDownloader no inicializado");
@@ -1795,6 +1960,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             }
 
             torrentDownloads.remove(torrentState);
+            persistenceManager.deleteTorrent(torrentState.getInstanceId());
         }
     }
 
@@ -2137,6 +2303,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             download.setStatus("Paused");
         }
 
+        download.setUserPaused(true);
+
         directTable.refresh();
     }
 
@@ -2152,6 +2320,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         } else {
             download.setStatus("Downloading");
         }
+
+        download.setUserPaused(false);
 
         directTable.refresh();
     }
@@ -2187,6 +2357,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             System.err.println("Error: Downloader no inicializado para " + download.getName());
         }
 
+        download.setUserPaused(false);
+
         directTable.refresh();
     }
 
@@ -2202,6 +2374,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         }
 
         directDownloads.remove(download);
+        persistenceManager.deleteDirectDownload(download.getId());
     }
 
     /**
@@ -2212,6 +2385,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
     public void addTorrentDownload(TorrentState torrentState) {
         System.out.println("Añadiendo descarga de torrent: " + torrentState.getTorrentSource());
         torrentDownloads.add(torrentState);
+        persistenceManager.upsertTorrent(torrentState);
+        torrentState.markPersistenceSynced();
     }
 
     /**
@@ -2222,6 +2397,8 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
     public void addDirectDownload(DirectDownload download) {
         System.out.println("Añadiendo descarga directa: " + download.getName());
         directDownloads.add(download);
+        persistenceManager.upsertDirectDownload(download);
+        download.markPersistenceSynced();
     }
 
     /**
@@ -2303,6 +2480,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
      * Clase para representar una descarga directa
      */
     public static class DirectDownload {
+        private final String id;
         private final SimpleStringProperty name;
         private final SimpleDoubleProperty progress;
         private final SimpleStringProperty status;
@@ -2314,33 +2492,129 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         private final SimpleLongProperty remainingTime;
         private final SimpleLongProperty downloadedBytes;
         private DirectDownloader downloader;
+        private boolean userPaused;
+
+        private transient boolean persistenceEnabled = true;
+        private transient double lastPersistedProgress = -1;
+        private transient long lastPersistedBytes = -1;
+        private transient String lastPersistedStatus = null;
+        private transient long lastPersistedTimestamp = 0L;
 
         public DirectDownload(String name, double progress, String status, String server, String url) {
-            this.name = new SimpleStringProperty(name);
-            this.progress = new SimpleDoubleProperty(progress);
-            this.status = new SimpleStringProperty(status);
-            this.server = new SimpleStringProperty(server);
-            this.url = new SimpleStringProperty(url);
-            this.destinationPath = new SimpleStringProperty("");
-            this.fileSize = new SimpleLongProperty(0);
-            this.downloadSpeed = new SimpleDoubleProperty(0);
-            this.remainingTime = new SimpleLongProperty(0);
-            this.downloadedBytes = new SimpleLongProperty(0);
-            this.downloader = null;
+            this(null, name, progress, status, server, url, "", null, false);
         }
 
         public DirectDownload(String name, double progress, String status, String server, String url, String destinationPath, DirectDownloader downloader) {
+            this(null, name, progress, status, server, url, destinationPath, downloader, false);
+        }
+
+        public DirectDownload(String id,
+                              String name,
+                              double progress,
+                              String status,
+                              String server,
+                              String url,
+                              String destinationPath,
+                              DirectDownloader downloader,
+                              boolean userPaused) {
+            this.id = id != null ? id : UUID.randomUUID().toString();
             this.name = new SimpleStringProperty(name);
             this.progress = new SimpleDoubleProperty(progress);
             this.status = new SimpleStringProperty(status);
             this.server = new SimpleStringProperty(server);
             this.url = new SimpleStringProperty(url);
-            this.destinationPath = new SimpleStringProperty(destinationPath);
+            this.destinationPath = new SimpleStringProperty(destinationPath != null ? destinationPath : "");
             this.fileSize = new SimpleLongProperty(0);
             this.downloadSpeed = new SimpleDoubleProperty(0);
             this.remainingTime = new SimpleLongProperty(0);
             this.downloadedBytes = new SimpleLongProperty(0);
             this.downloader = downloader;
+            this.userPaused = userPaused;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public boolean isUserPaused() {
+            return userPaused;
+        }
+
+        public void setUserPaused(boolean userPaused) {
+            if (this.userPaused != userPaused) {
+                this.userPaused = userPaused;
+                persistSnapshot(true);
+            }
+        }
+
+        public void applySnapshot(DirectDownloadRecord record) {
+            if (record == null) {
+                return;
+            }
+            boolean previous = this.persistenceEnabled;
+            this.persistenceEnabled = false;
+            try {
+                setProgress(record.getProgress());
+                if (record.getStatus() != null) {
+                    setStatus(record.getStatus());
+                }
+                setDestinationPath(record.getDestinationPath());
+                setFileSize(record.getFileSize());
+                setDownloadedBytes(record.getDownloadedBytes());
+                setDownloadSpeed(record.getDownloadSpeed());
+                setRemainingTime(record.getRemainingTime());
+                this.userPaused = record.isManuallyPaused();
+            } finally {
+                this.persistenceEnabled = previous;
+            }
+            markPersistenceSynced();
+        }
+
+        public void markPersistenceSynced() {
+            this.lastPersistedProgress = progress.get();
+            this.lastPersistedBytes = downloadedBytes.get();
+            this.lastPersistedStatus = status.get();
+            this.lastPersistedTimestamp = System.currentTimeMillis();
+        }
+
+        private void persistSnapshot(boolean force) {
+            if (!persistenceEnabled) {
+                return;
+            }
+            double currentProgress = progress.get();
+            long currentBytes = downloadedBytes.get();
+            String currentStatus = status.get();
+            long now = System.currentTimeMillis();
+
+            if (!force) {
+                boolean progressChanged = Math.abs(currentProgress - lastPersistedProgress) >= 1.0;
+                boolean bytesChanged = Math.abs(currentBytes - lastPersistedBytes) >= 512 * 1024L;
+                boolean statusChanged = !Objects.equals(currentStatus, lastPersistedStatus);
+                boolean timeElapsed = (now - lastPersistedTimestamp) >= 1000L;
+                if (!progressChanged && !bytesChanged && !statusChanged && !timeElapsed) {
+                    return;
+                }
+            }
+
+            DownloadPersistenceManager.getInstance().upsertDirectDownload(
+                    id,
+                    getName(),
+                    getUrl(),
+                    getServer(),
+                    getDestinationPath(),
+                    currentStatus,
+                    currentProgress,
+                    getFileSize(),
+                    currentBytes,
+                    getDownloadSpeed(),
+                    getRemainingTime(),
+                    userPaused
+            );
+
+            lastPersistedProgress = currentProgress;
+            lastPersistedBytes = currentBytes;
+            lastPersistedStatus = currentStatus;
+            lastPersistedTimestamp = now;
         }
 
         // Getters y setters existentes
@@ -2350,6 +2624,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setName(String name) {
             this.name.set(name);
+            persistSnapshot(false);
         }
 
         public int getProgress() {
@@ -2358,6 +2633,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setProgress(double progress) {
             this.progress.set(progress);
+            persistSnapshot(false);
         }
 
         public String getStatus() {
@@ -2366,6 +2642,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setStatus(String status) {
             this.status.set(status);
+            persistSnapshot(true);
         }
 
         public String getServer() {
@@ -2374,6 +2651,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setServer(String server) {
             this.server.set(server);
+            persistSnapshot(true);
         }
 
         public String getUrl() {
@@ -2382,6 +2660,11 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public String getDestinationPath() {
             return destinationPath.get();
+        }
+
+        public void setDestinationPath(String destinationPath) {
+            this.destinationPath.set(destinationPath != null ? destinationPath : "");
+            persistSnapshot(true);
         }
 
         public DirectDownloader getDownloader() {
@@ -2399,6 +2682,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setFileSize(long fileSize) {
             this.fileSize.set(fileSize);
+            persistSnapshot(false);
         }
 
         public SimpleLongProperty fileSizeProperty() {
@@ -2411,6 +2695,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setDownloadSpeed(double downloadSpeed) {
             this.downloadSpeed.set(downloadSpeed);
+            persistSnapshot(false);
         }
 
         public SimpleDoubleProperty downloadSpeedProperty() {
@@ -2423,6 +2708,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setRemainingTime(long remainingTime) {
             this.remainingTime.set(remainingTime);
+            persistSnapshot(false);
         }
 
         public SimpleLongProperty remainingTimeProperty() {
@@ -2435,6 +2721,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setDownloadedBytes(long downloadedBytes) {
             this.downloadedBytes.set(downloadedBytes);
+            persistSnapshot(false);
         }
 
         public SimpleLongProperty downloadedBytesProperty() {
