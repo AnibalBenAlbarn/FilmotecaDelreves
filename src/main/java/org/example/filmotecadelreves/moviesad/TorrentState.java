@@ -12,6 +12,7 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.IntegerProperty;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 import java.util.UUID;
 import java.net.URLDecoder;
 import java.time.Duration;
@@ -63,10 +64,25 @@ public class TorrentState implements Serializable {
     private boolean sequentialDownload;
     private int downloadLimitKiB = -1;
     private int uploadLimitKiB = -1;
+    private boolean userPaused;
+
+    private transient boolean persistenceEnabled = true;
+    private transient double lastPersistedProgress = -1;
+    private transient String lastPersistedStatus = null;
+    private transient long lastPersistedTimestamp = 0L;
 
     /**
      *Constructor for TorrentState*/
     public TorrentState(String torrentSource, String destinationPath, long bytesDownloaded, int piecesComplete, int piecesTotal) {
+        this(null, torrentSource, destinationPath, bytesDownloaded, piecesComplete, piecesTotal);
+    }
+
+    public TorrentState(String instanceId,
+                        String torrentSource,
+                        String destinationPath,
+                        long bytesDownloaded,
+                        int piecesComplete,
+                        int piecesTotal) {
         this.torrentSource = torrentSource;
         this.destinationPath = destinationPath;
         this.destinationPathProperty = new SimpleStringProperty(destinationPath != null ? destinationPath : "");
@@ -89,12 +105,14 @@ public class TorrentState implements Serializable {
         this.fileName = extractFileName(torrentSource);
 
         // Generate a unique ID for this torrent
-        this.instanceId = generateTorrentId();
+        this.instanceId = instanceId != null ? instanceId : generateTorrentId();
         this.torrentId = this.instanceId;
 
         // Set timestamps
         this.createdAt = LocalDateTime.now();
         this.lastUpdatedAt = this.createdAt;
+
+        this.userPaused = false;
 
         System.out.println("TorrentState created: " + torrentSource + " -> " + destinationPath);
     }
@@ -159,6 +177,22 @@ public class TorrentState implements Serializable {
         }
 
         updateLastUpdated();
+        persistSnapshot(true);
+    }
+
+    public String getInstanceId() {
+        return instanceId;
+    }
+
+    public boolean isUserPaused() {
+        return userPaused;
+    }
+
+    public void setUserPaused(boolean userPaused) {
+        if (this.userPaused != userPaused) {
+            this.userPaused = userPaused;
+            persistSnapshot(true);
+        }
     }
 
     /**
@@ -173,6 +207,7 @@ public class TorrentState implements Serializable {
         this.destinationPath = destinationPath;
         destinationPathProperty().set(destinationPath != null ? destinationPath : "");
         updateLastUpdated();
+        persistSnapshot(true);
     }
 
     /**
@@ -214,6 +249,7 @@ public class TorrentState implements Serializable {
     public void setProgress(double progress) {
         this.progress.set(progress);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -242,6 +278,7 @@ public class TorrentState implements Serializable {
         }
 
         updateLastUpdated();
+        persistSnapshot(true);
     }
 
     /**
@@ -280,6 +317,7 @@ public class TorrentState implements Serializable {
     public void setName(String name) {
         this.name.set(name);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -299,6 +337,7 @@ public class TorrentState implements Serializable {
     public void setDownloadSpeed(double speed) {
         this.downloadSpeed.set(speed);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -318,6 +357,7 @@ public class TorrentState implements Serializable {
     public void setUploadSpeed(double speed) {
         this.uploadSpeed.set(speed);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -337,6 +377,7 @@ public class TorrentState implements Serializable {
     public void setFileSize(long size) {
         this.fileSize.set(size);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -356,6 +397,7 @@ public class TorrentState implements Serializable {
     public void setPeers(int peerCount) {
         this.peers.set(peerCount);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -375,6 +417,7 @@ public class TorrentState implements Serializable {
     public void setSeeds(int seedCount) {
         this.seeds.set(seedCount);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -394,6 +437,7 @@ public class TorrentState implements Serializable {
     public void setRemainingTime(long seconds) {
         this.remainingTime.set(seconds);
         updateLastUpdated();
+        persistSnapshot(false);
     }
 
     /**
@@ -485,6 +529,7 @@ public class TorrentState implements Serializable {
      *Set torrent hash*/
     public void setHash(String hash) {
         this.hash = hash;
+        persistSnapshot(false);
     }
 
     /**
@@ -497,6 +542,7 @@ public class TorrentState implements Serializable {
      *Set torrent comment*/
     public void setComment(String comment) {
         this.comment = comment;
+        persistSnapshot(false);
     }
 
     /**
@@ -509,6 +555,7 @@ public class TorrentState implements Serializable {
      *Set torrent creator*/
     public void setCreatedBy(String createdBy) {
         this.createdBy = createdBy;
+        persistSnapshot(false);
     }
 
     /**
@@ -523,6 +570,7 @@ public class TorrentState implements Serializable {
         if (priority < 1) priority = 1;
         if (priority > 10) priority = 10;
         this.priority = priority;
+        persistSnapshot(true);
     }
 
     /**
@@ -535,6 +583,7 @@ public class TorrentState implements Serializable {
      *Enable or disable sequential download mode*/
     public void setSequentialDownload(boolean sequentialDownload) {
         this.sequentialDownload = sequentialDownload;
+        persistSnapshot(true);
     }
 
     /**
@@ -547,6 +596,7 @@ public class TorrentState implements Serializable {
      *Sets the custom download rate limit in KiB/s (-1 or 0 disable the limit)*/
     public void setDownloadLimitKiB(int downloadLimitKiB) {
         this.downloadLimitKiB = downloadLimitKiB <= 0 ? -1 : downloadLimitKiB;
+        persistSnapshot(true);
     }
 
     /**
@@ -559,6 +609,7 @@ public class TorrentState implements Serializable {
      *Sets the custom upload rate limit in KiB/s (-1 or 0 disable the limit)*/
     public void setUploadLimitKiB(int uploadLimitKiB) {
         this.uploadLimitKiB = uploadLimitKiB <= 0 ? -1 : uploadLimitKiB;
+        persistSnapshot(true);
     }
 
     /**
@@ -566,6 +617,7 @@ public class TorrentState implements Serializable {
     public void clearRateLimits() {
         this.downloadLimitKiB = -1;
         this.uploadLimitKiB = -1;
+        persistSnapshot(true);
     }
 
     /**
@@ -616,6 +668,68 @@ public class TorrentState implements Serializable {
         startedAt = null;
         completedAt = null;
         updateLastUpdated();
+        persistSnapshot(true);
+    }
+
+    public void applySnapshot(DownloadPersistenceManager.TorrentDownloadRecord record) {
+        if (record == null) {
+            return;
+        }
+        boolean previous = this.persistenceEnabled;
+        this.persistenceEnabled = false;
+        try {
+            if (record.getName() != null && !record.getName().isBlank()) {
+                setName(record.getName());
+            }
+            setDestinationPath(record.getDestinationPath());
+            if (record.getStatus() != null) {
+                setStatus(record.getStatus());
+            } else {
+                setStatus("En espera");
+            }
+            setProgress(record.getProgress());
+            setFileSize(record.getFileSize());
+            setDownloadLimitKiB(record.getDownloadLimitKiB());
+            setUploadLimitKiB(record.getUploadLimitKiB());
+            if (record.getPriority() > 0) {
+                setPriority(record.getPriority());
+            }
+            setSequentialDownload(record.isSequential());
+            setHash(record.getInfoHash());
+            this.userPaused = record.isManuallyPaused();
+        } finally {
+            this.persistenceEnabled = previous;
+        }
+        markPersistenceSynced();
+    }
+
+    public void markPersistenceSynced() {
+        this.lastPersistedProgress = progress.get();
+        this.lastPersistedStatus = status.get();
+        this.lastPersistedTimestamp = System.currentTimeMillis();
+    }
+
+    private void persistSnapshot(boolean force) {
+        if (!persistenceEnabled) {
+            return;
+        }
+        double currentProgress = progress.get();
+        String currentStatus = status.get();
+        long now = System.currentTimeMillis();
+
+        if (!force) {
+            boolean progressChanged = Math.abs(currentProgress - lastPersistedProgress) >= 1.0;
+            boolean statusChanged = !Objects.equals(currentStatus, lastPersistedStatus);
+            boolean timeElapsed = (now - lastPersistedTimestamp) >= 1000L;
+            if (!progressChanged && !statusChanged && !timeElapsed) {
+                return;
+            }
+        }
+
+        DownloadPersistenceManager.getInstance().upsertTorrent(this);
+        lastPersistedProgress = currentProgress;
+        lastPersistedStatus = currentStatus;
+        lastPersistedTimestamp = now;
     }
 
     /**

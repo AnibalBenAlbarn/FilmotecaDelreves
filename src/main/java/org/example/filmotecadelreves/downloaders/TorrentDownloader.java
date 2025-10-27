@@ -720,6 +720,7 @@ public class TorrentDownloader {
                     managed.handle.pause();
                     managed.paused = true;
                     torrentState.setStatus("Pausado");
+                    torrentState.setUserPaused(true);
                     recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
                             "Descarga pausada por el usuario.");
                 }
@@ -728,6 +729,7 @@ public class TorrentDownloader {
                 if (pending != null) {
                     pendingQueue.remove(pending);
                     torrentState.setStatus("Pausado");
+                    torrentState.setUserPaused(true);
                     recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
                             "Descarga retirada de la cola de inicio automático.");
                 }
@@ -753,6 +755,7 @@ public class TorrentDownloader {
                     managed.handle.resume();
                     managed.paused = false;
                     torrentState.setStatus("Descargando");
+                    torrentState.setUserPaused(false);
                     recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
                             "Descarga reanudada.");
                 }
@@ -761,6 +764,7 @@ public class TorrentDownloader {
                 if (pending != null && !pendingQueue.contains(pending)) {
                     pendingQueue.offerFirst(pending);
                     torrentState.setStatus("En espera");
+                    torrentState.setUserPaused(false);
                     recordEvent(torrentState, TorrentLogEntry.Step.DOWNLOAD, Level.INFO,
                             "Descarga priorizada para inicio inmediato.");
                     shouldStart = true;

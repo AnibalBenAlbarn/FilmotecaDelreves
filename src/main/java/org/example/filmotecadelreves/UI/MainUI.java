@@ -11,6 +11,8 @@ import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.TabPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
@@ -34,6 +36,7 @@ import org.json.simple.parser.ParseException;
 import javafx.util.Duration;
 import javafx.stage.Window;
 import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
+import org.example.filmotecadelreves.moviesad.DownloadPersistenceManager;
 
 //ver1.3
 
@@ -397,12 +400,26 @@ public class MainUI extends Application {
         Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
         confirmation.setTitle("Confirmar cierre");
         confirmation.setHeaderText("¿Estás seguro de que quieres salir?");
-        confirmation.setContentText("Las descargas en progreso se detendrán.");
+
+        Label message = new Label("Las descargas en progreso se detendrán si cierras la aplicación.");
+        message.setWrapText(true);
+        CheckBox keepRunningCheckBox = new CheckBox("Mantener la aplicación en segundo plano para continuar las descargas");
+        VBox content = new VBox(10, message, keepRunningCheckBox);
+        content.setPadding(new Insets(10, 0, 0, 0));
+        confirmation.getDialogPane().setContent(content);
 
         // Configurar para evitar cierre forzado si el usuario cancela
         Optional<ButtonType> result = confirmation.showAndWait();
-        if (result.isPresent() && result.get() != ButtonType.OK) {
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
             System.out.println("Cierre cancelado por el usuario");
+            return;
+        }
+
+        if (keepRunningCheckBox.isSelected()) {
+            System.out.println("Se mantiene la aplicación en segundo plano para continuar las descargas.");
+            if (primaryStage != null) {
+                primaryStage.setIconified(true);
+            }
             return;
         }
 
@@ -453,11 +470,14 @@ public class MainUI extends Application {
             e.printStackTrace();
         }
 
-        // 5. Salir de la aplicación
+        // 5. Cerrar la base de datos de sesiones de descarga
+        DownloadPersistenceManager.getInstance().close();
+
+        // 6. Salir de la aplicación
         System.out.println("Solicitando cierre de la aplicación...");
         Platform.exit();
 
-        // 6. Forzar cierre si es necesario después de 5 segundos
+        // 7. Forzar cierre si es necesario después de 5 segundos
         new Thread(() -> {
             try {
                 Thread.sleep(5000);
