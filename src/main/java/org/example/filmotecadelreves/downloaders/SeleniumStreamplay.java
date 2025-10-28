@@ -4,6 +4,7 @@ import org.example.filmotecadelreves.DirectDownloader;
 import org.example.filmotecadelreves.UI.DescargasUI;
 import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.util.ChromeStealthConfigurator;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -221,6 +222,8 @@ public class SeleniumStreamplay implements DirectDownloader {
         options.setBinary(CHROME_PATH);
         logDebug("Configurando navegador en modo headless para resolución automática.");
 
+        ChromeStealthConfigurator.applyHumanLikeDefaults(options, "streamplay", true);
+
         // Cargar extensiones
         boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
         if (!popupExtensionLoaded) {
@@ -235,15 +238,8 @@ public class SeleniumStreamplay implements DirectDownloader {
             logDebug("Extensión NoPeCaptcha cargada correctamente.");
         }
 
-        options.addArguments(
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-                "--remote-allow-origins=*",
-                "--headless=new"
-        );
-
         driver = new ChromeDriver(options);
+        ChromeStealthConfigurator.maskAutomation(driver);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         logDebug("Navegador inicializado en modo headless con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
@@ -257,6 +253,8 @@ public class SeleniumStreamplay implements DirectDownloader {
         options.setBinary(CHROME_PATH);
         logDebug("Configurando navegador visible para interacción del usuario.");
 
+        ChromeStealthConfigurator.applyHumanLikeDefaults(options, "streamplay", false);
+
         // Cargar solo la extensión de bloqueo de popups
         boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
         if (!popupExtensionLoaded) {
@@ -265,15 +263,8 @@ public class SeleniumStreamplay implements DirectDownloader {
             logDebug("Extensión de bloqueo de popups cargada correctamente (modo usuario).");
         }
 
-        // No se cargan extensiones para que el usuario pueda ver y resolver el captcha
-        options.addArguments(
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-                "--remote-allow-origins=*"
-        );
-
         driver = new ChromeDriver(options);
+        ChromeStealthConfigurator.maskAutomation(driver);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         isNopechaInstalled = false;
         logDebug("Navegador inicializado en modo visible para interacción del usuario.");

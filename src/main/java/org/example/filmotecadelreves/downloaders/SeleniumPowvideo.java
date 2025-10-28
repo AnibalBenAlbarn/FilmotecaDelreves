@@ -5,6 +5,7 @@ import org.example.filmotecadelreves.DirectDownloader;
 import org.example.filmotecadelreves.UI.DescargasUI;
 import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
+import org.example.filmotecadelreves.util.ChromeStealthConfigurator;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -247,6 +248,8 @@ public class SeleniumPowvideo implements DirectDownloader {
         options.setBinary(CHROME_PATH);
         logDebug("Configurando navegador (userInteraction=" + userInteraction + ")");
 
+        ChromeStealthConfigurator.applyHumanLikeDefaults(options, "powvideo", !userInteraction);
+
         // Cargar extensiones
         boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
         if (!popupExtensionLoaded) {
@@ -265,19 +268,8 @@ public class SeleniumPowvideo implements DirectDownloader {
             isNopechaInstalled = false;
         }
 
-        options.addArguments(
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-                "--remote-allow-origins=*"
-        );
-
-        // Usar modo headless solo si no se requiere interacción del usuario
-        if (!userInteraction) {
-            options.addArguments("--headless=new");
-        }
-
         driver = new ChromeDriver(options);
+        ChromeStealthConfigurator.maskAutomation(driver);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         logDebug("Navegador inicializado. Modo headless=" + (!userInteraction) + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
