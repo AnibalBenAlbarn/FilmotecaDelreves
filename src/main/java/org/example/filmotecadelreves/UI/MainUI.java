@@ -30,6 +30,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.awt.AWTException;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.PopupMenu;
+import java.awt.SystemTray;
+import java.awt.TrayIcon;
+import java.awt.MenuItem;
+import java.awt.Toolkit;
+import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -58,6 +69,8 @@ public class MainUI extends Application {
     private DelayedLoadingDialog startupLoadingDialog;
     private final AtomicInteger pendingStartupTasks = new AtomicInteger();
     private volatile boolean startupLoadingActive;
+    private TrayIcon trayIcon;
+    private boolean systemTraySupported;
 
     @Override
     public void start(Stage primaryStage) {
@@ -149,6 +162,8 @@ public class MainUI extends Application {
         primaryStage.setScene(scene);
         primaryStage.setMaximized(true);
         primaryStage.show();
+
+        setupSystemTray(primaryStage);
 
         Platform.runLater(() -> {
             if (mainTabs.getSelectionModel().getSelectedItem() == torrentDownloadUI.getTab()) {
@@ -417,12 +432,14 @@ public class MainUI extends Application {
 
         if (keepRunningCheckBox.isSelected()) {
             System.out.println("Se mantiene la aplicación en segundo plano para continuar las descargas.");
-            if (primaryStage != null) {
-                primaryStage.setIconified(true);
-            }
+            minimizeToTray();
             return;
         }
 
+        performFullShutdown();
+    }
+
+    private void performFullShutdown() {
         // Guardar la configuración antes de cerrar
         saveConfig();
 
@@ -473,6 +490,8 @@ public class MainUI extends Application {
         // 5. Cerrar la base de datos de sesiones de descarga
         DownloadPersistenceManager.getInstance().close();
 
+        removeTrayIcon();
+
         // 6. Salir de la aplicación
         System.out.println("Solicitando cierre de la aplicación...");
         Platform.exit();
@@ -487,6 +506,94 @@ public class MainUI extends Application {
                 Thread.currentThread().interrupt();
             }
         }).start();
+    }
+
+    private void setupSystemTray(Stage stage) {
+        try {
+            systemTraySupported = SystemTray.isSupported();
+        } catch (Exception e) {
+            systemTraySupported = false;
+            System.out.println("No se pudo comprobar el soporte de bandeja del sistema: " + e.getMessage());
+            return;
+        }
+        if (!systemTraySupported) {
+            System.out.println("El sistema no soporta bandeja de sistema. Se usará minimización estándar.");
+            return;
+        }
+
+        SystemTray tray = SystemTray.getSystemTray();
+        PopupMenu popupMenu = new PopupMenu();
+
+        MenuItem showItem = new MenuItem("Mostrar");
+        ActionListener showListener = e -> Platform.runLater(() -> restoreFromTray(stage));
+        showItem.addActionListener(showListener);
+        popupMenu.add(showItem);
+
+        MenuItem exitItem = new MenuItem("Salir");
+        exitItem.addActionListener(e -> Platform.runLater(this::performFullShutdown));
+        popupMenu.add(exitItem);
+
+        Image trayImage = createTrayImage();
+        trayIcon = new TrayIcon(trayImage, "MovieDownloader", popupMenu);
+        trayIcon.setImageAutoSize(true);
+        trayIcon.addActionListener(showListener);
+        trayIcon.setToolTip("MovieDownloader");
+
+        Platform.setImplicitExit(false);
+
+        try {
+            tray.add(trayIcon);
+        } catch (AWTException e) {
+            System.err.println("No se pudo añadir el icono a la bandeja del sistema: " + e.getMessage());
+            systemTraySupported = false;
+            trayIcon = null;
+        }
+    }
+
+    private Image createTrayImage() {
+        BufferedImage image = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        try {
+            graphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            graphics.setColor(new Color(0x1F, 0x28, 0x3D));
+            graphics.fillOval(2, 2, 28, 28);
+            graphics.setColor(new Color(0xFF, 0xC1, 0x07));
+            graphics.fillOval(6, 6, 20, 20);
+            graphics.setColor(Color.WHITE);
+            graphics.setFont(graphics.getFont().deriveFont(12f).deriveFont(java.awt.Font.BOLD));
+            graphics.drawString("MD", 8, 20);
+        } finally {
+            graphics.dispose();
+        }
+        return image;
+    }
+
+    private void minimizeToTray() {
+        if (!systemTraySupported || trayIcon == null) {
+            if (primaryStage != null) {
+                primaryStage.setIconified(true);
+            }
+            return;
+        }
+
+        Platform.runLater(() -> {
+            primaryStage.hide();
+            trayIcon.displayMessage("MovieDownloader", "La aplicación sigue ejecutándose en segundo plano.", TrayIcon.MessageType.INFO);
+        });
+    }
+
+    private void restoreFromTray(Stage stage) {
+        stage.show();
+        stage.toFront();
+        stage.setIconified(false);
+        stage.requestFocus();
+    }
+
+    private void removeTrayIcon() {
+        if (trayIcon != null && systemTraySupported) {
+            SystemTray.getSystemTray().remove(trayIcon);
+            trayIcon = null;
+        }
     }
 
     /**
