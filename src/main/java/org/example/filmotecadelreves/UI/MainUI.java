@@ -3,6 +3,7 @@ package org.example.filmotecadelreves.UI;
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 import org.example.filmotecadelreves.moviesad.ConnectDataBase;
 import org.example.filmotecadelreves.moviesad.DatabaseStatusPanel;
+import org.example.filmotecadelreves.moviesad.DownloadManager;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -220,6 +221,13 @@ public class MainUI extends Application {
         }
 
         this.configJson.putAll(updatedConfig);
+    }
+
+    public void applyStreamplayHeadlessPreference(boolean runHeadless) {
+        DownloadManager.updateStreamplayHeadless(runHeadless);
+        if (directDownloadUI != null) {
+            directDownloadUI.applyStreamplayHeadlessPreference(runHeadless);
+        }
     }
 
     private void ensureTorrentDownloaderInitialized(AjustesUI ajustesUI) {

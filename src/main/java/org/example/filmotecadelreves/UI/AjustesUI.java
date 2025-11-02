@@ -60,6 +60,7 @@ public class AjustesUI {
     private Slider maxConcurrentDirectDownloadsSlider;
     private Slider directDownloadSpeedLimitSlider;
     private CheckBox autoStartDirectDownloadsCheckbox;
+    private CheckBox streamplayHeadlessCheckbox;
     private TextField apiKeyCaptchaField;
 
     // Configuración de interfaz
@@ -357,6 +358,13 @@ public class AjustesUI {
         autoStartDirectDownloadsCheckbox = new CheckBox("Iniciar descargas directas automáticamente");
         autoStartDirectDownloadsCheckbox.setSelected(true);
 
+        streamplayHeadlessCheckbox = new CheckBox("Ejecutar Streamplay en segundo plano (modo headless)");
+        streamplayHeadlessCheckbox.setSelected(true);
+        Tooltip streamplayHeadlessTooltip = new Tooltip(
+                "Desactiva esta opción para ver el navegador de Streamplay mientras se automatiza la descarga."
+        );
+        streamplayHeadlessCheckbox.setTooltip(streamplayHeadlessTooltip);
+
         grid.add(maxConcurrentDirectDownloadsLabel, 0, 0);
         grid.add(maxConcurrentDirectDownloadsSlider, 0, 1);
         grid.add(maxConcurrentDirectDownloadsValueLabel, 1, 1);
@@ -364,6 +372,7 @@ public class AjustesUI {
         grid.add(directDownloadSpeedLimitSlider, 0, 3);
         grid.add(directDownloadSpeedLimitValueLabel, 1, 3);
         grid.add(autoStartDirectDownloadsCheckbox, 0, 4);
+        grid.add(streamplayHeadlessCheckbox, 0, 5, 2, 1);
 
         TitledPane directDownloadsPane = new TitledPane("Configuración de Descargas Directas", grid);
         directDownloadsPane.setExpanded(true);
@@ -908,6 +917,7 @@ public class AjustesUI {
         config.put("maxConcurrentDirectDownloads", (int) maxConcurrentDirectDownloadsSlider.getValue());
         config.put("directDownloadSpeedLimit", (int) directDownloadSpeedLimitSlider.getValue());
         config.put("autoStartDirectDownloads", autoStartDirectDownloadsCheckbox.isSelected());
+        config.put("streamplayHeadless", streamplayHeadlessCheckbox.isSelected());
         config.put("apiKeyCaptcha", apiKeyCaptchaField.getText());
 
 // Configuración de interfaz
@@ -944,6 +954,7 @@ public class AjustesUI {
 
             if (mainUI != null) {
                 mainUI.updateConfig(config);
+                mainUI.applyStreamplayHeadlessPreference(streamplayHeadlessCheckbox.isSelected());
             }
 
             // Generar y aplicar el archivo CSS solo si el tema seleccionado es "Personalizado".
@@ -1042,8 +1053,17 @@ public class AjustesUI {
                 if (config.containsKey("autoStartDirectDownloads")) {
                     autoStartDirectDownloadsCheckbox.setSelected((Boolean) config.get("autoStartDirectDownloads"));
                 }
+                if (config.containsKey("streamplayHeadless")) {
+                    streamplayHeadlessCheckbox.setSelected((Boolean) config.get("streamplayHeadless"));
+                } else {
+                    streamplayHeadlessCheckbox.setSelected(true);
+                }
                 if (config.containsKey("apiKeyCaptcha")) {
                     apiKeyCaptchaField.setText((String) config.get("apiKeyCaptcha"));
+                }
+
+                if (mainUI != null) {
+                    mainUI.applyStreamplayHeadlessPreference(streamplayHeadlessCheckbox.isSelected());
                 }
 
 // Configuración de interfaz
@@ -1160,6 +1180,7 @@ public class AjustesUI {
         maxConcurrentDirectDownloadsSlider.setValue(5);
         directDownloadSpeedLimitSlider.setValue(0);
         autoStartDirectDownloadsCheckbox.setSelected(true);
+        streamplayHeadlessCheckbox.setSelected(true);
         apiKeyCaptchaField.setText("");
 
 // Configuración de interfaz
@@ -1170,6 +1191,10 @@ public class AjustesUI {
 
         if (scraperProgressTracker != null) {
             scraperProgressTracker.reset();
+        }
+
+        if (mainUI != null) {
+            mainUI.applyStreamplayHeadlessPreference(true);
         }
 
 // Restaurar colores predeterminados
@@ -1253,6 +1278,10 @@ public class AjustesUI {
 
     public boolean isAutoStartDirectDownloads() {
         return autoStartDirectDownloadsCheckbox.isSelected();
+    }
+
+    public boolean isStreamplayHeadless() {
+        return streamplayHeadlessCheckbox == null || streamplayHeadlessCheckbox.isSelected();
     }
 
     public String getApiKeyCaptcha() {
