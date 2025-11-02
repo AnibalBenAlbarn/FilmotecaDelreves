@@ -51,6 +51,13 @@ public class DownloadManager {
         return null;
     }
 
+    public static void updateStreamplayHeadless(boolean runHeadless) {
+        DirectDownloader downloader = downloaders.get("streamplay");
+        if (downloader instanceof SeleniumStreamplay) {
+            ((SeleniumStreamplay) downloader).setRunHeadless(runHeadless);
+        }
+    }
+
     /**
      * Inicia una descarga para una película
      * @param item El elemento de la cesta de descargas

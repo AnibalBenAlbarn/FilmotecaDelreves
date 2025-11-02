@@ -236,6 +236,12 @@ public class DirectDownloadUI {
         loadInitialData();
     }
 
+    public void applyStreamplayHeadlessPreference(boolean runHeadless) {
+        if (streamplayDownloader != null) {
+            streamplayDownloader.setRunHeadless(runHeadless);
+        }
+    }
+
     // ==================== DESCARGAS Y SERVIDORES Y ESTATUS ====================
 
     // ==================== INICIALIZACIÓN Y CONFIGURACIÓN ====================
@@ -247,6 +253,9 @@ public class DirectDownloadUI {
         this.streamtapeDownloader = new StreamtapeDownloader();
         this.powvideoDownloader = new SeleniumPowvideo();
         this.streamplayDownloader = new SeleniumStreamplay();
+        boolean runStreamplayHeadless = ajustesUI == null || ajustesUI.isStreamplayHeadless();
+        this.streamplayDownloader.setRunHeadless(runStreamplayHeadless);
+        DownloadManager.updateStreamplayHeadless(runStreamplayHeadless);
         this.mixdropDownloader = new MixdropDownloader();
         this.videoStream = new VideoStream();
 

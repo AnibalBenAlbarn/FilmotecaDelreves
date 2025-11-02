@@ -55,6 +55,7 @@ public class SeleniumStreamplay implements DirectDownloader {
     private WebDriverWait wait;
     private Thread downloadThread;
     private boolean isNopechaInstalled = false;
+    private volatile boolean runHeadless = true;
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -197,6 +198,15 @@ public class SeleniumStreamplay implements DirectDownloader {
         updateDownloadStatus(download, "Cancelled", download.getProgress());
     }
 
+    /**
+     * Controla si el navegador debe ejecutarse en modo headless o visible.
+     *
+     * @param runHeadless true para ejecutar en segundo plano, false para mostrar la ventana del navegador.
+     */
+    public void setRunHeadless(boolean runHeadless) {
+        this.runHeadless = runHeadless;
+    }
+
     @Override
     public boolean isAvailable(String url) {
         try {
@@ -219,7 +229,11 @@ public class SeleniumStreamplay implements DirectDownloader {
         System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
         ChromeOptions options = new ChromeOptions();
         options.setBinary(CHROME_PATH);
-        logDebug("Configurando navegador en modo headless para resolución automática.");
+        if (runHeadless) {
+            logDebug("Configurando navegador en modo headless para resolución automática.");
+        } else {
+            logDebug("Configurando navegador visible para descarga automática.");
+        }
 
         // Cargar extensiones
         boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
@@ -239,13 +253,19 @@ public class SeleniumStreamplay implements DirectDownloader {
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--window-size=1920,1080",
-                "--remote-allow-origins=*",
-                "--headless=new"
+                "--remote-allow-origins=*"
         );
+        if (runHeadless) {
+            options.addArguments("--headless=new");
+        }
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
-        logDebug("Navegador inicializado en modo headless con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
+        if (runHeadless) {
+            logDebug("Navegador inicializado en modo headless con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
+        } else {
+            logDebug("Navegador inicializado en modo visible con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
+        }
     }
 
     /**
