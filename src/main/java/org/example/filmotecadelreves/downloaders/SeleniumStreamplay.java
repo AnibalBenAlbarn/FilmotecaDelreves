@@ -149,6 +149,9 @@ public class SeleniumStreamplay implements DirectDownloader {
                     return;
                 }
 
+                // Ya no necesitamos Selenium para continuar con la descarga directa
+                shutdownDriver();
+
                 // Crear nombre de archivo
                 String fileName = directDownload.getName();
                 if (!fileName.toLowerCase().endsWith(".mp4")) {
@@ -167,10 +170,7 @@ public class SeleniumStreamplay implements DirectDownloader {
                 logException("Error en la descarga de Streamplay", e);
                 updateDownloadStatus(directDownload, "Error", 0);
             } finally {
-                if (driver != null) {
-                    driver.quit();
-                    driver = null;
-                }
+                shutdownDriver();
             }
         });
 
@@ -382,18 +382,28 @@ public class SeleniumStreamplay implements DirectDownloader {
     }
 
     private void clickProceedButton() {
-        try {
-            WebElement btnDownload = wait.until(ExpectedConditions.elementToBeClickable(By.id("btn_download")));
+        final int maxAttempts = 5;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                btnDownload.click();
-            } catch (Exception clickEx) {
-                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btnDownload);
+                WebElement btnDownload = wait.until(ExpectedConditions.elementToBeClickable(By.id("btn_download")));
+                try {
+                    btnDownload.click();
+                } catch (WebDriverException clickEx) {
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btnDownload);
+                }
+                logDebug("Botón 'Proceed to video' pulsado correctamente.");
+                return;
+            } catch (StaleElementReferenceException | ElementClickInterceptedException e) {
+                logWarn("Reintentando pulsar el botón 'Proceed to video' por cambio en el DOM (intento " + attempt + ")");
+                sleepSilently(300);
+            } catch (TimeoutException timeoutException) {
+                logWarn("No se pudo localizar el botón 'Proceed to video' después del tiempo de espera.");
+                collectDebugArtifacts("boton-proceed-no-disponible");
+                return;
             }
-            logDebug("Botón 'Proceed to video' pulsado correctamente.");
-        } catch (TimeoutException timeoutException) {
-            logWarn("No se pudo localizar el botón 'Proceed to video' después del tiempo de espera.");
-            collectDebugArtifacts("boton-proceed-no-disponible");
         }
+        logWarn("Se agotaron los intentos para pulsar el botón 'Proceed to video'.");
+        collectDebugArtifacts("boton-proceed-reintentos-agotados");
     }
 
     private Optional<String> waitForMp4Url() {
@@ -423,8 +433,33 @@ public class SeleniumStreamplay implements DirectDownloader {
             logWarn("Tiempo de espera agotado buscando el enlace mp4.");
             logPageState("Estado al agotar la espera de mp4");
             collectDebugArtifacts("timeout-buscando-mp4");
+        } catch (WebDriverException e) {
+            logError("Error consultando el enlace mp4: " + e.getMessage());
+            collectDebugArtifacts("error-obteniendo-mp4");
         }
         return Optional.empty();
+    }
+
+    private void sleepSilently(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void shutdownDriver() {
+        if (driver == null) {
+            return;
+        }
+        try {
+            driver.quit();
+        } catch (WebDriverException e) {
+            logWarn("Error cerrando el navegador: " + e.getMessage());
+        } finally {
+            driver = null;
+            wait = null;
+        }
     }
 
     private void waitForNopechaResolution(String providerName) {
