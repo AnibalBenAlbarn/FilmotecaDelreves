@@ -57,13 +57,17 @@ class DownloadPersistenceManagerTest {
                 "https://servidor/archivo.mp4",
                 "PowVideo",
                 "/tmp/archivo.mp4",
+                "/tmp/archivo.mp4/Pelicula.mp4",
                 "Descargando",
                 0.5,
                 2_048L,
                 1_024L,
                 512.0,
                 120L,
-                false
+                false,
+                "etag-1",
+                "Wed, 21 Oct 2015 07:28:00 GMT",
+                true
         );
 
         List<DownloadPersistenceManager.DirectDownloadRecord> records = manager.loadDirectDownloads();
@@ -73,6 +77,10 @@ class DownloadPersistenceManagerTest {
         assertEquals("https://servidor/archivo.mp4", record.getUrl());
         assertEquals("PowVideo", record.getServer());
         assertFalse(record.isManuallyPaused());
+        assertEquals("/tmp/archivo.mp4/Pelicula.mp4", record.getActualFilePath());
+        assertEquals("etag-1", record.getEtag());
+        assertEquals("Wed, 21 Oct 2015 07:28:00 GMT", record.getLastModified());
+        assertTrue(record.isResumeSupported());
 
         manager.upsertDirectDownload(
                 "direct-1",
@@ -80,13 +88,17 @@ class DownloadPersistenceManagerTest {
                 "https://servidor/archivo_v2.mp4",
                 "Streamtape",
                 "/tmp/archivo_v2.mp4",
+                "/tmp/archivo_v2.mp4/Pelicula2.mp4",
                 "Completado",
                 1.0,
                 4_096L,
                 4_096L,
                 0.0,
                 0L,
-                true
+                true,
+                "etag-2",
+                "Thu, 22 Oct 2015 08:00:00 GMT",
+                false
         );
 
         records = manager.loadDirectDownloads();
@@ -98,6 +110,10 @@ class DownloadPersistenceManagerTest {
         assertTrue(record.isManuallyPaused());
         assertEquals(4_096L, record.getFileSize());
         assertEquals(4_096L, record.getDownloadedBytes());
+        assertEquals("/tmp/archivo_v2.mp4/Pelicula2.mp4", record.getActualFilePath());
+        assertEquals("etag-2", record.getEtag());
+        assertEquals("Thu, 22 Oct 2015 08:00:00 GMT", record.getLastModified());
+        assertFalse(record.isResumeSupported());
 
         manager.deleteDirectDownload("direct-1");
         assertTrue(manager.loadDirectDownloads().isEmpty());

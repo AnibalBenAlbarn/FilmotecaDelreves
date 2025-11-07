@@ -6,6 +6,7 @@ import org.example.filmotecadelreves.downloaders.TorrentLogEntry;
 import org.example.filmotecadelreves.downloaders.TorrentStats;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -39,6 +40,9 @@ import org.json.simple.JSONObject;
 
 import java.awt.Desktop;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -2616,6 +2620,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         private final SimpleDoubleProperty downloadSpeed;
         private final SimpleLongProperty remainingTime;
         private final SimpleLongProperty downloadedBytes;
+        private final SimpleStringProperty actualFilePath;
+        private final SimpleStringProperty etag;
+        private final SimpleStringProperty lastModified;
+        private final SimpleBooleanProperty resumeSupported;
         private DirectDownloader downloader;
         private boolean userPaused;
 
@@ -2653,6 +2661,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             this.downloadSpeed = new SimpleDoubleProperty(0);
             this.remainingTime = new SimpleLongProperty(0);
             this.downloadedBytes = new SimpleLongProperty(0);
+            this.actualFilePath = new SimpleStringProperty();
+            this.etag = new SimpleStringProperty();
+            this.lastModified = new SimpleStringProperty();
+            this.resumeSupported = new SimpleBooleanProperty(false);
             this.downloader = downloader;
             this.userPaused = userPaused;
         }
@@ -2685,12 +2697,16 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                     setStatus(record.getStatus());
                 }
                 setDestinationPath(record.getDestinationPath());
+                setActualFilePath(record.getActualFilePath());
                 setFileSize(record.getFileSize());
                 setDownloadedBytes(record.getDownloadedBytes());
                 double recordedSpeed = record.getDownloadSpeed();
                 long recordedRemaining = record.getRemainingTime();
                 setDownloadSpeed(recordedSpeed);
                 setRemainingTime(recordedRemaining);
+                setEtag(record.getEtag());
+                setLastModified(record.getLastModified());
+                setResumeSupported(record.isResumeSupported());
                 if (isCompletedStatus(record.getStatus())) {
                     normalizeCompleted = (recordedSpeed != 0) || (recordedRemaining != 0);
                     setDownloadSpeed(0);
@@ -2738,13 +2754,17 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                     getUrl(),
                     getServer(),
                     getDestinationPath(),
+                    getActualFilePath(),
                     currentStatus,
                     currentProgress,
                     getFileSize(),
                     currentBytes,
                     getDownloadSpeed(),
                     getRemainingTime(),
-                    userPaused
+                    userPaused,
+                    getEtag(),
+                    getLastModified(),
+                    isResumeSupported()
             );
 
             lastPersistedProgress = currentProgress;
@@ -2872,6 +2892,95 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             return downloadedBytes;
         }
 
+        public String getActualFilePath() {
+            return actualFilePath.get();
+        }
+
+        public void setActualFilePath(String actualFilePath) {
+            String normalized = (actualFilePath != null && !actualFilePath.isBlank()) ? actualFilePath : null;
+            if (Objects.equals(this.actualFilePath.get(), normalized)) {
+                return;
+            }
+            this.actualFilePath.set(normalized);
+            persistSnapshot(true);
+        }
+
+        public SimpleStringProperty actualFilePathProperty() {
+            return actualFilePath;
+        }
+
+        public String getEtag() {
+            return etag.get();
+        }
+
+        public void setEtag(String etag) {
+            if (Objects.equals(this.etag.get(), etag)) {
+                return;
+            }
+            this.etag.set(etag);
+            persistSnapshot(true);
+        }
+
+        public SimpleStringProperty etagProperty() {
+            return etag;
+        }
+
+        public String getLastModified() {
+            return lastModified.get();
+        }
+
+        public void setLastModified(String lastModified) {
+            if (Objects.equals(this.lastModified.get(), lastModified)) {
+                return;
+            }
+            this.lastModified.set(lastModified);
+            persistSnapshot(true);
+        }
+
+        public SimpleStringProperty lastModifiedProperty() {
+            return lastModified;
+        }
+
+        public boolean isResumeSupported() {
+            return resumeSupported.get();
+        }
+
+        public void setResumeSupported(boolean resumeSupported) {
+            if (this.resumeSupported.get() == resumeSupported) {
+                return;
+            }
+            this.resumeSupported.set(resumeSupported);
+            persistSnapshot(true);
+        }
+
+        public SimpleBooleanProperty resumeSupportedProperty() {
+            return resumeSupported;
+        }
+
+        public Path resolveTargetFilePath() {
+            String explicit = getActualFilePath();
+            if (explicit != null && !explicit.isBlank()) {
+                try {
+                    return Paths.get(explicit);
+                } catch (Exception ignored) {
+                    // Ignorar rutas malformadas y reintentar con la ruta derivada
+                }
+            }
+            String destination = getDestinationPath();
+            if (destination == null || destination.isBlank()) {
+                return null;
+            }
+            String fileName = getResolvedFileName();
+            if (fileName == null || fileName.isBlank()) {
+                return null;
+            }
+            return Paths.get(destination).resolve(fileName);
+        }
+
+        public String getResolvedFileName() {
+            return sanitizeFileName(getName());
+        }
+
         // Propiedades para binding
         public SimpleStringProperty nameProperty() {
             return name;
@@ -2902,6 +3011,18 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public SimpleStringProperty destinationPathProperty() {
             return destinationPath;
+        }
+
+        private static String sanitizeFileName(String name) {
+            if (name == null || name.isBlank()) {
+                return "download.mp4";
+            }
+            String cleaned = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+            if (cleaned.matches("(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])$")) {
+                cleaned = "_" + cleaned;
+            }
+            String normalized = new String(cleaned.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+            return normalized.isEmpty() ? "download.mp4" : normalized;
         }
     }
 
