@@ -179,7 +179,7 @@ public class SeleniumStreamplay implements DirectDownloader {
                     directDownload.setName(resolvedName + ".mp4");
                 }
 
-                startResumableDownload(downloadUrl, videoUrl, directDownload);
+                startResumableDownload(videoSrc, videoUrl, directDownload);
 
             } catch (Exception e) {
                 logException("Error en la descarga de Streamplay", e);
