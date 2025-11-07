@@ -26,6 +26,8 @@ public class ResumableHttpDownloadTask implements Runnable {
     private static final long UI_UPDATE_INTERVAL_MS = 500L;
     private static final int CONNECT_TIMEOUT_MS = (int) Duration.ofSeconds(20).toMillis();
     private static final int READ_TIMEOUT_MS = (int) Duration.ofSeconds(60).toMillis();
+    private static final int HTTP_PRECONDITION_FAILED = 412;
+    private static final int HTTP_REQUESTED_RANGE_NOT_SATISFIABLE = 416;
 
     private final String downloadUrl;
     private final DescargasUI.DirectDownload download;
@@ -343,8 +345,8 @@ public class ResumableHttpDownloadTask implements Runnable {
                 return new DownloadConnection(connection, localBytes, true, responseCode);
             }
             if (responseCode == HttpURLConnection.HTTP_OK
-                    || responseCode == HttpURLConnection.HTTP_PRECON_FAILED
-                    || responseCode == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
+                    || responseCode == HTTP_PRECONDITION_FAILED
+                    || responseCode == HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
                 connection.disconnect();
                 try {
                     Files.deleteIfExists(targetFile);
