@@ -138,6 +138,7 @@ public class DownloadManager {
             // Incrementar contador si es PowVideo o StreamPlay
             if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
                 DownloadLimitManager.incrementPowvideoStreamplayCount();
+                descargasUI.refreshDownloadCounter();
             }
 
             return true;
@@ -224,6 +225,7 @@ public class DownloadManager {
             // Incrementar contador si es PowVideo o StreamPlay
             if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
                 DownloadLimitManager.incrementPowvideoStreamplayCount();
+                descargasUI.refreshDownloadCounter();
             }
 
             return true;

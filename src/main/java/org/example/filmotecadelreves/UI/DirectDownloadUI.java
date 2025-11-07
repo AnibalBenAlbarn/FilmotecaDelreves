@@ -9,12 +9,14 @@ import org.example.filmotecadelreves.downloaders.VideoStream;
 import org.example.filmotecadelreves.moviesad.ConnectDataBase;
 import org.example.filmotecadelreves.moviesad.DownloadBasketItem;
 import org.example.filmotecadelreves.moviesad.DownloadManager;
+import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
 import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
 import org.example.filmotecadelreves.util.UrlNormalizer;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
+import javafx.beans.binding.BooleanBinding;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -359,7 +361,7 @@ public class DirectDownloadUI {
         Button addToDownloadsButton = new Button("Add to Downloads");
         addToDownloadsButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
         addToDownloadsButton.setOnAction(e -> addBasketToDownloads());
-        addToDownloadsButton.disableProperty().bind(javafx.beans.binding.Bindings.isEmpty(downloadBasket));
+        configureAddToDownloadsButton(addToDownloadsButton);
 
         HBox buttons = new HBox(10, viewBasketButton, addToDownloadsButton);
 
@@ -367,6 +369,47 @@ public class DirectDownloadUI {
         HBox.setHgrow(basketSection.getChildren().get(1), Priority.ALWAYS);
 
         return basketSection;
+    }
+
+    private void configureAddToDownloadsButton(Button button) {
+        Tooltip tooltip = button.getTooltip();
+        if (tooltip == null) {
+            tooltip = new Tooltip("Add basket items to downloads");
+            button.setTooltip(tooltip);
+        }
+
+        BooleanBinding basketEmptyBinding = Bindings.isEmpty(downloadBasket);
+        ReadOnlyBooleanProperty limitActiveProperty = descargasUI != null
+                ? descargasUI.powvideoStreamplayLimitActiveProperty()
+                : new SimpleBooleanProperty(false);
+
+        BooleanBinding blockedByLimitBinding = Bindings.createBooleanBinding(
+                () -> limitActiveProperty.get() && basketContainsPowvideoOrStreamplay(),
+                downloadBasket,
+                limitActiveProperty
+        );
+
+        button.disableProperty().bind(basketEmptyBinding.or(blockedByLimitBinding));
+
+        Tooltip finalTooltip = tooltip;
+        button.disableProperty().addListener((obs, wasDisabled, isDisabled) -> {
+            if (isDisabled && !downloadBasket.isEmpty()
+                    && limitActiveProperty.get()
+                    && basketContainsPowvideoOrStreamplay()) {
+                finalTooltip.setText("Límite alcanzado para PowVideo/StreamPlay. Espere "
+                        + DownloadLimitManager.getFormattedRemainingTime() + ".");
+            } else {
+                finalTooltip.setText("Add basket items to downloads");
+            }
+        });
+    }
+
+    private boolean basketContainsPowvideoOrStreamplay() {
+        return downloadBasket.stream()
+                .map(DownloadBasketItem::getServer)
+                .filter(Objects::nonNull)
+                .map(server -> server.toLowerCase(Locale.ROOT))
+                .anyMatch(server -> server.contains("powvideo") || server.contains("streamplay"));
     }
 
     /**
@@ -450,6 +493,8 @@ public class DirectDownloadUI {
             addBasketToDownloads();
             basketStage.close();
         });
+
+        configureAddToDownloadsButton(addToDownloadsButton);
 
         buttonsBox.getChildren().addAll(clearButton, addToDownloadsButton);
 
