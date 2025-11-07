@@ -71,96 +71,118 @@ public class SeleniumStreamplay implements DirectDownloader {
                 // Actualizar estado a "Processing"
                 updateDownloadStatus(directDownload, "Processing", 0);
 
-                // Si se ha alcanzado el límite, mostrar navegador para que el usuario resuelva el captcha
-                if (limitReached) {
-                    logWarn("Límite de descargas alcanzado. Se requiere intervención del usuario para resolver el captcha.");
+                // Configurar navegador en función de si se requiere interacción del usuario
+                setupBrowser(limitReached);
 
-                    // Mostrar diálogo de progreso con cuenta atrás
+                logDebug("Abriendo enlace original: " + videoUrl);
+                driver.get(videoUrl);
+                wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+                logPageState("Página inicial cargada");
+
+                if (limitReached) {
+                    logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
+
                     ProgressDialog progressDialog = new ProgressDialog(
                             "Esperando resolución de CAPTCHA",
                             "Por favor, resuelva el CAPTCHA en el navegador",
                             true);
 
-                    javafx.application.Platform.runLater(() -> {
-                        progressDialog.show();
-                    });
+                    javafx.application.Platform.runLater(progressDialog::show);
 
-                    // Configurar navegador para interacción del usuario
-                    setupBrowserForUserInteraction();
-
-                    // Abrir la URL y esperar a que el usuario resuelva el captcha
-                    driver.get(videoUrl);
-
-                    // Esperar 2 minutos como máximo para que el usuario resuelva el captcha
                     long startTime = System.currentTimeMillis();
                     long timeoutMillis = 120000; // 2 minutos
 
                     while (System.currentTimeMillis() - startTime < timeoutMillis) {
-                        // Verificar si se ha cancelado la descarga
                         if (isCancelled.get()) {
-                            javafx.application.Platform.runLater(() -> progressDialog.close());
+                            javafx.application.Platform.runLater(progressDialog::close);
                             updateDownloadStatus(directDownload, "Cancelled", 0);
                             return;
                         }
 
-                        // Actualizar cuenta atrás
                         long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
                         long remainingSeconds = remainingMillis / 1000;
                         String countdownText = String.format("Tiempo restante: %02d:%02d",
                                 remainingSeconds / 60, remainingSeconds % 60);
 
-                        javafx.application.Platform.runLater(() -> {
-                            progressDialog.updateCountdown(countdownText);
-                        });
+                        javafx.application.Platform.runLater(() -> progressDialog.updateCountdown(countdownText));
 
-                        // Verificar si ya se puede detectar el video
                         try {
-                            List<WebElement> videoList = driver.findElements(By.cssSelector("video"));
-                            if (!videoList.isEmpty() && videoList.get(0).isDisplayed()) {
+                            WebElement btn = driver.findElement(By.id("btn_download"));
+                            if (btn.isDisplayed() && btn.isEnabled()) {
                                 logDebug("Captcha resuelto por el usuario, continuando con la descarga.");
                                 break;
                             }
-                        } catch (Exception e) {
-                            // Ignorar errores durante la comprobación
+                        } catch (NoSuchElementException ignored) {
+                            // El botón aún no está disponible
                         }
 
-                        // Esperar un poco antes de la siguiente comprobación
+                        try {
+                            List<WebElement> videoList = driver.findElements(By.cssSelector("video"));
+                            if (!videoList.isEmpty() && videoList.get(0).isDisplayed()) {
+                                logDebug("Reproductor detectado durante la espera manual.");
+                                break;
+                            }
+                        } catch (Exception ignored) {
+                            // Continuar esperando
+                        }
+
+                        if (driver.getPageSource().contains("v.mp4")) {
+                            logDebug("Página de video detectada durante la espera manual.");
+                            break;
+                        }
+
                         Thread.sleep(1000);
                     }
 
-                    // Cerrar el diálogo de progreso
-                    javafx.application.Platform.runLater(() -> progressDialog.close());
+                    javafx.application.Platform.runLater(progressDialog::close);
 
-                    // Si se agotó el tiempo, mostrar error
                     if (System.currentTimeMillis() - startTime >= timeoutMillis) {
                         updateDownloadStatus(directDownload, "Error", 0);
                         logError("Tiempo agotado esperando que el usuario resuelva el captcha.");
                         return;
                     }
                 } else {
-                    // Configurar navegador para descarga automática
-                    setupBrowser();
+                    if (isNopechaInstalled) {
+                        waitForNopechaResolution(PROVIDER_NAME);
+                    } else {
+                        logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
+                    }
                 }
 
-                // Obtener enlace de descarga
-                String downloadUrl = getDownloadLink(videoUrl);
+                try {
+                    Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
 
-                if (downloadUrl == null || downloadUrl.isEmpty()) {
-                    updateDownloadStatus(directDownload, "Error", 0);
+                clickProceedButton();
+                logPageState("Estado tras pulsar botón principal");
+
+                Optional<String> downloadUrl = waitForMp4Url();
+                if (downloadUrl.isEmpty()) {
+                    if (isCancelled.get() || Thread.currentThread().isInterrupted()) {
+                        updateDownloadStatus(directDownload, "Cancelled", directDownload.getProgress());
+                        logWarn("Búsqueda de enlace v.mp4 detenida por cancelación.");
+                    } else {
+                        updateDownloadStatus(directDownload, "Error", 0);
+                        logWarn("No se encontró un enlace que termine en v.mp4.");
+                        collectDebugArtifacts("mp4-no-encontrado");
+                    }
                     return;
                 }
 
-                // Ya no necesitamos Selenium para continuar con la descarga directa
+                String videoSrc = downloadUrl.get();
+                logDebug("Enlace del video detectado: " + videoSrc);
+                logPageState("Estado tras detectar enlace de video");
+
                 shutdownDriver();
 
-                // Crear nombre de archivo
-                String fileName = directDownload.getName();
-                if (!fileName.toLowerCase().endsWith(".mp4")) {
-                    fileName += ".mp4";
+                File destDir = new File(destinationPath);
+                if (!destDir.exists() && !destDir.mkdirs()) {
+                    throw new Exception("No se pudo crear el directorio de destino: " + destinationPath);
                 }
 
-                // Descargar archivo
-                downloadFile(downloadUrl, destinationPath, fileName, directDownload);
+                downloadFile(videoSrc, destinationPath, directDownload.getName(), directDownload);
 
             } catch (Exception e) {
                 logException("Error en la descarga de Streamplay", e);
@@ -219,30 +241,31 @@ public class SeleniumStreamplay implements DirectDownloader {
     }
 
     /**
-     * Configura el navegador para descarga automática.
+     * Configura el navegador Chrome con las opciones necesarias.
+     *
+     * @param userInteraction Si es true, no se usa el modo headless para permitir la interacción del usuario
      */
-    private void setupBrowser() {
+    private void setupBrowser(boolean userInteraction) {
         System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
         ChromeOptions options = new ChromeOptions();
         options.setBinary(CHROME_PATH);
-        if (runHeadless) {
-            logDebug("Configurando navegador en modo headless para resolución automática.");
-        } else {
-            logDebug("Configurando navegador visible para descarga automática.");
-        }
+        boolean headlessMode = !userInteraction && runHeadless;
+        logDebug("Configurando navegador (userInteraction=" + userInteraction + ", headless=" + headlessMode + ")");
 
-        // Cargar extensiones
         boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
         if (!popupExtensionLoaded) {
             logWarn("No se pudo cargar la extensión de bloqueo de popups.");
         } else {
             logDebug("Extensión de bloqueo de popups cargada correctamente.");
         }
-        isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
-        if (!isNopechaInstalled) {
-            logWarn("No se pudo cargar la extensión NoPeCaptcha.");
+
+        if (!userInteraction) {
+            isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
+            if (!isNopechaInstalled) {
+                logWarn("No se pudo cargar la extensión NoPeCaptcha.");
+            }
         } else {
-            logDebug("Extensión NoPeCaptcha cargada correctamente.");
+            isNopechaInstalled = false;
         }
 
         options.addArguments(
@@ -254,51 +277,14 @@ public class SeleniumStreamplay implements DirectDownloader {
                 "--window-size=1920,1080",
                 "--remote-allow-origins=*"
         );
-        if (runHeadless) {
+
+        if (headlessMode) {
             options.addArguments("--headless=new");
         }
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
-        if (runHeadless) {
-            logDebug("Navegador inicializado en modo headless con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
-        } else {
-            logDebug("Navegador inicializado en modo visible con extensiones: popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
-        }
-    }
-
-    /**
-     * Configura el navegador para interacción del usuario (resolución de captcha).
-     */
-    private void setupBrowserForUserInteraction() {
-        System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
-        ChromeOptions options = new ChromeOptions();
-        options.setBinary(CHROME_PATH);
-        logDebug("Configurando navegador visible para interacción del usuario.");
-
-        // Cargar solo la extensión de bloqueo de popups
-        boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
-        if (!popupExtensionLoaded) {
-            logWarn("No se pudo cargar la extensión de bloqueo de popups (modo usuario).");
-        } else {
-            logDebug("Extensión de bloqueo de popups cargada correctamente (modo usuario).");
-        }
-
-        // No se cargan extensiones para que el usuario pueda ver y resolver el captcha
-        options.addArguments(
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                "--disable-background-timer-throttling",
-                "--window-size=1920,1080",
-                "--remote-allow-origins=*"
-        );
-
-        driver = new ChromeDriver(options);
-        wait = new WebDriverWait(driver, Duration.ofSeconds(15));
-        isNopechaInstalled = false;
-        logDebug("Navegador inicializado en modo visible para interacción del usuario.");
+        logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
 
     private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
@@ -336,51 +322,6 @@ public class SeleniumStreamplay implements DirectDownloader {
         }
 
         return null;
-    }
-
-    /**
-     * Obtiene el enlace de descarga desde la página de Streamplay.
-     * Se espera que la página se cargue y se realizan varios intentos de hacer click en el botón "Proceed to video"
-     * (id "btn_download"). En cada intento par se espera que desaparezca cualquier overlay (div con alto z-index)
-     * y, si es necesario, se usa un click vía JavaScript. El ciclo continúa hasta que se carga el reproductor de video.
-     */
-    private String getDownloadLink(String videoUrl) throws Exception {
-        logDebug("Abriendo enlace original: " + videoUrl);
-        driver.get(videoUrl);
-        wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
-        logPageState("Página inicial cargada");
-
-        // Permitir que la extensión NoCaptcha resuelva el desafío inicial
-        if (isNopechaInstalled) {
-            waitForNopechaResolution("Streamplay");
-        } else {
-            logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
-        }
-
-        // Tiempo de gracia adicional solicitado (10 segundos)
-        try {
-            Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-        }
-
-        clickProceedButton();
-        logPageState("Estado tras pulsar botón principal");
-
-        // Esperar a que la página posterior cargue el contenido del video
-        wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
-        logPageState("Página posterior cargada");
-
-        Optional<String> downloadUrl = waitForMp4Url();
-        if (downloadUrl.isEmpty()) {
-            logWarn("No se encontró un enlace que termine en v.mp4.");
-            collectDebugArtifacts("mp4-no-encontrado");
-            return "";
-        }
-
-        logDebug("Enlace del video detectado: " + downloadUrl.get());
-        logPageState("Estado tras detectar enlace de video");
-        return downloadUrl.get();
     }
 
     private void clickProceedButton() {
