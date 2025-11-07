@@ -165,9 +165,14 @@ public class SeleniumPowvideo implements DirectDownloader {
 
                 Optional<String> downloadUrl = waitForMp4Url();
                 if (downloadUrl.isEmpty()) {
-                    updateDownloadStatus(directDownload, "Error", 0);
-                    logWarn("No se encontró un enlace que termine en v.mp4.");
-                    collectDebugArtifacts("mp4-no-encontrado");
+                    if (isCancelled.get() || Thread.currentThread().isInterrupted()) {
+                        updateDownloadStatus(directDownload, "Cancelled", directDownload.getProgress());
+                        logWarn("Búsqueda de enlace v.mp4 detenida por cancelación.");
+                    } else {
+                        updateDownloadStatus(directDownload, "Error", 0);
+                        logWarn("No se encontró un enlace que termine en v.mp4.");
+                        collectDebugArtifacts("mp4-no-encontrado");
+                    }
                     return;
                 }
 
@@ -360,6 +365,10 @@ public class SeleniumPowvideo implements DirectDownloader {
         int attempt = 1;
         boolean timeoutArtifactCaptured = false;
         while (!isCancelled.get()) {
+            if (Thread.currentThread().isInterrupted()) {
+                logWarn("Espera de enlaces v.mp4 interrumpida externamente.");
+                return Optional.empty();
+            }
             try {
                 logDebug("Iniciando espera activa para enlaces v.mp4... (intento " + attempt + ")");
                 WebDriverWait mp4Wait = new WebDriverWait(driver, Duration.ofSeconds(30));
@@ -390,6 +399,13 @@ public class SeleniumPowvideo implements DirectDownloader {
                     reloadPageForRetry(attempt);
                 }
                 attempt++;
+            } catch (WebDriverException e) {
+                if (wasInterrupted(e)) {
+                    logWarn("Espera de enlace mp4 interrumpida: " + e.getMessage());
+                    Thread.currentThread().interrupt();
+                    return Optional.empty();
+                }
+                throw e;
             } catch (CancellationException cancelled) {
                 logWarn("Esperando enlace mp4 cancelada por el usuario.");
                 return Optional.empty();
@@ -501,6 +517,20 @@ public class SeleniumPowvideo implements DirectDownloader {
             logWarn("No se pudieron cerrar ventanas emergentes adicionales: " + e.getMessage());
             return false;
         }
+    }
+
+    private boolean wasInterrupted(Throwable throwable) {
+        if (throwable == null) {
+            return false;
+        }
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return Thread.currentThread().isInterrupted();
     }
 
     private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
