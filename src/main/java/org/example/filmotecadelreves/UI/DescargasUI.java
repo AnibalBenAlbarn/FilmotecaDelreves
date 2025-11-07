@@ -1940,6 +1940,39 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         }
     }
 
+    /**
+     * Pausa todas las descargas directas activas y garantiza que su estado
+     * quede persistido antes de cerrar la aplicación. Las descargas que
+     * estaban en curso se marcan como pausadas sin considerarlas como pausa
+     * manual del usuario para que puedan reanudarse automáticamente al
+     * reiniciar.
+     */
+    public void prepareDirectDownloadsForShutdown() {
+        if (directDownloads == null || directDownloads.isEmpty()) {
+            return;
+        }
+
+        System.out.println("Guardando estado de descargas directas antes de cerrar la aplicación...");
+        for (DirectDownload download : directDownloads) {
+            if (download == null) {
+                continue;
+            }
+
+            if (isDirectDownloadActive(download.getStatus())) {
+                DirectDownloader downloader = download.getDownloader();
+                if (downloader != null) {
+                    try {
+                        downloader.pauseDownload(download);
+                    } catch (Exception e) {
+                        System.err.println("No se pudo pausar la descarga '" + download.getName() + "': " + e.getMessage());
+                    }
+                }
+            }
+
+            download.forcePersistSnapshot();
+        }
+    }
+
     private boolean isDirectDownloadActive(String status) {
         if (status == null) {
             return true;
@@ -1950,6 +1983,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 || normalized.startsWith("completado")
                 || normalized.startsWith("cancelled")
                 || normalized.startsWith("cancelado")
+                || normalized.startsWith("paused")
+                || normalized.startsWith("pausado")
+                || normalized.startsWith("waiting")
+                || normalized.startsWith("en espera")
                 || normalized.startsWith("error")
                 || normalized.startsWith("erro")
                 || normalized.startsWith("failed")
@@ -2714,6 +2751,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             lastPersistedBytes = currentBytes;
             lastPersistedStatus = currentStatus;
             lastPersistedTimestamp = now;
+        }
+
+        public void forcePersistSnapshot() {
+            persistSnapshot(true);
         }
 
         // Getters y setters existentes
