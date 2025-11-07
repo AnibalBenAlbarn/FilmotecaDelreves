@@ -11,16 +11,10 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -31,6 +25,9 @@ import java.util.regex.Pattern;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Implementación de descargador para el servidor Streamplay
@@ -50,7 +47,7 @@ public class SeleniumStreamplay implements DirectDownloader {
     private static final int CAPTCHA_GRACE_SECONDS = 10; // Tiempo para que NoCaptcha resuelva automáticamente
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
-    private final AtomicBoolean isPaused = new AtomicBoolean(false);
+    private final Map<String, ResumableHttpDownloadTask> activeDownloads = new ConcurrentHashMap<>();
 
     private WebDriver driver;
     private WebDriverWait wait;
@@ -61,7 +58,6 @@ public class SeleniumStreamplay implements DirectDownloader {
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
         isCancelled.set(false);
-        isPaused.set(false);
 
         downloadThread = new Thread(() -> {
             try {
@@ -153,14 +149,13 @@ public class SeleniumStreamplay implements DirectDownloader {
                 // Ya no necesitamos Selenium para continuar con la descarga directa
                 shutdownDriver();
 
-                // Crear nombre de archivo
-                String fileName = directDownload.getName();
-                if (!fileName.toLowerCase().endsWith(".mp4")) {
-                    fileName += ".mp4";
+                directDownload.setDestinationPath(destinationPath);
+                String resolvedName = directDownload.getName();
+                if (resolvedName != null && !resolvedName.toLowerCase().endsWith(".mp4")) {
+                    directDownload.setName(resolvedName + ".mp4");
                 }
 
-                // Descargar archivo
-                downloadFile(downloadUrl, destinationPath, fileName, directDownload);
+                startResumableDownload(downloadUrl, videoUrl, directDownload);
 
             } catch (Exception e) {
                 logException("Error en la descarga de Streamplay", e);
@@ -175,14 +170,22 @@ public class SeleniumStreamplay implements DirectDownloader {
 
     @Override
     public void pauseDownload(DescargasUI.DirectDownload download) {
-        isPaused.set(true);
+        ResumableHttpDownloadTask task = activeDownloads.get(download.getId());
+        if (task != null) {
+            task.pause();
+        }
         updateDownloadStatus(download, "Paused", download.getProgress());
     }
 
     @Override
     public void resumeDownload(DescargasUI.DirectDownload download) {
-        isPaused.set(false);
-        updateDownloadStatus(download, "Downloading", download.getProgress());
+        ResumableHttpDownloadTask task = activeDownloads.get(download.getId());
+        if (task != null) {
+            task.resume();
+            updateDownloadStatus(download, "Downloading", download.getProgress());
+        } else {
+            download(download.getUrl(), download.getDestinationPath(), download);
+        }
     }
 
     @Override
@@ -190,6 +193,10 @@ public class SeleniumStreamplay implements DirectDownloader {
         isCancelled.set(true);
         if (downloadThread != null && downloadThread.isAlive()) {
             downloadThread.interrupt();
+        }
+        ResumableHttpDownloadTask task = activeDownloads.remove(download.getId());
+        if (task != null) {
+            task.cancel();
         }
         updateDownloadStatus(download, "Cancelled", download.getProgress());
     }
@@ -626,118 +633,23 @@ public class SeleniumStreamplay implements DirectDownloader {
         }
     }
 
-    /**
-     * Descarga el archivo desde la URL utilizando la lógica de actualización de estado.
-     */
-    private void downloadFile(String fileUrl, String outputPath, String fileName, DescargasUI.DirectDownload directDownload) {
-        try {
-            if (!fileName.toLowerCase().endsWith(".mp4")) {
-                fileName += ".mp4";
-            }
-            String filePath = outputPath + File.separator + fileName;
-
-            URL url = new URL(fileUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0");
-            connection.connect();
-
-            long fileSize = connection.getContentLengthLong();
-            directDownload.setFileSize(fileSize);
-
-            long startTime = System.currentTimeMillis();
-
-            try (InputStream in = connection.getInputStream();
-                 FileOutputStream out = new FileOutputStream(filePath)) {
-
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                long totalRead = 0;
-                long lastUpdateTime = System.currentTimeMillis();
-                long lastDownloadedBytes = 0;
-
-                logDebug("Iniciando descarga del archivo. Tamaño estimado: " + formatSize(fileSize));
-
-                updateDownloadStatus(directDownload, "Downloading", 1, 0, 0, 0);
-
-                while ((bytesRead = in.read(buffer)) != -1) {
-                    if (isCancelled.get()) {
-                        logWarn("Descarga cancelada por el usuario.");
-                        updateDownloadStatus(directDownload, "Cancelled", (int)((double)totalRead / fileSize * 100), totalRead, 0, 0);
-                        return;
-                    }
-
-                    while (isPaused.get()) {
-                        if (isCancelled.get()) {
-                            logWarn("Descarga cancelada durante la pausa.");
-                            updateDownloadStatus(directDownload, "Cancelled", (int)((double)totalRead / fileSize * 100), totalRead, 0, 0);
-                            return;
-                        }
-                        Thread.sleep(500);
-                    }
-
-                    out.write(buffer, 0, bytesRead);
-                    totalRead += bytesRead;
-
-                    long currentTime = System.currentTimeMillis();
-                    if (currentTime - lastUpdateTime >= 1000) {
-                        double elapsedSeconds = (currentTime - lastUpdateTime) / 1000.0;
-                        double bytesPerSecond = (totalRead - lastDownloadedBytes) / elapsedSeconds;
-                        double speedMBps = bytesPerSecond / (1024 * 1024);
-
-                        // Calcular tiempo restante
-                        long remainingBytes = fileSize - totalRead;
-                        long remainingSeconds = bytesPerSecond > 0 ? (long)(remainingBytes / bytesPerSecond) : 0;
-
-                        // Calcular porcentaje de progreso
-                        int progressPercent = (int)((double)totalRead / fileSize * 100);
-
-                        updateDownloadStatus(directDownload, "Downloading", progressPercent, totalRead, speedMBps, remainingSeconds);
-
-                        lastUpdateTime = currentTime;
-                        lastDownloadedBytes = totalRead;
-
-                        printProgress(startTime, totalRead, fileSize);
-                    }
-                }
-
-                logDebug("Descarga completada: " + fileName);
-                updateDownloadStatus(directDownload, "Completed", 100, totalRead, 0, 0);
-            }
-        } catch (Exception e) {
-            logException("Error en la descarga", e);
-            updateDownloadStatus(directDownload, "Error", directDownload.getProgress(), directDownload.getDownloadedBytes(), 0, 0);
+    private void startResumableDownload(String fileUrl, String referer, DescargasUI.DirectDownload directDownload) {
+        if (fileUrl == null || fileUrl.isBlank()) {
+            updateDownloadStatus(directDownload, "Error", 0);
+            return;
         }
-    }
 
-    /**
-     * Obtiene el tamaño del archivo.
-     */
-    private long getFileSize(String fileUrl) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(fileUrl).openConnection();
-        conn.setRequestMethod("HEAD");
-        return conn.getContentLengthLong();
-    }
+        Consumer<HttpURLConnection> headerConfigurer = connection -> {
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0");
+            if (referer != null && !referer.isBlank()) {
+                connection.setRequestProperty("Referer", referer);
+            }
+        };
 
-    /**
-     * Imprime el progreso de la descarga en la consola.
-     */
-    private void printProgress(long startTime, long downloaded, long total) {
-        double percent = (downloaded * 100.0) / total;
-        long elapsed = System.currentTimeMillis() - startTime;
-        double speed = elapsed > 0 ? (downloaded / (elapsed / 1000.0)) / (1024 * 1024) : 0;
-        long eta = speed > 0 ? (long)((total - downloaded) / (speed * 1024 * 1024)) : 0;
-
-        System.out.printf("\rProgreso: %.1f%% | Velocidad: %.2f MB/s | ETA: %02d:%02d",
-                percent, speed, eta / 60, eta % 60);
-    }
-
-    /**
-     * Formatea el tamaño en bytes a una representación legible.
-     */
-    private String formatSize(long bytes) {
-        String[] units = {"B", "KB", "MB", "GB"};
-        int unit = (int)(Math.log(bytes) / Math.log(1024));
-        return String.format("%.2f %s", bytes / Math.pow(1024, unit), units[unit]);
+        ResumableHttpDownloadTask task = new ResumableHttpDownloadTask(fileUrl, directDownload, headerConfigurer);
+        activeDownloads.put(directDownload.getId(), task);
+        task.getCompletionFuture().whenComplete((ignored, error) -> activeDownloads.remove(directDownload.getId()));
+        task.start();
     }
 
     /**
