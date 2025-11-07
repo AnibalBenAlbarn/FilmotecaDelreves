@@ -883,6 +883,20 @@ public class DirectDownloadUI {
                         downloadBtn.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
                     }
 
+                    // Deshabilitar el botón de stream para servidores restringidos (streamplay/powvideo)
+                    String selectedServer = movie.getSelectedServer();
+                    boolean disableStream = false;
+                    if (selectedServer != null && !selectedServer.isEmpty()) {
+                        String baseServer = selectedServer.split(" ")[0].toLowerCase();
+                        disableStream = baseServer.contains("streamplay") || baseServer.contains("powvideo");
+                    }
+                    streamBtn.setDisable(disableStream);
+                    if (disableStream) {
+                        streamBtn.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+                    } else {
+                        streamBtn.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+                    }
+
                     setGraphic(buttons);
                 }
             }
@@ -1718,6 +1732,19 @@ public class DirectDownloadUI {
                                 if (!isCompatible) {
                                     addButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
                                 }
+                            }
+
+                            // Deshabilitar el botón de stream si el servidor es streamplay o powvideo
+                            boolean disableStream = false;
+                            if (selectedServer != null && !selectedServer.isEmpty()) {
+                                String baseServer = selectedServer.split(" ")[0].toLowerCase();
+                                disableStream = baseServer.contains("streamplay") || baseServer.contains("powvideo");
+                            }
+                            streamButton.setDisable(disableStream);
+                            if (disableStream) {
+                                streamButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+                            } else {
+                                streamButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
                             }
 
                             setGraphic(buttonsBox);
