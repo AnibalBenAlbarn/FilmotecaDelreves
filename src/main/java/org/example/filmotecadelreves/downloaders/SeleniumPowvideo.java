@@ -280,6 +280,9 @@ public class SeleniumPowvideo implements DirectDownloader {
         options.addArguments(
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-background-timer-throttling",
                 "--window-size=1920,1080",
                 "--remote-allow-origins=*"
         );
