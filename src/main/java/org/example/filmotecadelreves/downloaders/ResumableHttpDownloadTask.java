@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -64,6 +65,15 @@ public class ResumableHttpDownloadTask implements Runnable {
             if (!completionFuture.isDone()) {
                 completionFuture.complete(null);
             }
+        } catch (RestartDeclinedException ex) {
+            updateDownload(d -> {
+                d.setStatus("Paused (restart required)");
+                d.setDownloadSpeed(0);
+                d.setRemainingTime(0);
+            });
+            if (!completionFuture.isDone()) {
+                completionFuture.complete(null);
+            }
         } catch (Exception ex) {
             if (cancelled.get()) {
                 updateDownload(d -> {
@@ -111,7 +121,7 @@ public class ResumableHttpDownloadTask implements Runnable {
         return completionFuture;
     }
 
-    private void executeDownload() throws IOException, InterruptedException {
+    private void executeDownload() throws IOException, InterruptedException, RestartDeclinedException {
         Path targetFile = prepareTargetFile();
         long localBytes = Files.exists(targetFile) ? Files.size(targetFile) : 0L;
 
@@ -324,7 +334,7 @@ public class ResumableHttpDownloadTask implements Runnable {
 
     private DownloadConnection openDownloadConnection(long localBytes,
                                                        boolean resumePossible,
-                                                       Path targetFile) throws IOException {
+                                                       Path targetFile) throws IOException, InterruptedException, RestartDeclinedException {
         HttpURLConnection connection = openConnection("GET");
         boolean attemptingResume = resumePossible && localBytes > 0 && Files.exists(targetFile);
         if (attemptingResume) {
@@ -348,14 +358,7 @@ public class ResumableHttpDownloadTask implements Runnable {
                     || responseCode == HTTP_PRECONDITION_FAILED
                     || responseCode == HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
                 connection.disconnect();
-                try {
-                    Files.deleteIfExists(targetFile);
-                } catch (IOException ignored) {
-                }
-                updateDownload(d -> {
-                    d.setDownloadedBytes(0);
-                    d.setProgress(0);
-                });
+                handleFailedResume(responseCode, targetFile);
                 HttpURLConnection restart = openConnection("GET");
                 int restartCode = restart.getResponseCode();
                 if (restartCode != HttpURLConnection.HTTP_OK && restartCode != HttpURLConnection.HTTP_PARTIAL) {
@@ -373,6 +376,52 @@ public class ResumableHttpDownloadTask implements Runnable {
 
         long newOffset = (responseCode == HttpURLConnection.HTTP_PARTIAL) ? localBytes : 0L;
         return new DownloadConnection(connection, newOffset, responseCode == HttpURLConnection.HTTP_PARTIAL, responseCode);
+    }
+
+    private void handleFailedResume(int responseCode, Path targetFile)
+            throws IOException, InterruptedException, RestartDeclinedException {
+        String reason;
+        if (responseCode == HTTP_PRECONDITION_FAILED) {
+            reason = "El servidor indicó que el archivo ha cambiado desde la última sesión.";
+        } else if (responseCode == HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
+            reason = "El servidor rechazó continuar desde el punto guardado.";
+        } else {
+            reason = "El servidor no aceptó la reanudación de la descarga.";
+        }
+
+        CompletableFuture<Boolean> decisionFuture = download.askToRestartDownload(reason);
+        boolean restart;
+        try {
+            restart = decisionFuture.get();
+        } catch (InterruptedException interrupted) {
+            decisionFuture.cancel(true);
+            throw interrupted;
+        } catch (ExecutionException executionException) {
+            Throwable cause = executionException.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IOException("No se pudo confirmar el reinicio de la descarga", cause);
+        }
+
+        if (!restart) {
+            throw new RestartDeclinedException("User declined to restart download after resume failure");
+        }
+
+        try {
+            Files.deleteIfExists(targetFile);
+        } catch (IOException ignored) {
+        }
+
+        updateDownload(d -> {
+            d.setDownloadedBytes(0);
+            d.setProgress(0);
+            d.setDownloadSpeed(0);
+            d.setRemainingTime(0);
+            d.setStatus("Restarting");
+            d.setEtag(null);
+            d.setLastModified(null);
+        });
     }
 
     private long determineTotalBytes(HttpURLConnection connection,
@@ -424,6 +473,12 @@ public class ResumableHttpDownloadTask implements Runnable {
             } catch (Exception ignored) {
             }
         });
+    }
+
+    private static final class RestartDeclinedException extends Exception {
+        private RestartDeclinedException(String message) {
+            super(message);
+        }
     }
 
     private static final class RemoteMetadata {
