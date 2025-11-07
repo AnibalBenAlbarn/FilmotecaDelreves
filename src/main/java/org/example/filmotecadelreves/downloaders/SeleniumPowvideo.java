@@ -57,7 +57,7 @@ public class SeleniumPowvideo implements DirectDownloader {
     private WebDriverWait wait;
     private Thread downloadThread;
     private boolean isNopechaInstalled = false;
-    private boolean runHeadless = true;
+    private volatile boolean runHeadless = true;
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -175,6 +175,9 @@ public class SeleniumPowvideo implements DirectDownloader {
                 logDebug("Enlace del video detectado: " + videoSrc);
                 logPageState("Estado tras detectar enlace de video");
 
+                // Antes de iniciar la descarga directa ya no necesitamos el navegador
+                shutdownDriver();
+
                 // Crear directorio de destino si no existe
                 File destDir = new File(destinationPath);
                 if (!destDir.exists() && !destDir.mkdirs()) {
@@ -193,10 +196,7 @@ public class SeleniumPowvideo implements DirectDownloader {
                 logException("Error en la descarga de Powvideo", e);
                 updateDownloadStatus(directDownload, "Error", 0);
             } finally {
-                if (driver != null) {
-                    driver.quit();
-                    driver = null;
-                }
+                shutdownDriver();
             }
         });
 
@@ -292,6 +292,20 @@ public class SeleniumPowvideo implements DirectDownloader {
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
+    }
+
+    private void shutdownDriver() {
+        if (driver == null) {
+            return;
+        }
+        try {
+            driver.quit();
+        } catch (WebDriverException e) {
+            logWarn("Error cerrando el navegador: " + e.getMessage());
+        } finally {
+            driver = null;
+            wait = null;
+        }
     }
 
     private void waitForNopechaResolution(String providerName) {

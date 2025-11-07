@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -408,36 +409,157 @@ public class SeleniumStreamplay implements DirectDownloader {
 
     private Optional<String> waitForMp4Url() {
         Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
-        try {
-            logDebug("Iniciando espera activa para enlaces que terminen en v.mp4...");
-            WebDriverWait mp4Wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-            boolean found = mp4Wait.until(webDriver -> {
-                String pageSource = webDriver.getPageSource();
-                Matcher matcher = pattern.matcher(pageSource);
-                return matcher.find();
-            });
+        int attempt = 1;
+        boolean timeoutArtifactCaptured = false;
+        while (!isCancelled.get()) {
+            try {
+                logDebug("Iniciando espera activa para enlaces v.mp4... (intento " + attempt + ")");
+                WebDriverWait mp4Wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+                String url = mp4Wait.until(webDriver -> {
+                    if (isCancelled.get()) {
+                        throw new CancellationException("Descarga cancelada");
+                    }
+                    String pageSource = webDriver.getPageSource();
+                    Matcher matcher = pattern.matcher(pageSource);
+                    if (matcher.find()) {
+                        return matcher.group(1);
+                    }
+                    return null;
+                });
 
-            if (!found) {
-                logWarn("Finalizó la espera sin detectar enlaces v.mp4.");
+                if (url != null && !url.isBlank()) {
+                    logDebug("Enlace v.mp4 encontrado en el intento " + attempt + ": " + url);
+                    return Optional.of(url);
+                }
+            } catch (TimeoutException e) {
+                logWarn("Tiempo de espera agotado buscando el enlace mp4 (intento " + attempt + "). Se reintentará.");
+                logPageState("Estado al agotar la espera de mp4 (intento " + attempt + ")");
+                if (!timeoutArtifactCaptured) {
+                    collectDebugArtifacts("timeout-buscando-mp4");
+                    timeoutArtifactCaptured = true;
+                }
+                if (!prepareForMp4Retry(attempt)) {
+                    reloadPageForRetry(attempt);
+                }
+                attempt++;
+            } catch (CancellationException cancelled) {
+                logWarn("Esperando enlace mp4 cancelada por el usuario.");
                 return Optional.empty();
+            } catch (WebDriverException e) {
+                logError("Error consultando el enlace mp4: " + e.getMessage());
+                collectDebugArtifacts("error-obteniendo-mp4");
+                if (!prepareForMp4Retry(attempt)) {
+                    reloadPageForRetry(attempt);
+                }
+                attempt++;
             }
-
-            String pageSource = driver.getPageSource();
-            Matcher matcher = pattern.matcher(pageSource);
-            if (matcher.find()) {
-                String url = matcher.group(1);
-                logDebug("Enlace v.mp4 encontrado: " + url);
-                return Optional.of(url);
-            }
-        } catch (TimeoutException e) {
-            logWarn("Tiempo de espera agotado buscando el enlace mp4.");
-            logPageState("Estado al agotar la espera de mp4");
-            collectDebugArtifacts("timeout-buscando-mp4");
-        } catch (WebDriverException e) {
-            logError("Error consultando el enlace mp4: " + e.getMessage());
-            collectDebugArtifacts("error-obteniendo-mp4");
         }
+
+        logWarn("Se detuvo la espera de enlaces v.mp4 porque la descarga fue cancelada.");
         return Optional.empty();
+    }
+
+    private boolean prepareForMp4Retry(int attempt) {
+        if (driver == null || isCancelled.get()) {
+            return true;
+        }
+
+        boolean actionTaken = false;
+        try {
+            if (tryClickProceedButton()) {
+                logDebug("Botón 'Proceed to video' pulsado nuevamente (reintento " + attempt + ").");
+                actionTaken = true;
+            }
+        } catch (Exception e) {
+            logWarn("No se pudo pulsar nuevamente el botón 'Proceed to video' en el reintento " + attempt + ": " + e.getMessage());
+        }
+
+        if (!actionTaken) {
+            actionTaken = closeExtraWindows();
+        }
+
+        if (!actionTaken) {
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        return actionTaken;
+    }
+
+    private void reloadPageForRetry(int attempt) {
+        if (driver == null || isCancelled.get()) {
+            return;
+        }
+        try {
+            logDebug("Realizando recarga completa de la página antes del reintento " + (attempt + 1) + ".");
+            driver.navigate().refresh();
+            wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+            logPageState("Página recargada tras reintento fallido (intento " + attempt + ")");
+            if (isNopechaInstalled) {
+                waitForNopechaResolution(PROVIDER_NAME);
+            }
+            try {
+                Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            if (tryClickProceedButton()) {
+                logDebug("Botón 'Proceed to video' pulsado tras recargar la página (reintento " + (attempt + 1) + ").");
+            }
+        } catch (Exception ex) {
+            logError("Error al recargar la página para un nuevo reintento: " + ex.getMessage());
+        }
+    }
+
+    private boolean tryClickProceedButton() {
+        if (driver == null) {
+            return false;
+        }
+
+        try {
+            WebElement btn = driver.findElement(By.id("btn_download"));
+            if (btn.isDisplayed() && btn.isEnabled()) {
+                clickElement(btn);
+                return true;
+            }
+        } catch (NoSuchElementException | StaleElementReferenceException ignored) {
+            return false;
+        }
+        return false;
+    }
+
+    private void clickElement(WebElement element) {
+        try {
+            element.click();
+        } catch (Exception clickEx) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+        }
+    }
+
+    private boolean closeExtraWindows() {
+        if (driver == null) {
+            return false;
+        }
+
+        try {
+            String currentHandle = driver.getWindowHandle();
+            boolean closedAny = false;
+            for (String handle : driver.getWindowHandles()) {
+                if (!handle.equals(currentHandle)) {
+                    driver.switchTo().window(handle);
+                    driver.close();
+                    closedAny = true;
+                }
+            }
+            driver.switchTo().window(currentHandle);
+            return closedAny;
+        } catch (Exception e) {
+            logWarn("No se pudieron cerrar ventanas emergentes adicionales: " + e.getMessage());
+            return false;
+        }
     }
 
     private void sleepSilently(long millis) {
