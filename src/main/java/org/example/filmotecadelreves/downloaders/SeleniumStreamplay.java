@@ -162,11 +162,6 @@ public class SeleniumStreamplay implements DirectDownloader {
                 // Descargar archivo
                 downloadFile(downloadUrl, destinationPath, fileName, directDownload);
 
-                // Incrementar contador de descargas solo si la descarga fue exitosa
-                if ("Completed".equals(directDownload.getStatus())) {
-                    DownloadLimitManager.incrementPowvideoStreamplayCount();
-                }
-
             } catch (Exception e) {
                 logException("Error en la descarga de Streamplay", e);
                 updateDownloadStatus(directDownload, "Error", 0);

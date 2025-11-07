@@ -53,11 +53,17 @@ public class DownloadLimitManager {
      * @return el nuevo valor del contador
      */
     public static int incrementPowvideoStreamplayCount() {
-        // Si es la primera descarga, establecer el tiempo de reinicio
-        if (powvideoStreamplayCount.get() == 0) {
+        // Reiniciar automáticamente si el temporizador ya venció
+        checkAndResetPowvideoStreamplayCounter();
+
+        int newValue = powvideoStreamplayCount.incrementAndGet();
+
+        // Cuando se alcanza el límite por primera vez, iniciar el temporizador de 24h
+        if (newValue == POWVIDEO_STREAMPLAY_LIMIT && powvideoStreamplayResetTime == null) {
             powvideoStreamplayResetTime = LocalDateTime.now().plusHours(24);
         }
-        return powvideoStreamplayCount.incrementAndGet();
+
+        return newValue;
     }
 
     /**
@@ -151,10 +157,11 @@ public class DownloadLimitManager {
      * @return Tiempo restante en segundos, o 0 si no hay tiempo de reinicio establecido
      */
     public static long getRemainingTimeUntilReset() {
+        checkAndResetPowvideoStreamplayCounter();
         if (powvideoStreamplayResetTime == null) {
             return 0;
         }
-        return LocalDateTime.now().until(powvideoStreamplayResetTime, ChronoUnit.SECONDS);
+        return Math.max(0, LocalDateTime.now().until(powvideoStreamplayResetTime, ChronoUnit.SECONDS));
     }
 
     /**

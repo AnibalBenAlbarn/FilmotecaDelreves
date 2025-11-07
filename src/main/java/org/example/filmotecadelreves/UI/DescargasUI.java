@@ -9,6 +9,8 @@ import javafx.beans.binding.Bindings;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.ReadOnlyBooleanProperty;
+import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
@@ -83,7 +85,9 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
     /** Sección: Contador de descargas para PowVideo y StreamPlay */
     private Label downloadCounterLabel;
+    private Label downloadTimerLabel;
     private Timer countdownTimer;
+    private final ReadOnlyBooleanWrapper powvideoStreamplayLimitActive = new ReadOnlyBooleanWrapper(false);
 
     /** Sección: Componentes para búsqueda de torrents */
     private TextField searchField;
@@ -188,11 +192,25 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         downloadCounterLabel = new Label("Descargas PowVideo/StreamPlay: 0/10");
         downloadCounterLabel.setStyle("-fx-font-weight: bold;");
 
+        downloadTimerLabel = new Label();
+        downloadTimerLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #e74c3c;");
+        downloadTimerLabel.setVisible(false);
+        downloadTimerLabel.setManaged(false);
+
         // Iniciar el timer para actualizar el contador y la cuenta atrás
         startCountdownTimer();
 
-        counterBox.getChildren().add(downloadCounterLabel);
+        counterBox.getChildren().addAll(downloadCounterLabel, downloadTimerLabel);
         return counterBox;
+    }
+
+    /**
+     * Expone el estado actual del límite PowVideo/StreamPlay para otras interfaces.
+     *
+     * @return Propiedad de solo lectura que indica si el límite está activo.
+     */
+    public ReadOnlyBooleanProperty powvideoStreamplayLimitActiveProperty() {
+        return powvideoStreamplayLimitActive.getReadOnlyProperty();
     }
 
     /**
@@ -1476,16 +1494,32 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         int count = DownloadLimitManager.getPowvideoStreamplayCount();
         int limit = DownloadLimitManager.getPowvideoStreamplayLimit();
 
-        if (count >= limit) {
-            // Mostrar cuenta atrás
+        boolean limitReached = count >= limit;
+        powvideoStreamplayLimitActive.set(limitReached);
+
+        downloadCounterLabel.setText(String.format("Descargas PowVideo/StreamPlay: %d/%d", count, limit));
+
+        if (limitReached) {
             String remainingTime = DownloadLimitManager.getFormattedRemainingTime();
-            downloadCounterLabel.setText(String.format("Descargas PowVideo/StreamPlay: %d/%d - Reinicio en: %s",
-                    count, limit, remainingTime));
             downloadCounterLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #e74c3c;");
+            downloadTimerLabel.setText("Reinicio en: " + remainingTime);
+            downloadTimerLabel.setVisible(true);
+            downloadTimerLabel.setManaged(true);
         } else {
-            // Mostrar contador normal
-            downloadCounterLabel.setText(String.format("Descargas PowVideo/StreamPlay: %d/%d", count, limit));
             downloadCounterLabel.setStyle("-fx-font-weight: bold;");
+            downloadTimerLabel.setVisible(false);
+            downloadTimerLabel.setManaged(false);
+        }
+    }
+
+    /**
+     * Fuerza una actualización inmediata del contador de descargas desde cualquier hilo.
+     */
+    public void refreshDownloadCounter() {
+        if (Platform.isFxApplicationThread()) {
+            updateDownloadCounter();
+        } else {
+            Platform.runLater(this::updateDownloadCounter);
         }
     }
 
@@ -2349,6 +2383,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         // Reintentar la descarga
         if (download.getDownloader() != null) {
+            if (isPowvideoOrStreamplay) {
+                DownloadLimitManager.incrementPowvideoStreamplayCount();
+                refreshDownloadCounter();
+            }
             download.setProgress(0);
             download.setStatus("Waiting");
             download.getDownloader().download(download.getUrl(), download.getDestinationPath(), download);
