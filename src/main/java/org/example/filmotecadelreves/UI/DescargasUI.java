@@ -59,6 +59,7 @@ import java.util.TimerTask;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * DescargasUI - Interfaz de usuario para gestionar descargas de torrents y directas
@@ -2682,6 +2683,34 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 this.userPaused = userPaused;
                 persistSnapshot(true);
             }
+        }
+
+        public CompletableFuture<Boolean> askToRestartDownload(String reasonMessage) {
+            CompletableFuture<Boolean> decision = new CompletableFuture<>();
+            Platform.runLater(() -> {
+                try {
+                    Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                    alert.setTitle("Reanudar descarga");
+                    alert.setHeaderText("No se pudo reanudar \"" + getName() + "\"");
+                    StringBuilder content = new StringBuilder();
+                    if (reasonMessage != null && !reasonMessage.isBlank()) {
+                        content.append(reasonMessage.trim()).append("\n\n");
+                    }
+                    content.append("¿Deseas reiniciar la descarga desde el principio?");
+                    alert.setContentText(content.toString());
+
+                    ButtonType restartButton = new ButtonType("Reiniciar", ButtonBar.ButtonData.OK_DONE);
+                    ButtonType keepButton = new ButtonType("Mantener pausada", ButtonBar.ButtonData.CANCEL_CLOSE);
+                    alert.getButtonTypes().setAll(restartButton, keepButton);
+
+                    Optional<ButtonType> result = alert.showAndWait();
+                    boolean restart = result.isPresent() && result.get() == restartButton;
+                    decision.complete(restart);
+                } catch (Exception e) {
+                    decision.completeExceptionally(e);
+                }
+            });
+            return decision;
         }
 
         public void applySnapshot(DirectDownloadRecord record) {
