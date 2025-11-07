@@ -245,6 +245,9 @@ public class DirectDownloadUI {
         if (powvideoDownloader != null) {
             powvideoDownloader.setRunHeadless(runHeadless);
         }
+        if (videoStream != null) {
+            videoStream.setHeadless(runHeadless);
+        }
     }
 
     // ==================== DESCARGAS Y SERVIDORES Y ESTATUS ====================
@@ -264,6 +267,7 @@ public class DirectDownloadUI {
         DownloadManager.updateStreamplayHeadless(runStreamplayHeadless);
         this.mixdropDownloader = new MixdropDownloader();
         this.videoStream = new VideoStream();
+        this.videoStream.setHeadless(runStreamplayHeadless);
 
         // Mapear nombres de servidores a downloaders
         downloaders.put("streamtape.com", streamtapeDownloader);

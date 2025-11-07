@@ -11,16 +11,28 @@ import java.util.Map;
 public class VideoStream {
     private final VideosStreamerManager defaultStreamerManager;
     private final Map<Integer, VideosStreamerManager> serverManagers;
+    private volatile boolean headless;
 
     /**
      * Initializes the VideoStream with Selenium WebDriver
      */
     public VideoStream() {
         this.defaultStreamerManager = new VideosStreamerManager();
+        this.defaultStreamerManager.setHeadless(headless);
         this.serverManagers = new HashMap<>();
         registerManager(1, new PowvideoStreamManager());
         registerManager(21, new StreamplayStreamManager());
         registerManager(497, new StreamtapeStreamManager());
+    }
+
+    public void setHeadless(boolean headless) {
+        this.headless = headless;
+        defaultStreamerManager.setHeadless(headless);
+        for (VideosStreamerManager manager : serverManagers.values()) {
+            if (manager != null) {
+                manager.setHeadless(headless);
+            }
+        }
     }
 
     /**
@@ -45,6 +57,7 @@ public class VideoStream {
 
     private void registerManager(int serverId, VideosStreamerManager manager) {
         if (manager != null) {
+            manager.setHeadless(headless);
             serverManagers.put(serverId, manager);
         }
     }
