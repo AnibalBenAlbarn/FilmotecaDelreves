@@ -56,6 +56,10 @@ public class DownloadManager {
         if (downloader instanceof SeleniumStreamplay) {
             ((SeleniumStreamplay) downloader).setRunHeadless(runHeadless);
         }
+        DirectDownloader powvideoDownloader = downloaders.get("powvideo");
+        if (powvideoDownloader instanceof SeleniumPowvideo) {
+            ((SeleniumPowvideo) powvideoDownloader).setRunHeadless(runHeadless);
+        }
     }
 
     /**
