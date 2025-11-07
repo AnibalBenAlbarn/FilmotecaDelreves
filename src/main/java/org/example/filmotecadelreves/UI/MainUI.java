@@ -452,6 +452,15 @@ public class MainUI extends Application {
         saveConfig();
 
         // 2. Detener todas las descargas y liberar recursos
+        if (descargasUI != null) {
+            try {
+                descargasUI.cancelAllActiveDirectDownloads();
+            } catch (Exception e) {
+                System.err.println("Error al cancelar descargas directas activas: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
         if (torrentDownloader != null) {
             System.out.println("Deteniendo TorrentDownloader...");
             try {

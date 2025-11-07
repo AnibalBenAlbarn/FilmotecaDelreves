@@ -45,6 +45,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
@@ -1904,6 +1905,55 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 persistenceManager.deleteDirectDownload(download.getId());
             }
         }
+    }
+
+    /**
+     * Cancela todas las descargas directas que siguen en un estado activo. Esto se
+     * utiliza durante el cierre de la aplicación para garantizar que ningún
+     * hilo de descarga impida que el proceso finalice por completo.
+     */
+    public void cancelAllActiveDirectDownloads() {
+        if (directDownloads == null || directDownloads.isEmpty()) {
+            return;
+        }
+
+        System.out.println("Cancelando descargas directas activas antes de cerrar la aplicación...");
+        for (DirectDownload download : new ArrayList<>(directDownloads)) {
+            if (download == null) {
+                continue;
+            }
+
+            if (!isDirectDownloadActive(download.getStatus())) {
+                continue;
+            }
+
+            DirectDownloader downloader = download.getDownloader();
+            if (downloader == null) {
+                continue;
+            }
+
+            try {
+                downloader.cancelDownload(download);
+            } catch (Exception e) {
+                System.err.println("No se pudo cancelar la descarga '" + download.getName() + "': " + e.getMessage());
+            }
+        }
+    }
+
+    private boolean isDirectDownloadActive(String status) {
+        if (status == null) {
+            return true;
+        }
+
+        String normalized = status.trim().toLowerCase(Locale.ROOT);
+        return !(normalized.startsWith("completed")
+                || normalized.startsWith("completado")
+                || normalized.startsWith("cancelled")
+                || normalized.startsWith("cancelado")
+                || normalized.startsWith("error")
+                || normalized.startsWith("erro")
+                || normalized.startsWith("failed")
+                || normalized.startsWith("fallo"));
     }
 
     /**
