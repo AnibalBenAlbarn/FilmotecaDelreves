@@ -448,6 +448,15 @@ public class MainUI extends Application {
     }
 
     private void performFullShutdown() {
+        if (descargasUI != null) {
+            try {
+                descargasUI.prepareDirectDownloadsForShutdown();
+            } catch (Exception e) {
+                System.err.println("Error al pausar descargas directas activas: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
         // Guardar la configuración antes de cerrar
         saveConfig();
 
