@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class VideosStreamerManager {
     private WebDriver driver;
+    private volatile boolean headless;
     protected static final String CHROME_DRIVER_PATH = buildRelativePath("ChromeDriver", "chromedriver.exe");
     protected static final String CHROME_PATH = buildRelativePath("chrome-win", "chrome.exe");
 
@@ -85,6 +86,14 @@ public class VideosStreamerManager {
         } else {
             serverConfigs = buildDefaultServerConfigs();
         }
+    }
+
+    public void setHeadless(boolean headless) {
+        this.headless = headless;
+    }
+
+    public boolean isHeadless() {
+        return headless;
     }
 
     protected static String[] getPopupExtensionCandidates() {
@@ -210,7 +219,9 @@ public class VideosStreamerManager {
             onDriverCreated(driver, config);
 
             // Keep the browser in the background while extensions are installed
-            minimizeBrowserWindow();
+            if (!headless) {
+                minimizeBrowserWindow();
+            }
 
             // Set timeouts
             driver.manage().timeouts().pageLoadTimeout(30, TimeUnit.SECONDS);
@@ -238,10 +249,14 @@ public class VideosStreamerManager {
             Thread.sleep(POST_NAVIGATION_DELAY_MS);
 
             // Bring the browser window to the foreground for the user
-            bringBrowserToForeground();
+            if (!headless) {
+                bringBrowserToForeground();
+            }
 
-            System.out.println("Stream started successfully");
-            System.out.println("Press ESC to close the browser");
+            System.out.println("Stream started successfully" + (headless ? " (headless mode)" : ""));
+            if (!headless) {
+                System.out.println("Press ESC to close the browser");
+            }
 
             // Start monitoring for ESC key
             startEscMonitor();
@@ -311,7 +326,14 @@ public class VideosStreamerManager {
         File userDataDir = ensureUserDataDir(config);
         options.addArguments("--user-data-dir=" + userDataDir.getAbsolutePath());
         options.addArguments("--profile-directory=Default");
-        options.addArguments("--start-minimized");
+        if (headless) {
+            options.addArguments("--headless=new");
+            options.addArguments("--disable-gpu");
+            options.addArguments("--mute-audio");
+            options.addArguments("--window-size=1920,1080");
+        } else {
+            options.addArguments("--start-minimized");
+        }
 
         // Basic configuration to avoid issues
         options.addArguments("--no-sandbox");
