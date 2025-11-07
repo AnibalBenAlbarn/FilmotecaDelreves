@@ -2553,6 +2553,7 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
             }
             boolean previous = this.persistenceEnabled;
             this.persistenceEnabled = false;
+            boolean normalizeCompleted = false;
             try {
                 setProgress(record.getProgress());
                 if (record.getStatus() != null) {
@@ -2561,11 +2562,21 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
                 setDestinationPath(record.getDestinationPath());
                 setFileSize(record.getFileSize());
                 setDownloadedBytes(record.getDownloadedBytes());
-                setDownloadSpeed(record.getDownloadSpeed());
-                setRemainingTime(record.getRemainingTime());
+                double recordedSpeed = record.getDownloadSpeed();
+                long recordedRemaining = record.getRemainingTime();
+                setDownloadSpeed(recordedSpeed);
+                setRemainingTime(recordedRemaining);
+                if (isCompletedStatus(record.getStatus())) {
+                    normalizeCompleted = (recordedSpeed != 0) || (recordedRemaining != 0);
+                    setDownloadSpeed(0);
+                    setRemainingTime(0);
+                }
                 this.userPaused = record.isManuallyPaused();
             } finally {
                 this.persistenceEnabled = previous;
+            }
+            if (normalizeCompleted) {
+                persistSnapshot(true);
             }
             markPersistenceSynced();
         }
@@ -2642,6 +2653,10 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public void setStatus(String status) {
             this.status.set(status);
+            if (isCompletedStatus(status)) {
+                setDownloadSpeed(0);
+                setRemainingTime(0);
+            }
             persistSnapshot(true);
         }
 
@@ -2747,6 +2762,13 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
 
         public SimpleStringProperty urlProperty() {
             return url;
+        }
+
+        private static boolean isCompletedStatus(String status) {
+            if (status == null) {
+                return false;
+            }
+            return "Completed".equalsIgnoreCase(status) || "Completado".equalsIgnoreCase(status);
         }
 
         public SimpleStringProperty destinationPathProperty() {
