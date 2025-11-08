@@ -33,8 +33,10 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 import org.jetbrains.annotations.NotNull;
 
+import java.awt.Desktop;
 import java.io.File;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -714,6 +716,32 @@ public class DirectDownloadUI {
                 "No se pudo iniciar el streaming.");
     }
 
+    private void openInDefaultBrowser(String url) {
+        String normalizedUrl = UrlNormalizer.normalizeMediaUrl(url);
+        if (normalizedUrl == null || normalizedUrl.isEmpty()) {
+            showAlert(Alert.AlertType.ERROR, "Enlace no disponible", "No se pudo abrir el enlace de streaming.");
+            return;
+        }
+
+        if (!Desktop.isDesktopSupported()) {
+            showAlert(Alert.AlertType.ERROR, "Función no soportada", "La apertura del navegador predeterminado no está disponible en este sistema.");
+            return;
+        }
+
+        Desktop desktop = Desktop.getDesktop();
+        if (!desktop.isSupported(Desktop.Action.BROWSE)) {
+            showAlert(Alert.AlertType.ERROR, "Función no soportada", "La acción de abrir el navegador no está soportada en este sistema.");
+            return;
+        }
+
+        try {
+            desktop.browse(new URI(normalizedUrl));
+        } catch (Exception e) {
+            showAlert(Alert.AlertType.ERROR, "Error al abrir navegador", "No se pudo abrir el enlace en el navegador predeterminado.");
+            e.printStackTrace();
+        }
+    }
+
     // ==================== PESTAÑA DE PELÍCULAS ====================
 
     /**
@@ -957,19 +985,12 @@ public class DirectDownloadUI {
                         downloadBtn.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
                     }
 
-                    // Deshabilitar el botón de stream para servidores restringidos (streamplay/powvideo)
                     String selectedServer = movie.getSelectedServer();
-                    boolean disableStream = false;
-                    if (selectedServer != null && !selectedServer.isEmpty()) {
-                        String baseServer = selectedServer.split(" ")[0].toLowerCase();
-                        disableStream = baseServer.contains("streamplay") || baseServer.contains("powvideo");
-                    }
-                    streamBtn.setDisable(disableStream);
-                    if (disableStream) {
-                        streamBtn.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
-                    } else {
-                        streamBtn.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-                    }
+                    boolean hasServer = selectedServer != null && !selectedServer.isEmpty();
+                    streamBtn.setDisable(!hasServer);
+                    streamBtn.setStyle(hasServer
+                            ? "-fx-background-color: #3498db; -fx-text-fill: white;"
+                            : "-fx-background-color: #95a5a6; -fx-text-fill: white;");
 
                     setGraphic(buttons);
                 }
@@ -1063,16 +1084,13 @@ public class DirectDownloadUI {
             if (selectedServer != null) {
                 String baseServer = selectedServer.split(" ")[0].toLowerCase();
 
-                // Check for powvideo.org (ID: 1)
-                if (baseServer.contains("powvideo.org")) {
-                    serverId = 1;
+                if (baseServer.contains("powvideo") || baseServer.contains("streamplay")) {
+                    openInDefaultBrowser(movie.getLink());
+                    return;
                 }
-                // Check for streamplay.to (ID: 21)
-                else if (baseServer.contains("streamplay.to")) {
-                    serverId = 21;
-                }
+
                 // Check for streamtape.com (ID: 497)
-                else if (baseServer.contains("streamtape.com")) {
+                if (baseServer.contains("streamtape.com")) {
                     serverId = 497;
                 }
                 // Check for mixdrop.bz (ID: 15)
@@ -1720,10 +1738,9 @@ public class DirectDownloadUI {
                         if (selectedFile != null) {
                             int serverId = -1;
                             String lowerServer = baseServer.toLowerCase();
-                            if (lowerServer.contains("powvideo.org")) {
-                                serverId = 1;
-                            } else if (lowerServer.contains("streamplay.to")) {
-                                serverId = 21;
+                            if (lowerServer.contains("powvideo") || lowerServer.contains("streamplay")) {
+                                openInDefaultBrowser(selectedFile.getLink());
+                                return;
                             } else if (lowerServer.contains("streamtape.com")) {
                                 serverId = 497;
                             } else if (lowerServer.contains("mixdrop.bz")) {
@@ -1776,15 +1793,11 @@ public class DirectDownloadUI {
                         }
                     }
 
-                    boolean disableStream = false;
-                    if (selectedServer != null && !selectedServer.isEmpty()) {
-                        String baseServer = selectedServer.split(" " )[0].toLowerCase();
-                        disableStream = baseServer.contains("streamplay") || baseServer.contains("powvideo");
-                    }
-                    streamButton.setDisable(disableStream);
-                    streamButton.setStyle(disableStream
-                            ? "-fx-background-color: #95a5a6; -fx-text-fill: white;"
-                            : "-fx-background-color: #3498db; -fx-text-fill: white;");
+                    boolean hasServer = selectedServer != null && !selectedServer.isEmpty();
+                    streamButton.setDisable(!hasServer);
+                    streamButton.setStyle(hasServer
+                            ? "-fx-background-color: #3498db; -fx-text-fill: white;"
+                            : "-fx-background-color: #95a5a6; -fx-text-fill: white;");
 
                     setGraphic(buttonsBox);
                 }
