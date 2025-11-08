@@ -125,6 +125,12 @@ public class DirectDownloadUI {
      */
     private final Map<Integer, ObservableList<DirectFile>> movieDirectFilesCache = new HashMap<>();
 
+    // ==================== CACHÉS DE EPISODIOS ====================
+    private final Map<Integer, List<String>> episodeLanguagesCache = new HashMap<>();
+    private final Map<Integer, List<String>> episodeServersCache = new HashMap<>();
+    private final Map<Integer, Map<String, List<String>>> episodeServersByLanguageCache = new HashMap<>();
+    private final Map<Integer, Map<String, List<ConnectDataBase.Quality>>> episodeQualitiesCache = new HashMap<>();
+
     // ==================== CONFIGURACIÓN ====================
     // Lista de servidores compatibles para descarga directa
     private static final List<String> compatibleServers = Arrays.asList(
@@ -263,6 +269,7 @@ public class DirectDownloadUI {
         movieServerSelectionCache.clear();
         episodesBySeason.clear();
         filesByEpisode.clear();
+        clearAllEpisodeCaches();
         loadInitialData();
     }
 
@@ -2079,6 +2086,8 @@ public class DirectDownloadUI {
             return;
         }
 
+        clearEpisodeCachesForSeason(context.season.getId());
+
         runWithLoading(() -> fetchSeasonEpisodes(context.season), episodes -> {
             context.episodes.setAll(episodes);
             context.loaded = true;
@@ -2094,6 +2103,7 @@ public class DirectDownloadUI {
     private ObservableList<Episode> fetchSeasonEpisodes(ConnectDataBase.Season season) throws Exception {
         ObservableList<Episode> seasonEpisodes = connectDataBase.getEpisodesBySeason(season.getId());
         seasonEpisodes.sort(Comparator.comparingInt(Episode::getEpisodeNumber));
+        preloadEpisodeData(seasonEpisodes);
         return seasonEpisodes;
     }
 
@@ -2355,45 +2365,230 @@ public class DirectDownloadUI {
         return files;
     }
 
+    private void preloadEpisodeData(List<Episode> episodes) throws Exception {
+        for (Episode episode : episodes) {
+            int episodeId = episode.getId();
+
+            List<String> languages = loadEpisodeLanguagesFromDb(episodeId);
+            episodeLanguagesCache.put(episodeId, languages);
+
+            Map<String, List<String>> serversByLanguage = new HashMap<>();
+            for (String language : languages) {
+                List<String> serversForLanguage = loadServersForEpisodeLanguageFromDb(episodeId, language);
+                serversByLanguage.put(language, serversForLanguage);
+            }
+            episodeServersByLanguageCache.put(episodeId, serversByLanguage);
+
+            List<String> allServers = loadAllServersForEpisodeFromDb(episodeId);
+            episodeServersCache.put(episodeId, allServers);
+
+            Set<String> serversToFetchQualities = new HashSet<>();
+            allServers.stream()
+                    .map(this::normalizeServerKey)
+                    .forEach(serversToFetchQualities::add);
+            serversByLanguage.values().stream()
+                    .flatMap(Collection::stream)
+                    .map(this::normalizeServerKey)
+                    .forEach(serversToFetchQualities::add);
+
+            Map<String, List<ConnectDataBase.Quality>> qualitiesByServer = new HashMap<>();
+            for (String server : serversToFetchQualities) {
+                List<ConnectDataBase.Quality> qualities = loadQualitiesForServerFromDb(episodeId, server);
+                qualitiesByServer.put(server, qualities);
+            }
+            episodeQualitiesCache.put(episodeId, qualitiesByServer);
+        }
+    }
+
+    private void clearEpisodeCachesForSeason(int seasonId) {
+        ObservableList<Episode> previousEpisodes = episodesBySeason.get(seasonId);
+        if (previousEpisodes != null) {
+            previousEpisodes.forEach(episode -> removeEpisodeFromCaches(episode.getId()));
+        }
+    }
+
+    private void clearAllEpisodeCaches() {
+        episodeLanguagesCache.clear();
+        episodeServersCache.clear();
+        episodeServersByLanguageCache.clear();
+        episodeQualitiesCache.clear();
+    }
+
+    private void removeEpisodeFromCaches(int episodeId) {
+        episodeLanguagesCache.remove(episodeId);
+        episodeServersCache.remove(episodeId);
+        episodeServersByLanguageCache.remove(episodeId);
+        episodeQualitiesCache.remove(episodeId);
+    }
+
+    private String normalizeServerKey(String serverWithOptionalIndex) {
+        if (serverWithOptionalIndex == null) {
+            return "";
+        }
+        int spaceIndex = serverWithOptionalIndex.indexOf(' ');
+        if (spaceIndex == -1) {
+            return serverWithOptionalIndex;
+        }
+        return serverWithOptionalIndex.substring(0, spaceIndex);
+    }
+
+    private List<String> defaultEpisodeLanguages() {
+        List<String> languages = new ArrayList<>();
+        languages.add("Audio Español");
+        languages.add("Audio Latino");
+        languages.add("Subtítulo Español");
+        return languages;
+    }
+
+    private List<String> loadEpisodeLanguagesFromDb(int episodeId) throws Exception {
+        String query = "SELECT DISTINCT language FROM links_files_download WHERE episode_id = ?";
+        List<String> languages = new ArrayList<>();
+
+        try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
+            stmt.setInt(1, episodeId);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                String language = rs.getString("language");
+                if (language != null && !language.isEmpty()) {
+                    languages.add(language);
+                }
+            }
+        }
+
+        if (languages.isEmpty()) {
+            languages.addAll(defaultEpisodeLanguages());
+        }
+
+        System.out.println("Available languages for episode " + episodeId + ": " + languages);
+        return languages;
+    }
+
+    private List<String> loadServersForEpisodeLanguageFromDb(int episodeId, String language) throws Exception {
+        String query = "SELECT DISTINCT s.name as server FROM links_files_download l " +
+                "JOIN servers s ON l.server_id = s.id " +
+                "WHERE l.episode_id = ? AND l.language = ?";
+        Map<String, Integer> serverCounts = new HashMap<>();
+
+        try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
+            stmt.setInt(1, episodeId);
+            stmt.setString(2, language);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                String server = rs.getString("server");
+                serverCounts.put(server, serverCounts.getOrDefault(server, 0) + 1);
+            }
+        }
+
+        List<String> servers = buildServerListWithIndexes(serverCounts);
+        if (servers.isEmpty()) {
+            if ("Audio Español".equals(language)) {
+                servers.add("streamtape.com");
+                servers.add("powvideo.org");
+            } else if ("Audio Latino".equals(language)) {
+                servers.add("streamplay.to");
+                servers.add("mixdrop.bz");
+            } else {
+                servers.add("streamtape.com");
+                servers.add("powvideo.org");
+            }
+        }
+
+        System.out.println("Servers for episode " + episodeId + " and language " + language + ": " + servers);
+        return servers;
+    }
+
+    private List<String> loadAllServersForEpisodeFromDb(int episodeId) throws Exception {
+        String query = "SELECT DISTINCT s.name as server FROM links_files_download l " +
+                "JOIN servers s ON l.server_id = s.id " +
+                "WHERE l.episode_id = ?";
+        Map<String, Integer> serverCounts = new HashMap<>();
+
+        try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
+            stmt.setInt(1, episodeId);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                String server = rs.getString("server");
+                serverCounts.put(server, serverCounts.getOrDefault(server, 0) + 1);
+            }
+        }
+
+        List<String> servers = buildServerListWithIndexes(serverCounts);
+        if (servers.isEmpty()) {
+            servers.add("streamtape.com");
+            servers.add("powvideo.org");
+            servers.add("streamplay.to");
+            servers.add("mixdrop.bz");
+        }
+
+        System.out.println("Available servers for episode " + episodeId + ": " + servers);
+        return servers;
+    }
+
+    private List<String> buildServerListWithIndexes(Map<String, Integer> serverCounts) {
+        List<String> servers = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : serverCounts.entrySet()) {
+            String server = entry.getKey();
+            int count = entry.getValue();
+
+            if (count == 1) {
+                servers.add(server);
+            } else {
+                for (int i = 1; i <= count; i++) {
+                    servers.add(server + " " + i);
+                }
+            }
+        }
+        return servers;
+    }
+
+    private List<ConnectDataBase.Quality> loadQualitiesForServerFromDb(int episodeId, String serverWithOptionalIndex) throws Exception {
+        String baseServer = normalizeServerKey(serverWithOptionalIndex);
+        String query = "SELECT DISTINCT q.quality_id, q.quality FROM links_files_download l " +
+                "JOIN qualities q ON l.quality_id = q.quality_id " +
+                "JOIN servers s ON l.server_id = s.id " +
+                "WHERE l.episode_id = ? AND s.name = ?";
+        List<ConnectDataBase.Quality> qualities = new ArrayList<>();
+
+        try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
+            stmt.setInt(1, episodeId);
+            stmt.setString(2, baseServer);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                int qualityId = rs.getInt("quality_id");
+                String qualityName = rs.getString("quality");
+                qualities.add(new ConnectDataBase.Quality(qualityId, qualityName));
+            }
+        }
+
+        if (qualities.isEmpty()) {
+            qualities.addAll(new ArrayList<>(connectDataBase.getQualities()));
+        }
+
+        System.out.println("Qualities for episode " + episodeId + " and server " + baseServer + ": " + qualities);
+        return qualities;
+    }
+
     /**
      * Obtiene los idiomas disponibles para un episodio
      */
     private List<String> getAvailableEpisodeLanguages(int episodeId) {
+        List<String> cached = episodeLanguagesCache.get(episodeId);
+        if (cached != null) {
+            return cached;
+        }
         try {
-            // Consulta SQL para obtener los idiomas disponibles para este episodio
-            String query = "SELECT DISTINCT language FROM links_files_download WHERE episode_id = ?";
-            List<String> languages = new ArrayList<>();
-
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setInt(1, episodeId);
-                ResultSet rs = stmt.executeQuery();
-
-                while (rs.next()) {
-                    String language = rs.getString("language");
-                    if (language != null && !language.isEmpty()) {
-                        languages.add(language);
-                    }
-                }
-            }
-
-            // Si no hay idiomas en la base de datos, usar valores predeterminados
-            if (languages.isEmpty()) {
-                languages.add("Audio Español");
-                languages.add("Audio Latino");
-                languages.add("Subtítulo Español");
-            }
-
-            System.out.println("Available languages for episode " + episodeId + ": " + languages);
+            List<String> languages = loadEpisodeLanguagesFromDb(episodeId);
+            episodeLanguagesCache.put(episodeId, languages);
             return languages;
         } catch (Exception e) {
             System.err.println("Error getting available episode languages: " + e.getMessage());
             e.printStackTrace();
-
-            // Valores predeterminados en caso de error
-            List<String> defaultLanguages = new ArrayList<>();
-            defaultLanguages.add("Audio Español");
-            defaultLanguages.add("Audio Latino");
-            defaultLanguages.add("Subtítulo Español");
+            List<String> defaultLanguages = defaultEpisodeLanguages();
+            episodeLanguagesCache.put(episodeId, defaultLanguages);
             return defaultLanguages;
         }
     }
@@ -2402,60 +2597,18 @@ public class DirectDownloadUI {
      * Obtiene los servidores disponibles para un idioma específico de un episodio
      */
     private List<String> getServersForEpisodeLanguage(int episodeId, String language) {
+        Map<String, List<String>> serversByLanguage = episodeServersByLanguageCache.computeIfAbsent(episodeId, id -> new HashMap<>());
+        List<String> cached = serversByLanguage.get(language);
+        if (cached != null) {
+            return cached;
+        }
         try {
-            // Consulta SQL para obtener los servidores disponibles para este episodio y idioma
-            String query = "SELECT DISTINCT s.name as server FROM links_files_download l " +
-                    "JOIN servers s ON l.server_id = s.id " +
-                    "WHERE l.episode_id = ? AND l.language = ?";
-            Map<String, Integer> serverCounts = new HashMap<>();
-
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setInt(1, episodeId);
-                stmt.setString(2, language);
-                ResultSet rs = stmt.executeQuery();
-
-                while (rs.next()) {
-                    String server = rs.getString("server");
-                    serverCounts.put(server, serverCounts.getOrDefault(server, 0) + 1);
-                }
-            }
-
-            // Crear lista de servidores con enumeración para duplicados
-            List<String> servers = new ArrayList<>();
-            for (Map.Entry<String, Integer> entry : serverCounts.entrySet()) {
-                String server = entry.getKey();
-                int count = entry.getValue();
-
-                if (count == 1) {
-                    servers.add(server);
-                } else {
-                    for (int i = 1; i <= count; i++) {
-                        servers.add(server + " " + i);
-                    }
-                }
-            }
-
-            // Si no hay servidores, usar valores predeterminados
-            if (servers.isEmpty()) {
-                if ("Audio Español".equals(language)) {
-                    servers.add("streamtape.com");
-                    servers.add("powvideo.org");
-                } else if ("Audio Latino".equals(language)) {
-                    servers.add("streamplay.to");
-                    servers.add("mixdrop.bz");
-                } else {
-                    servers.add("streamtape.com");
-                    servers.add("powvideo.org");
-                }
-            }
-
-            System.out.println("Servers for episode " + episodeId + " and language " + language + ": " + servers);
+            List<String> servers = loadServersForEpisodeLanguageFromDb(episodeId, language);
+            serversByLanguage.put(language, servers);
             return servers;
         } catch (Exception e) {
             System.err.println("Error getting servers for episode language: " + e.getMessage());
             e.printStackTrace();
-
-            // Valores predeterminados en caso de error
             List<String> defaultServers = new ArrayList<>();
             if ("Audio Español".equals(language)) {
                 defaultServers.add("streamtape.com");
@@ -2467,6 +2620,7 @@ public class DirectDownloadUI {
                 defaultServers.add("streamtape.com");
                 defaultServers.add("powvideo.org");
             }
+            serversByLanguage.put(language, defaultServers);
             return defaultServers;
         }
     }
@@ -2475,58 +2629,23 @@ public class DirectDownloadUI {
      * Obtiene todos los servidores disponibles para un episodio
      */
     private List<String> getAvailableEpisodeServers(int episodeId) {
+        List<String> cached = episodeServersCache.get(episodeId);
+        if (cached != null) {
+            return cached;
+        }
         try {
-            // Consulta SQL para obtener todos los servidores disponibles para este episodio
-            String query = "SELECT DISTINCT s.name as server FROM links_files_download l " +
-                    "JOIN servers s ON l.server_id = s.id " +
-                    "WHERE l.episode_id = ?";
-            Map<String, Integer> serverCounts = new HashMap<>();
-
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setInt(1, episodeId);
-                ResultSet rs = stmt.executeQuery();
-
-                while (rs.next()) {
-                    String server = rs.getString("server");
-                    serverCounts.put(server, serverCounts.getOrDefault(server, 0) + 1);
-                }
-            }
-
-            // Crear lista de servidores con enumeración para duplicados
-            List<String> servers = new ArrayList<>();
-            for (Map.Entry<String, Integer> entry : serverCounts.entrySet()) {
-                String server = entry.getKey();
-                int count = entry.getValue();
-
-                if (count == 1) {
-                    servers.add(server);
-                } else {
-                    for (int i = 1; i <= count; i++) {
-                        servers.add(server + " " + i);
-                    }
-                }
-            }
-
-            // Si no hay servidores, usar valores predeterminados
-            if (servers.isEmpty()) {
-                servers.add("streamtape.com");
-                servers.add("powvideo.org");
-                servers.add("streamplay.to");
-                servers.add("mixdrop.bz");
-            }
-
-            System.out.println("Available servers for episode " + episodeId + ": " + servers);
+            List<String> servers = loadAllServersForEpisodeFromDb(episodeId);
+            episodeServersCache.put(episodeId, servers);
             return servers;
         } catch (Exception e) {
             System.err.println("Error getting available episode servers: " + e.getMessage());
             e.printStackTrace();
-
-            // Valores predeterminados en caso de error
             List<String> defaultServers = new ArrayList<>();
             defaultServers.add("streamtape.com");
             defaultServers.add("powvideo.org");
             defaultServers.add("streamplay.to");
             defaultServers.add("mixdrop.bz");
+            episodeServersCache.put(episodeId, defaultServers);
             return defaultServers;
         }
     }
@@ -2535,42 +2654,22 @@ public class DirectDownloadUI {
      * Obtiene las calidades disponibles para un servidor específico de un episodio
      */
     private List<ConnectDataBase.Quality> getQualitiesForServer(int episodeId, String serverWithIndex) {
+        String baseServer = normalizeServerKey(serverWithIndex);
+        Map<String, List<ConnectDataBase.Quality>> qualitiesByServer = episodeQualitiesCache.computeIfAbsent(episodeId, id -> new HashMap<>());
+        List<ConnectDataBase.Quality> cached = qualitiesByServer.get(baseServer);
+        if (cached != null) {
+            return cached;
+        }
         try {
-            // Extraer el nombre base del servidor
-            String baseServer = serverWithIndex.split(" ")[0];
-
-            // Consulta SQL para obtener las calidades disponibles para este episodio y servidor
-            String query = "SELECT DISTINCT q.quality_id, q.quality FROM links_files_download l " +
-                    "JOIN qualities q ON l.quality_id = q.quality_id " +
-                    "JOIN servers s ON l.server_id = s.id " +
-                    "WHERE l.episode_id = ? AND s.name = ?";
-            List<ConnectDataBase.Quality> qualities = new ArrayList<>();
-
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setInt(1, episodeId);
-                stmt.setString(2, baseServer);
-                ResultSet rs = stmt.executeQuery();
-
-                while (rs.next()) {
-                    int qualityId = rs.getInt("quality_id");
-                    String qualityName = rs.getString("quality");
-                    qualities.add(new ConnectDataBase.Quality(qualityId, qualityName));
-                }
-            }
-
-            // Si no hay calidades, obtener todas las calidades disponibles
-            if (qualities.isEmpty()) {
-                qualities.addAll(connectDataBase.getQualities());
-            }
-
-            System.out.println("Qualities for episode " + episodeId + " and server " + baseServer + ": " + qualities);
+            List<ConnectDataBase.Quality> qualities = loadQualitiesForServerFromDb(episodeId, baseServer);
+            qualitiesByServer.put(baseServer, qualities);
             return qualities;
         } catch (Exception e) {
             System.err.println("Error getting qualities for server: " + e.getMessage());
             e.printStackTrace();
-
-            // Devolver todas las calidades en caso de error
-            return new ArrayList<>(connectDataBase.getQualities());
+            List<ConnectDataBase.Quality> defaultQualities = new ArrayList<>(connectDataBase.getQualities());
+            qualitiesByServer.put(baseServer, defaultQualities);
+            return defaultQualities;
         }
     }
 
