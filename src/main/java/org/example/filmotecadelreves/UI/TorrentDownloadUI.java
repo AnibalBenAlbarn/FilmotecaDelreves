@@ -366,7 +366,7 @@ public class TorrentDownloadUI {
             return;
         }
 
-        if (ajustesUI.getMovieDestination().isEmpty() || ajustesUI.getSeriesDestination().isEmpty()) {
+        if (ajustesUI.getTorrentMovieDestination().isEmpty() || ajustesUI.getTorrentSeriesDestination().isEmpty()) {
             showAlert(Alert.AlertType.ERROR, "Error", "Por favor, configura las rutas de destino en Ajustes primero.");
             return;
         }
@@ -414,7 +414,7 @@ public class TorrentDownloadUI {
                             if (torrentFilePath != null) {
                                 TorrentState torrentState = new TorrentState(
                                         movie.getName(),
-                                        ajustesUI.getMovieDestination(),
+                                        ajustesUI.getTorrentMovieDestination(),
                                         0,
                                         0,
                                         100
@@ -482,9 +482,9 @@ public class TorrentDownloadUI {
                             String destinationPath;
 
                             if (ajustesUI.isCreateSubfolders()) {
-                                destinationPath = ajustesUI.getSeriesDestination() + File.separator + seriesName + File.separator + "Temporada " + episode.getSeasonNumber();
+                                destinationPath = ajustesUI.getTorrentSeriesDestination() + File.separator + seriesName + File.separator + "Temporada " + episode.getSeasonNumber();
                             } else {
-                                destinationPath = ajustesUI.getSeriesDestination() + File.separator + seriesName;
+                                destinationPath = ajustesUI.getTorrentSeriesDestination() + File.separator + seriesName;
                             }
 
                             // Asegurar que el directorio de destino existe
