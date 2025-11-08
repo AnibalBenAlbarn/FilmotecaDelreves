@@ -32,7 +32,7 @@ import java.util.function.Consumer;
 /**
  * Implementación de descargador para el servidor Streamplay
  */
-public class SeleniumStreamplay implements DirectDownloader {
+public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapable {
     private static final String PROVIDER_NAME = "Streamplay";
     private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
@@ -57,55 +57,76 @@ public class SeleniumStreamplay implements DirectDownloader {
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
+        startDownload(videoUrl, destinationPath, directDownload, false);
+    }
+
+    @Override
+    public void downloadManual(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
+        startDownload(videoUrl, destinationPath, directDownload, true);
+    }
+
+    private void startDownload(String videoUrl,
+                               String destinationPath,
+                               DescargasUI.DirectDownload directDownload,
+                               boolean manualMode) {
         isCancelled.set(false);
 
         downloadThread = new Thread(() -> {
             try {
-                // Verificar límite de descargas
                 boolean limitReached = DownloadLimitManager.isPowvideoStreamplayLimitReached();
+                boolean manualOverride = manualMode;
 
-                // Actualizar estado a "Processing"
                 updateDownloadStatus(directDownload, "Processing", 0);
 
-                // Configurar navegador en función de si se requiere interacción del usuario
-                setupBrowser(limitReached);
+                boolean requiresInteraction = manualOverride || limitReached;
+                setupBrowser(requiresInteraction);
 
                 logDebug("Abriendo enlace original: " + videoUrl);
                 driver.get(videoUrl);
                 wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
                 logPageState("Página inicial cargada");
 
-                if (limitReached) {
-                    logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
+                ProgressDialog progressDialog = null;
 
-                    ProgressDialog progressDialog = new ProgressDialog(
-                            "Esperando resolución de CAPTCHA",
-                            "Por favor, resuelva el CAPTCHA en el navegador",
-                            true);
+                if (requiresInteraction) {
+                    if (manualOverride && !limitReached) {
+                        logDebug("Modo manual solicitado por el usuario. Esperando interacción.");
+                    } else {
+                        logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
+                    }
 
-                    javafx.application.Platform.runLater(progressDialog::show);
+                    String title = (manualOverride && !limitReached)
+                            ? "Descarga manual en curso"
+                            : "Esperando resolución de CAPTCHA";
+                    String message = (manualOverride && !limitReached)
+                            ? "Se abrió una ventana independiente. Resuelva el captcha y pulse los botones correspondientes."
+                            : "Por favor, resuelva el CAPTCHA en el navegador";
+
+                    progressDialog = new ProgressDialog(title, message, true);
+                    ProgressDialog finalProgressDialog = progressDialog;
+                    javafx.application.Platform.runLater(finalProgressDialog::show);
 
                     long startTime = System.currentTimeMillis();
-                    long timeoutMillis = 120000; // 2 minutos
+                    long timeoutMillis = (manualOverride && !limitReached) ? 300000 : 120000;
 
                     while (System.currentTimeMillis() - startTime < timeoutMillis) {
                         if (isCancelled.get()) {
-                            javafx.application.Platform.runLater(progressDialog::close);
+                            javafx.application.Platform.runLater(finalProgressDialog::close);
                             updateDownloadStatus(directDownload, "Cancelled", 0);
                             return;
                         }
 
                         long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
-                        long remainingSeconds = remainingMillis / 1000;
+                        long remainingSeconds = Math.max(0, remainingMillis / 1000);
                         String countdownText = String.format("Tiempo restante: %02d:%02d",
                                 remainingSeconds / 60, remainingSeconds % 60);
 
-                        javafx.application.Platform.runLater(() -> progressDialog.updateCountdown(countdownText));
+                        javafx.application.Platform.runLater(() -> finalProgressDialog.updateCountdown(countdownText));
 
                         try {
                             WebElement btn = driver.findElement(By.id("btn_download"));
                             if (btn.isDisplayed() && btn.isEnabled()) {
-                                logDebug("Captcha resuelto por el usuario, continuando con la descarga.");
+                                logDebug("Captcha resuelto manualmente, continuando con la descarga.");
                                 break;
                             }
                         } catch (NoSuchElementException ignored) {
@@ -130,11 +151,11 @@ public class SeleniumStreamplay implements DirectDownloader {
                         Thread.sleep(1000);
                     }
 
-                    javafx.application.Platform.runLater(progressDialog::close);
+                    javafx.application.Platform.runLater(finalProgressDialog::close);
 
                     if (System.currentTimeMillis() - startTime >= timeoutMillis) {
                         updateDownloadStatus(directDownload, "Error", 0);
-                        logError("Tiempo agotado esperando que el usuario resuelva el captcha.");
+                        logError("Tiempo agotado esperando que el usuario complete la interacción manual.");
                         return;
                     }
                 } else {
