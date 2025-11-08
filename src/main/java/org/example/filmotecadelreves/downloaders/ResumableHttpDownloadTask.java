@@ -167,13 +167,18 @@ public class ResumableHttpDownloadTask implements Runnable {
             return;
         }
 
-        DownloadConnection response = openDownloadConnection(localBytes, resumePossible, targetFile);
+        boolean hasPartialFile = localBytes > 0 && Files.exists(targetFile);
+        DownloadConnection response = openDownloadConnection(localBytes, hasPartialFile, targetFile);
         HttpURLConnection connection = response.connection;
         long startingOffset = response.startingOffset;
 
         if (response.resumed && startingOffset != localBytes) {
             long adjusted = response.startingOffset;
             updateDownload(d -> d.setDownloadedBytes(adjusted));
+        }
+
+        if (response.resumed) {
+            updateDownload(d -> d.setResumeSupported(true));
         }
 
         long totalBytes = determineTotalBytes(connection, startingOffset, knownLength, response.responseCode);
@@ -333,10 +338,10 @@ public class ResumableHttpDownloadTask implements Runnable {
     }
 
     private DownloadConnection openDownloadConnection(long localBytes,
-                                                       boolean resumePossible,
+                                                       boolean hasPartialFile,
                                                        Path targetFile) throws IOException, InterruptedException, RestartDeclinedException {
         HttpURLConnection connection = openConnection("GET");
-        boolean attemptingResume = resumePossible && localBytes > 0 && Files.exists(targetFile);
+        boolean attemptingResume = hasPartialFile;
         if (attemptingResume) {
             connection.setRequestProperty("Range", "bytes=" + localBytes + "-");
             String etag = download.getEtag();
@@ -421,6 +426,7 @@ public class ResumableHttpDownloadTask implements Runnable {
             d.setStatus("Restarting");
             d.setEtag(null);
             d.setLastModified(null);
+            d.setResumeSupported(false);
         });
     }
 
