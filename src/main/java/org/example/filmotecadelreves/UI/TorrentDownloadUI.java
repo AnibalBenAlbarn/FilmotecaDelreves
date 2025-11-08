@@ -72,6 +72,7 @@ public class TorrentDownloadUI {
     private int currentSeason;
     private final Map<Integer, List<Episode>> episodesBySeason = new HashMap<>();
     private final Map<Integer, List<TorrentFile>> torrentFilesByEpisode = new HashMap<>();
+    private static final String DEFAULT_LOADING_MESSAGE = "Cargando Datos...";
 
     // Directorio para archivos temporales
     private final String TEMP_DIR = System.getProperty("java.io.tmpdir") + File.separator + "torrent_downloader";
@@ -222,7 +223,7 @@ public class TorrentDownloadUI {
                     }
                     System.out.println("Datos iniciales cargados: " + data.movies.size() + " películas, " + data.series.size() + " series");
                 },
-                "Cargando datos iniciales...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar los datos iniciales.",
                 () -> {
                     if (notifyStartup && mainUI != null) {
@@ -1068,7 +1069,7 @@ public class TorrentDownloadUI {
                     peliculasTable.setItems(results);
                     System.out.println("Resultados encontrados: " + results.size());
                 },
-                "Buscando películas...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar las películas.");
     }
 
@@ -1079,7 +1080,7 @@ public class TorrentDownloadUI {
                     peliculasTable.setItems(results);
                     System.out.println("Resultados encontrados: " + results.size());
                 },
-                "Buscando películas...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar las películas.");
     }
 
@@ -1090,7 +1091,7 @@ public class TorrentDownloadUI {
                     seriesTable.setItems(results);
                     System.out.println("Resultados encontrados: " + results.size());
                 },
-                "Buscando series...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar las series.");
     }
 
@@ -1101,7 +1102,7 @@ public class TorrentDownloadUI {
                     seriesTable.setItems(results);
                     System.out.println("Resultados encontrados: " + results.size());
                 },
-                "Buscando series...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar las series.");
     }
 

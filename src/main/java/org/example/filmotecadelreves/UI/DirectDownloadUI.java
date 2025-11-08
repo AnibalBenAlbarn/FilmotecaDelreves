@@ -79,6 +79,7 @@ public class DirectDownloadUI {
     private VideoStream videoStream;
     private Map<String, DirectDownloader> downloaders = new HashMap<>();
     private static final Consumer<Void> NO_OP_CONSUMER = value -> {};
+    private static final String DEFAULT_LOADING_MESSAGE = "Cargando Datos...";
 
     // ==================== CESTA DE DESCARGAS ====================
     private final ObservableList<DownloadBasketItem> downloadBasket = FXCollections.observableArrayList();
@@ -345,7 +346,7 @@ public class DirectDownloadUI {
                     }
                     System.out.println("Initial data loaded: " + data.movies.size() + " movies, " + data.series.size() + " series");
                 },
-                "Cargando datos iniciales...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar los datos iniciales.",
                 () -> {
                     if (notifyStartup && mainUI != null) {
@@ -1041,7 +1042,7 @@ public class DirectDownloadUI {
                     return results;
                 },
                 results -> moviesTable.setItems(results),
-                "Buscando películas...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar los resultados de la búsqueda.");
     }
 
@@ -1413,7 +1414,7 @@ public class DirectDownloadUI {
                     seriesTable.setItems(results);
                     System.out.println("Results found: " + results.size());
                 },
-                "Buscando series...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar las series.");
     }
 
@@ -1435,7 +1436,7 @@ public class DirectDownloadUI {
                     seriesTable.setItems(results);
                     System.out.println("Results found: " + results.size());
                 },
-                "Buscando series...",
+                DEFAULT_LOADING_MESSAGE,
                 "No se pudieron cargar las series.");
     }
 
@@ -1513,7 +1514,7 @@ public class DirectDownloadUI {
                 currentSeason = firstContext.season.getSeasonNumber();
                 loadSeasonEpisodes(firstContext, null);
             }
-        }, "Cargando datos iniciales...", "No se pudieron cargar las temporadas.");
+        }, DEFAULT_LOADING_MESSAGE, "No se pudieron cargar las temporadas.");
     }
 
     private List<ConnectDataBase.Season> loadSeasonsForSeries(int movieId) throws Exception {
@@ -2087,7 +2088,7 @@ public class DirectDownloadUI {
             if (onLoaded != null) {
                 onLoaded.run();
             }
-        }, "Cargando datos iniciales...", "No se pudieron cargar los episodios.");
+        }, DEFAULT_LOADING_MESSAGE, "No se pudieron cargar los episodios.");
     }
 
     private ObservableList<Episode> fetchSeasonEpisodes(ConnectDataBase.Season season) throws Exception {
