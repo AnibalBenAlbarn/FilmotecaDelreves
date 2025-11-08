@@ -38,10 +38,15 @@ public class AjustesUI {
     private final ScraperProgressTracker scraperProgressTracker;
 
     // Rutas de descarga
-    private TextField movieDestinationField;
-    private TextField seriesDestinationField;
-    private Button movieDestinationButton;
-    private Button seriesDestinationButton;
+    private TextField torrentMovieDestinationField;
+    private TextField torrentSeriesDestinationField;
+    private Button torrentMovieDestinationButton;
+    private Button torrentSeriesDestinationButton;
+
+    private TextField directMovieDestinationField;
+    private TextField directSeriesDestinationField;
+    private Button directMovieDestinationButton;
+    private Button directSeriesDestinationButton;
 
     // Base de datos
     private TextField torrentDatabasePathField;
@@ -160,7 +165,7 @@ public class AjustesUI {
         content.setPadding(new Insets(10));
 
 // Sección de rutas de descarga
-        TitledPane pathsPane = createPathsSection(primaryStage);
+        TitledPane pathsPane = createTorrentPathsSection(primaryStage);
 
 // Sección de configuración de descargas de torrent
         TitledPane torrentConfigPane = createTorrentConfigSection();
@@ -175,12 +180,13 @@ public class AjustesUI {
         content.setPadding(new Insets(10));
 
 // Sección de configuración de descargas directas
+        TitledPane directPathsPane = createDirectDownloadPathsSection(primaryStage);
         TitledPane directConfigPane = createDirectDownloadConfigSection();
 
 // Sección de configuración de 2Captcha
         TitledPane captchaConfigPane = createCaptchaConfigSection();
 
-        content.getChildren().addAll(directConfigPane, captchaConfigPane);
+        content.getChildren().addAll(directPathsPane, directConfigPane, captchaConfigPane);
 
         return content;
     }
@@ -212,32 +218,63 @@ public class AjustesUI {
         return content;
     }
 
-    private TitledPane createPathsSection(Stage primaryStage) {
+    private TitledPane createTorrentPathsSection(Stage primaryStage) {
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
         grid.setPadding(new Insets(10));
 
         Label movieDestinationLabel = new Label("Ubicación predeterminada para películas:");
-        movieDestinationField = new TextField();
-        movieDestinationField.setPromptText("Ruta de descarga predeterminada para películas");
-        movieDestinationButton = new Button("Seleccionar carpeta");
-        movieDestinationButton.setOnAction(e -> selectFolder(primaryStage, movieDestinationField));
+        torrentMovieDestinationField = new TextField();
+        torrentMovieDestinationField.setPromptText("Ruta de descarga predeterminada para películas (Torrent)");
+        torrentMovieDestinationButton = new Button("Seleccionar carpeta");
+        torrentMovieDestinationButton.setOnAction(e -> selectFolder(primaryStage, torrentMovieDestinationField));
 
         Label seriesDestinationLabel = new Label("Ubicación predeterminada para series:");
-        seriesDestinationField = new TextField();
-        seriesDestinationField.setPromptText("Ruta de descarga predeterminada para series");
-        seriesDestinationButton = new Button("Seleccionar carpeta");
-        seriesDestinationButton.setOnAction(e -> selectFolder(primaryStage, seriesDestinationField));
+        torrentSeriesDestinationField = new TextField();
+        torrentSeriesDestinationField.setPromptText("Ruta de descarga predeterminada para series (Torrent)");
+        torrentSeriesDestinationButton = new Button("Seleccionar carpeta");
+        torrentSeriesDestinationButton.setOnAction(e -> selectFolder(primaryStage, torrentSeriesDestinationField));
 
         grid.add(movieDestinationLabel, 0, 0);
-        grid.add(movieDestinationField, 0, 1);
-        grid.add(movieDestinationButton, 1, 1);
+        grid.add(torrentMovieDestinationField, 0, 1);
+        grid.add(torrentMovieDestinationButton, 1, 1);
         grid.add(seriesDestinationLabel, 0, 2);
-        grid.add(seriesDestinationField, 0, 3);
-        grid.add(seriesDestinationButton, 1, 3);
+        grid.add(torrentSeriesDestinationField, 0, 3);
+        grid.add(torrentSeriesDestinationButton, 1, 3);
 
-        TitledPane pathsPane = new TitledPane("Rutas de Descarga", grid);
+        TitledPane pathsPane = new TitledPane("Rutas de Descarga Torrent", grid);
+        pathsPane.setExpanded(true);
+
+        return pathsPane;
+    }
+
+    private TitledPane createDirectDownloadPathsSection(Stage primaryStage) {
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(10));
+
+        Label movieDestinationLabel = new Label("Ubicación predeterminada para películas:");
+        directMovieDestinationField = new TextField();
+        directMovieDestinationField.setPromptText("Ruta de descarga predeterminada para películas (Direct Download)");
+        directMovieDestinationButton = new Button("Seleccionar carpeta");
+        directMovieDestinationButton.setOnAction(e -> selectFolder(primaryStage, directMovieDestinationField));
+
+        Label seriesDestinationLabel = new Label("Ubicación predeterminada para series:");
+        directSeriesDestinationField = new TextField();
+        directSeriesDestinationField.setPromptText("Ruta de descarga predeterminada para series (Direct Download)");
+        directSeriesDestinationButton = new Button("Seleccionar carpeta");
+        directSeriesDestinationButton.setOnAction(e -> selectFolder(primaryStage, directSeriesDestinationField));
+
+        grid.add(movieDestinationLabel, 0, 0);
+        grid.add(directMovieDestinationField, 0, 1);
+        grid.add(directMovieDestinationButton, 1, 1);
+        grid.add(seriesDestinationLabel, 0, 2);
+        grid.add(directSeriesDestinationField, 0, 3);
+        grid.add(directSeriesDestinationButton, 1, 3);
+
+        TitledPane pathsPane = new TitledPane("Rutas de Descarga Directas", grid);
         pathsPane.setExpanded(true);
 
         return pathsPane;
@@ -900,8 +937,13 @@ public class AjustesUI {
         JSONObject config = new JSONObject();
 
 // Rutas
-        config.put("movieDestination", movieDestinationField.getText());
-        config.put("seriesDestination", seriesDestinationField.getText());
+        config.put("torrentMovieDestination", torrentMovieDestinationField.getText());
+        config.put("torrentSeriesDestination", torrentSeriesDestinationField.getText());
+        config.put("directMovieDestination", directMovieDestinationField.getText());
+        config.put("directSeriesDestination", directSeriesDestinationField.getText());
+// Mantener claves heredadas para compatibilidad
+        config.put("movieDestination", directMovieDestinationField.getText());
+        config.put("seriesDestination", directSeriesDestinationField.getText());
 
 // Bases de datos
         config.put("torrentDatabasePath", torrentDatabasePathField.getText());
@@ -1010,11 +1052,35 @@ public class AjustesUI {
                 JSONObject config = (JSONObject) parser.parse(reader);
 
 // Rutas
-                if (config.containsKey("movieDestination")) {
-                    movieDestinationField.setText((String) config.get("movieDestination"));
+                String legacyMovieDestination = config.containsKey("movieDestination")
+                        ? (String) config.get("movieDestination")
+                        : "";
+                String legacySeriesDestination = config.containsKey("seriesDestination")
+                        ? (String) config.get("seriesDestination")
+                        : "";
+
+                if (config.containsKey("torrentMovieDestination")) {
+                    torrentMovieDestinationField.setText((String) config.get("torrentMovieDestination"));
+                } else if (!legacyMovieDestination.isEmpty()) {
+                    torrentMovieDestinationField.setText(legacyMovieDestination);
                 }
-                if (config.containsKey("seriesDestination")) {
-                    seriesDestinationField.setText((String) config.get("seriesDestination"));
+
+                if (config.containsKey("torrentSeriesDestination")) {
+                    torrentSeriesDestinationField.setText((String) config.get("torrentSeriesDestination"));
+                } else if (!legacySeriesDestination.isEmpty()) {
+                    torrentSeriesDestinationField.setText(legacySeriesDestination);
+                }
+
+                if (config.containsKey("directMovieDestination")) {
+                    directMovieDestinationField.setText((String) config.get("directMovieDestination"));
+                } else if (!legacyMovieDestination.isEmpty()) {
+                    directMovieDestinationField.setText(legacyMovieDestination);
+                }
+
+                if (config.containsKey("directSeriesDestination")) {
+                    directSeriesDestinationField.setText((String) config.get("directSeriesDestination"));
+                } else if (!legacySeriesDestination.isEmpty()) {
+                    directSeriesDestinationField.setText(legacySeriesDestination);
                 }
 
 // Bases de datos
@@ -1163,8 +1229,10 @@ public class AjustesUI {
     private void resetSettings() {
 // Restaurar valores predeterminados
 // Rutas
-        movieDestinationField.setText("");
-        seriesDestinationField.setText("");
+        torrentMovieDestinationField.setText("");
+        torrentSeriesDestinationField.setText("");
+        directMovieDestinationField.setText("");
+        directSeriesDestinationField.setText("");
 
 // Bases de datos
         torrentDatabasePathField.setText("DB/torrent_dw_db.db");
@@ -1225,12 +1293,28 @@ public class AjustesUI {
     }
 
     // Getters para rutas de descarga
+    public String getTorrentMovieDestination() {
+        return torrentMovieDestinationField.getText();
+    }
+
+    public String getTorrentSeriesDestination() {
+        return torrentSeriesDestinationField.getText();
+    }
+
+    public String getDirectMovieDestination() {
+        return directMovieDestinationField.getText();
+    }
+
+    public String getDirectSeriesDestination() {
+        return directSeriesDestinationField.getText();
+    }
+
     public String getMovieDestination() {
-        return movieDestinationField.getText();
+        return getDirectMovieDestination();
     }
 
     public String getSeriesDestination() {
-        return seriesDestinationField.getText();
+        return getDirectSeriesDestination();
     }
 
     // Getters para bases de datos

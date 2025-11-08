@@ -105,7 +105,7 @@ public class DownloadManager {
             }
 
             // Crear estructura de directorios de destino
-            String baseDestination = ajustesUI.getMovieDestination();
+            String baseDestination = ajustesUI.getDirectMovieDestination();
             String movieName = item.getName();
             String sanitizedMovieFolderName = sanitizePathComponent(movieName);
 
@@ -192,7 +192,7 @@ public class DownloadManager {
             }
 
             // Crear estructura de directorios de destino
-            String baseDestination = ajustesUI.getSeriesDestination();
+            String baseDestination = ajustesUI.getDirectSeriesDestination();
             String sanitizedSeriesFolder = sanitizePathComponent(item.getSeriesName());
             String sanitizedSeasonFolder = sanitizePathComponent("Season " + item.getSeasonNumber());
 

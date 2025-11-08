@@ -85,8 +85,33 @@ public class DirectDownloadUI {
     // ==================== DATOS DE NAVEGACIÓN ====================
     private Series currentSeries;
     private int currentSeason;
-    private final Map<Integer, List<Episode>> episodesBySeason = new HashMap<>();
+    private final Map<Integer, ObservableList<Episode>> episodesBySeason = new HashMap<>();
     private final Map<Integer, List<DirectFile>> filesByEpisode = new HashMap<>();
+
+    private static class SeasonTabContext {
+        private final ConnectDataBase.Season season;
+        private final Tab tab;
+        private final TableView<Episode> episodesTable;
+        private final ObservableList<Episode> episodes;
+        private final CheckBox selectAllCheckbox;
+        private final Button addSelectedButton;
+        private boolean loaded;
+
+        private SeasonTabContext(ConnectDataBase.Season season,
+                                 Tab tab,
+                                 TableView<Episode> episodesTable,
+                                 ObservableList<Episode> episodes,
+                                 CheckBox selectAllCheckbox,
+                                 Button addSelectedButton) {
+            this.season = season;
+            this.tab = tab;
+            this.episodesTable = episodesTable;
+            this.episodes = episodes;
+            this.selectAllCheckbox = selectAllCheckbox;
+            this.addSelectedButton = addSelectedButton;
+            this.loaded = false;
+        }
+    }
 
     // ==================== CACHÉ PARA ENLACES DIRECTOS DE PELÍCULAS ====================
     /**
@@ -519,7 +544,7 @@ public class DirectDownloadUI {
             return;
         }
 
-        if (ajustesUI.getMovieDestination().isEmpty() || ajustesUI.getSeriesDestination().isEmpty()) {
+        if (ajustesUI.getDirectMovieDestination().isEmpty() || ajustesUI.getDirectSeriesDestination().isEmpty()) {
             showAlert(Alert.AlertType.ERROR, "Error", "Please configure destination paths in Settings first.");
             return;
         }
@@ -591,7 +616,7 @@ public class DirectDownloadUI {
                             ));
 
                             // Crear estructura de carpetas para la serie
-                            String seriesPath = ajustesUI.getSeriesDestination() + File.separator + episode.getSeriesName();
+                            String seriesPath = ajustesUI.getDirectSeriesDestination() + File.separator + episode.getSeriesName();
                             String seasonPath = seriesPath + File.separator + "Season " + episode.getSeasonNumber();
 
                             // Crear carpetas si no existen
@@ -1308,11 +1333,14 @@ public class DirectDownloadUI {
     /**
      * Muestra los detalles de una serie seleccionada
      */
+
     private void showSeriesDetails(Series series) {
         currentSeries = series;
+        currentSeason = 1;
+        episodesBySeason.clear();
+        filesByEpisode.clear();
         seriesLayout.getChildren().clear();
 
-        // Botón para volver a la lista de series
         Button backButton = new Button("Back to Series List");
         backButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
         backButton.setOnAction(e -> {
@@ -1321,791 +1349,721 @@ public class DirectDownloadUI {
             VBox.setVgrow(seriesTable, Priority.ALWAYS);
         });
 
-        // Título de la serie con información
         Label seriesLabel = new Label("Series: " + series.getName() + " (" + series.getYear() + ") - Rating: " + series.getRating());
         seriesLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 18px;");
 
-        try {
-            // Cargar temporadas desde la base de datos - CORREGIDO: Usar movie_id en lugar de series_id
-            String query = "SELECT id, movie_id, season FROM series_seasons " +
-                    "WHERE movie_id = ? " +
-                    "ORDER BY season";
-
-            System.out.println("Executing query for seasons with movie_id = " + series.getId());
-
-            List<ConnectDataBase.Season> seasons = new ArrayList<>();
-
-            try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
-                stmt.setInt(1, series.getId());
-                ResultSet rs = stmt.executeQuery();
-
-                while (rs.next()) {
-                    int id = rs.getInt("id");
-                    int movieId = rs.getInt("movie_id");
-                    int seasonNumber = rs.getInt("season");
-                    seasons.add(new ConnectDataBase.Season(id, movieId, seasonNumber));
-                }
-            }
-
-            System.out.println("Seasons found: " + seasons.size());
-
+        runWithLoading(() -> loadSeasonsForSeries(series.getId()), seasons -> {
             if (seasons.isEmpty()) {
                 Label noSeasonsLabel = new Label("No seasons found for this series.");
                 seriesLayout.getChildren().addAll(backButton, seriesLabel, noSeasonsLabel);
                 return;
             }
 
-            // Crear pestañas para temporadas
             TabPane seasonsTabPane = new TabPane();
             seasonsTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
-            // Ordenar temporadas por número
             seasons.sort(Comparator.comparingInt(ConnectDataBase.Season::getSeasonNumber));
 
+            List<SeasonTabContext> contexts = new ArrayList<>();
             for (ConnectDataBase.Season season : seasons) {
-                Tab seasonTab = new Tab("Season " + season.getSeasonNumber());
-
-                VBox seasonLayout = new VBox(10);
-                seasonLayout.setPadding(new Insets(10));
-
-                // Checkbox para seleccionar todos los episodios
-                HBox selectAllBox = new HBox(10);
-                CheckBox selectAllCheckbox = new CheckBox("Select All Episodes");
-                selectAllBox.getChildren().add(selectAllCheckbox);
-                selectAllBox.setAlignment(Pos.CENTER_LEFT);
-
-                // Tabla de episodios
-                TableView<Episode> episodesTable = new TableView<>();
-                episodesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-
-                // Columna de selección
-                TableColumn<Episode, Boolean> selectCol = new TableColumn<>("");
-                selectCol.setCellValueFactory(param -> {
-                    Episode episode = param.getValue();
-                    SimpleBooleanProperty booleanProp = new SimpleBooleanProperty(episode.isSelected());
-
-                    // Actualizar el estado de selección cuando cambia la propiedad
-                    booleanProp.addListener((obs, oldValue, newValue) -> {
-                        episode.setSelected(newValue);
-                    });
-
-                    return booleanProp;
-                });
-                selectCol.setCellFactory(p -> {
-                    CheckBox checkBox = new CheckBox();
-
-                    TableCell<Episode, Boolean> cell = new TableCell<Episode, Boolean>() {
-                        @Override
-                        protected void updateItem(Boolean item, boolean empty) {
-                            super.updateItem(item, empty);
-                            if (empty) {
-                                setGraphic(null);
-                            } else {
-                                checkBox.setSelected(item);
-                                setGraphic(checkBox);
-                            }
-                        }
-                    };
-
-                    checkBox.selectedProperty().addListener((obs, wasSelected, isSelected) -> {
-                        if (cell.getTableRow() != null && cell.getTableRow().getItem() != null) {
-                            cell.getTableRow().getItem().setSelected(isSelected);
-                            cell.commitEdit(isSelected);
-                        }
-                    });
-
-                    cell.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
-                    cell.setEditable(true);
-                    return cell;
-                });
-                selectCol.setPrefWidth(40);
-
-                // Columna de número de episodio
-                TableColumn<Episode, Integer> episodeNumberCol = new TableColumn<>("Episode");
-                episodeNumberCol.setCellValueFactory(new PropertyValueFactory<>("episodeNumber"));
-                episodeNumberCol.setPrefWidth(70);
-
-                // Columna de título
-                TableColumn<Episode, String> titleCol = new TableColumn<>("Title");
-                titleCol.setCellValueFactory(new PropertyValueFactory<>("title"));
-                titleCol.setPrefWidth(250);
-
-                // Columna de idioma con ComboBox
-                TableColumn<Episode, String> languageCol = new TableColumn<>("Language");
-                languageCol.setCellValueFactory(cellData -> cellData.getValue().selectedLanguageProperty());
-                languageCol.setCellFactory(column -> {
-                    return new TableCell<Episode, String>() {
-                        private final ComboBox<String> comboBox = new ComboBox<>();
-
-                        {
-                            comboBox.setOnAction(event -> {
-                                if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
-                                    Episode episode = getTableRow().getItem();
-                                    episode.setSelectedLanguage(comboBox.getValue());
-
-                                    // Actualizar la tabla para refrescar las opciones de servidor
-                                    getTableView().refresh();
-                                }
-                            });
-                        }
-
-                        @Override
-                        protected void updateItem(String item, boolean empty) {
-                            super.updateItem(item, empty);
-
-                            if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                                setGraphic(null);
-                            } else {
-                                Episode episode = getTableRow().getItem();
-                                List<String> languages = getAvailableEpisodeLanguages(episode.getId());
-
-                                comboBox.getItems().clear();
-                                comboBox.getItems().addAll(languages);
-
-                                // Mantener la selección actual si existe
-                                if (item != null && !item.isEmpty() && comboBox.getItems().contains(item)) {
-                                    comboBox.setValue(item);
-                                } else if (!comboBox.getItems().isEmpty()) {
-                                    comboBox.setValue(comboBox.getItems().get(0));
-                                    episode.setSelectedLanguage(comboBox.getValue());
-                                }
-
-                                setGraphic(comboBox);
-                            }
-                        }
-                    };
-                });
-                languageCol.setPrefWidth(120);
-
-                // Columna de servidor con ComboBox
-                TableColumn<Episode, String> serverCol = new TableColumn<>("Server");
-                serverCol.setCellValueFactory(cellData -> cellData.getValue().selectedServerProperty());
-                serverCol.setCellFactory(column -> {
-                    return new TableCell<Episode, String>() {
-                        private final ComboBox<String> comboBox = new ComboBox<>();
-
-                        {
-                            comboBox.setOnAction(event -> {
-                                if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
-                                    Episode episode = getTableRow().getItem();
-                                    episode.setSelectedServer(comboBox.getValue());
-
-                                    // Actualizar la tabla para refrescar las opciones de calidad
-                                    getTableView().refresh();
-                                }
-                            });
-                        }
-
-                        @Override
-                        protected void updateItem(String item, boolean empty) {
-                            super.updateItem(item, empty);
-
-                            if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                                setGraphic(null);
-                            } else {
-                                Episode episode = getTableRow().getItem();
-
-                                // Obtener el idioma seleccionado
-                                String selectedLanguage = episode.getSelectedLanguage();
-
-                                List<String> servers;
-                                if (selectedLanguage != null && !selectedLanguage.isEmpty()) {
-                                    servers = getServersForEpisodeLanguage(episode.getId(), selectedLanguage);
-                                } else {
-                                    servers = getAvailableEpisodeServers(episode.getId());
-                                }
-
-                                comboBox.getItems().clear();
-                                comboBox.getItems().addAll(servers);
-
-                                // Mantener la selección actual si existe
-                                if (item != null && !item.isEmpty() && comboBox.getItems().contains(item)) {
-                                    comboBox.setValue(item);
-                                } else if (!comboBox.getItems().isEmpty()) {
-                                    comboBox.setValue(comboBox.getItems().get(0));
-                                    episode.setSelectedServer(comboBox.getValue());
-                                }
-
-                                setGraphic(comboBox);
-                            }
-                        }
-                    };
-                });
-                serverCol.setPrefWidth(120);
-
-                // Columna de calidad con ComboBox
-                TableColumn<Episode, ConnectDataBase.Quality> qualityCol = new TableColumn<>("Quality");
-                qualityCol.setCellValueFactory(cellData -> cellData.getValue().selectedQualityProperty());
-                qualityCol.setCellFactory(column -> {
-                    return new TableCell<Episode, ConnectDataBase.Quality>() {
-                        private final ComboBox<ConnectDataBase.Quality> comboBox = new ComboBox<>();
-
-                        {
-                            comboBox.setOnAction(event -> {
-                                if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
-                                    Episode episode = getTableRow().getItem();
-                                    episode.setSelectedQuality(comboBox.getValue());
-                                }
-                            });
-                        }
-
-                        @Override
-                        protected void updateItem(ConnectDataBase.Quality item, boolean empty) {
-                            super.updateItem(item, empty);
-
-                            if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                                setGraphic(null);
-                            } else {
-                                Episode episode = getTableRow().getItem();
-
-                                // Obtener servidor seleccionado
-                                String selectedServer = episode.getSelectedServer();
-
-                                // Obtener calidades basadas en el servidor o todas las calidades
-                                List<ConnectDataBase.Quality> qualities;
-                                if (selectedServer != null && !selectedServer.isEmpty()) {
-                                    // Obtener calidades para este servidor
-                                    qualities = getQualitiesForServer(episode.getId(), selectedServer);
-                                } else {
-                                    // Cargar todas las calidades
-                                    qualities = new ArrayList<>(connectDataBase.getQualities());
-                                }
-
-                                comboBox.getItems().clear();
-                                comboBox.getItems().addAll(qualities);
-
-                                // Mantener la selección actual si existe
-                                if (item != null && comboBox.getItems().contains(item)) {
-                                    comboBox.setValue(item);
-                                } else if (!comboBox.getItems().isEmpty()) {
-                                    comboBox.setValue(comboBox.getItems().get(0));
-                                    episode.setSelectedQuality(comboBox.getValue());
-                                }
-
-                                setGraphic(comboBox);
-                            }
-                        }
-                    };
-                });
-                qualityCol.setPrefWidth(100);
-
-                // Columna de acciones
-                TableColumn<Episode, Void> actionsCol = new TableColumn<>("Actions");
-                actionsCol.setCellFactory(param -> new TableCell<Episode, Void>() {
-                    private final Button addButton = new Button("Add");
-                    private final Button streamButton = new Button("Stream");
-                    private final HBox buttonsBox = new HBox(5);
-
-                    {
-                        addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
-                        streamButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-
-                        addButton.setOnAction(event -> {
-                            if (getTableRow() != null && getTableRow().getItem() != null) {
-                                Episode episode = getTableRow().getItem();
-
-                                // Verificar si ya está en la cesta
-                                boolean isInBasket = downloadBasket.stream()
-                                        .anyMatch(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
-
-                                if (isInBasket) {
-                                    // Eliminar de la cesta
-                                    downloadBasket.removeIf(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId()
-                                    );
-                                    addButton.setText("Add");
-                                    addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
-
-                                    // Actualizar checkbox
-                                    episode.setSelected(false);
-                                    getTableView().refresh();
-                                } else {
-                                    // Obtener servidor y calidad seleccionados
-                                    String selectedServer = episode.getSelectedServer();
-                                    ConnectDataBase.Quality selectedQuality = episode.getSelectedQuality();
-
-                                    if (selectedQuality == null) {
-                                        showAlert(Alert.AlertType.WARNING, "Select a quality", "Please select a quality for the episode.");
-                                        return;
-                                    }
-
-                                    if (selectedServer == null || selectedServer.isEmpty()) {
-                                        showAlert(Alert.AlertType.WARNING, "Select a server", "Please select a server for the episode.");
-                                        return;
-                                    }
-
-                                    // Verificar si el servidor es compatible para descarga
-                                    boolean isCompatible = isServerCompatible(selectedServer);
-
-                                    if (!isCompatible) {
-                                        showAlert(Alert.AlertType.WARNING, "Incompatible Server", "The selected server '" + selectedServer + "' is not compatible with direct download.");
-                                        return;
-                                    }
-
-                                    // Obtener archivos para este episodio
-                                    ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
-
-                                    // Encontrar archivo para la calidad y servidor seleccionados
-                                    String baseServer = selectedServer.split(" ")[0];
-                                    DirectFile selectedFile = directFiles.stream()
-                                            .filter(df -> df.getQualityId() == selectedQuality.getId() && df.getServer().equalsIgnoreCase(baseServer))
-                                            .findFirst()
-                                            .orElse(null);
-
-                                    if (selectedFile == null) {
-                                        showAlert(Alert.AlertType.WARNING, "File not available", "No file available for the selected quality and server.");
-                                        return;
-                                    }
-
-                                    // Verificar si el enlace está disponible
-                                    DirectDownloader downloader = getDownloaderForServer(selectedServer);
-                                    if (downloader == null) {
-                                        showAlert(Alert.AlertType.ERROR, "Error", "No downloader available for server: " + selectedServer);
-                                        return;
-                                    }
-
-                                    // Obtener información de serie y temporada
-                                    Series series = currentSeries;
-                                    int seasonNumber = season.getSeasonNumber(); // Usar directamente el número de temporada
-
-                                    // Añadir a la cesta
-                                    DownloadBasketItem basketItem = new DownloadBasketItem(
-                                            episode.getId(),
-                                            series.getName() + " - S" + seasonNumber + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
-                                            "episode",
-                                            selectedQuality.getQuality(),
-                                            selectedFile.getLink(),
-                                            selectedFile.getServer(),
-                                            series.getName(),
-                                            seasonNumber,
-                                            episode.getEpisodeNumber()
-                                    );
-
-                                    downloadBasket.add(basketItem);
-                                    addButton.setText("Remove");
-                                    addButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
-
-                                    // Actualizar checkbox
-                                    episode.setSelected(true);
-                                    getTableView().refresh();
-                                }
-                            }
-                        });
-
-                        streamButton.setOnAction(event -> {
-                            if (getTableRow() != null && getTableRow().getItem() != null) {
-                                Episode episode = getTableRow().getItem();
-                                // Obtener servidor seleccionado
-                                String selectedServer = episode.getSelectedServer();
-                                if (selectedServer == null || selectedServer.isEmpty()) {
-                                    showAlert(Alert.AlertType.WARNING, "Select a server", "Please select a server to stream from.");
-                                    return;
-                                }
-
-                                // Obtener archivos para este episodio
-                                ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
-
-                                // Encontrar archivo para el servidor seleccionado
-                                String baseServer = selectedServer.split(" ")[0];
-                                DirectFile selectedFile = directFiles.stream()
-                                        .filter(df -> df.getServer().equalsIgnoreCase(baseServer))
-                                        .findFirst()
-                                        .orElse(null);
-
-                                if (selectedFile != null) {
-                                    // Determine server ID
-                                    int serverId = -1;
-
-                                    // Check for powvideo.org (ID: 1)
-                                    if (baseServer.toLowerCase().contains("powvideo.org")) {
-                                        serverId = 1;
-                                    }
-                                    // Check for streamplay.to (ID: 21)
-                                    else if (baseServer.toLowerCase().contains("streamplay.to")) {
-                                        serverId = 21;
-                                    }
-                                    // Check for streamtape.com (ID: 497)
-                                    else if (baseServer.toLowerCase().contains("streamtape.com")) {
-                                        serverId = 497;
-                                    }
-                                    // Check for mixdrop.bz (ID: 15)
-                                    else if (baseServer.toLowerCase().contains("mixdrop.bz")) {
-                                        serverId = 15;
-                                    }
-                                    // Check for vidmoly.me (ID: 3)
-                                    else if (baseServer.toLowerCase().contains("vidmoly")) {
-                                        serverId = 3;
-                                    }
-
-                                    // Stream with server ID if available
-                                    if (serverId != -1) {
-                                        streamContent(selectedFile.getLink(), serverId);
-                                    } else {
-                                        streamContent(selectedFile.getLink());
-                                    }
-                                } else {
-                                    showAlert(Alert.AlertType.WARNING, "Stream not available", "No stream available for the selected server.");
-                                }
-                            }
-                        });
-                        buttonsBox.getChildren().addAll(addButton, streamButton);
-                    }
-
-                    @Override
-                    protected void updateItem(Void item, boolean empty) {
-                        super.updateItem(item, empty);
-
-                        if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                            setGraphic(null);
-                        } else {
-                            Episode episode = getTableRow().getItem();
-
-                            // Verificar si el episodio ya está en la cesta
-                            boolean isInBasket = downloadBasket.stream()
-                                    .anyMatch(basketItem -> basketItem.getType().equals("episode") && basketItem.getEpisodeId() == episode.getId());
-
-                            if (isInBasket) {
-                                addButton.setText("Remove");
-                                addButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
-                                episode.setSelected(true);
-                            } else {
-                                addButton.setText("Add");
-                                addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
-                            }
-
-                            // Verificar si el servidor es compatible para descarga
-                            String selectedServer = episode.getSelectedServer();
-                            if (selectedServer != null && !selectedServer.isEmpty()) {
-                                boolean isCompatible = isServerCompatible(selectedServer);
-                                addButton.setDisable(!isCompatible);
-
-                                if (!isCompatible) {
-                                    addButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
-                                }
-                            }
-
-                            // Deshabilitar el botón de stream si el servidor es streamplay o powvideo
-                            boolean disableStream = false;
-                            if (selectedServer != null && !selectedServer.isEmpty()) {
-                                String baseServer = selectedServer.split(" ")[0].toLowerCase();
-                                disableStream = baseServer.contains("streamplay") || baseServer.contains("powvideo");
-                            }
-                            streamButton.setDisable(disableStream);
-                            if (disableStream) {
-                                streamButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
-                            } else {
-                                streamButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-                            }
-
-                            setGraphic(buttonsBox);
-                        }
-                    }
-                });
-                actionsCol.setPrefWidth(150);
-
-                episodesTable.getColumns().addAll(selectCol, episodeNumberCol, titleCol, languageCol, serverCol, qualityCol, actionsCol);
-
-                // Cargar episodios para esta temporada
-                ObservableList<Episode> seasonEpisodes = connectDataBase.getEpisodesBySeason(season.getId());
-
-                // Ordenar episodios por número
-                seasonEpisodes.sort(Comparator.comparingInt(Episode::getEpisodeNumber));
-
-                episodesTable.setItems(seasonEpisodes);
-
-                // Configurar el checkbox para seleccionar todos los episodios
-                selectAllCheckbox.setOnAction(e -> {
-                    boolean selected = selectAllCheckbox.isSelected();
-
-                    // Actualizar el estado de selección de todos los episodios
-                    for (Episode episode : seasonEpisodes) {
-                        episode.setSelected(selected);
-
-                        // Si está seleccionado, asegurarse de que tenga valores por defecto
-                        if (selected) {
-                            if (episode.getSelectedLanguage() == null || episode.getSelectedLanguage().isEmpty()) {
-                                List<String> languages = getAvailableEpisodeLanguages(episode.getId());
-                                if (!languages.isEmpty()) {
-                                    episode.setSelectedLanguage(languages.get(0));
-                                }
-                            }
-
-                            if (episode.getSelectedServer() == null || episode.getSelectedServer().isEmpty()) {
-                                List<String> servers = getAvailableEpisodeServers(episode.getId());
-                                if (!servers.isEmpty()) {
-                                    episode.setSelectedServer(servers.get(0));
-                                }
-                            }
-
-                            if (episode.getSelectedQuality() == null) {
-                                List<ConnectDataBase.Quality> qualities = getQualitiesForServer(episode.getId(), episode.getSelectedServer());
-                                if (!qualities.isEmpty()) {
-                                    episode.setSelectedQuality(qualities.get(0));
-                                }
-                            }
-                        }
-                    }
-
-                    // Actualizar la tabla para reflejar los cambios
-                    episodesTable.refresh();
-                });
-
-                // Botón para añadir episodios seleccionados a la cesta
-                Button addSelectedButton = new Button("Add Selected to Basket");
-                addSelectedButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
-                addSelectedButton.setOnAction(e -> {
-                    // Filtrar episodios seleccionados
-                    List<Episode> selectedEpisodes = seasonEpisodes.stream()
-                            .filter(Episode::isSelected)
-                            .collect(Collectors.toList());
-
-                    if (selectedEpisodes.isEmpty()) {
-                        showAlert(Alert.AlertType.INFORMATION, "No Selection", "Please select at least one episode to add to the basket.");
-                        return;
-                    }
-
-                    // Procesar cada episodio seleccionado
-                    int addedCount = 0;
-                    for (Episode episodeItem : selectedEpisodes) {
-                        // Crear una copia final del episodio para usar en la lambda
-                        final Episode episode = episodeItem;
-
-                        // Verificar si ya está en la cesta
-                        boolean alreadyInBasket = downloadBasket.stream()
-                                .anyMatch(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
-
-                        if (alreadyInBasket) {
-                            continue; // Ya está en la cesta, pasar al siguiente
-                        }
-
-                        // Verificar si el episodio tiene selecciones válidas
-                        if (episode.getSelectedServer() == null || episode.getSelectedQuality() == null) {
-                            // Intentar establecer valores predeterminados
-                            if (episode.getSelectedServer() == null) {
-                                List<String> servers = getAvailableEpisodeServers(episode.getId());
-                                if (!servers.isEmpty()) {
-                                    episode.setSelectedServer(servers.get(0));
-                                }
-                            }
-
-                            if (episode.getSelectedQuality() == null) {
-                                ObservableList<ConnectDataBase.Quality> qualities = connectDataBase.getQualities();
-                                if (!qualities.isEmpty()) {
-                                    episode.setSelectedQuality(qualities.get(0));
-                                }
-                            }
-
-                            // Verificar de nuevo
-                            if (episode.getSelectedServer() == null || episode.getSelectedQuality() == null) {
-                                continue; // No tiene selecciones válidas, pasar al siguiente
-                            }
-                        }
-
-                        // Verificar si el servidor es compatible
-                        if (!isServerCompatible(episode.getSelectedServer())) {
-                            continue; // Servidor no compatible, pasar al siguiente
-                        }
-
-                        // Obtener archivos para este episodio
-                        ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
-
-                        // Encontrar archivo para la calidad y servidor seleccionados
-                        String baseServer = episode.getSelectedServer().split(" ")[0];
-                        DirectFile selectedFile = directFiles.stream()
-                                .filter(df -> df.getQualityId() == episode.getSelectedQuality().getId() && df.getServer().equalsIgnoreCase(baseServer))
-                                .findFirst()
-                                .orElse(null);
-
-                        if (selectedFile == null) {
-                            continue; // No hay archivo disponible, pasar al siguiente
-                        }
-
-                        // Añadir a la cesta
-                        DownloadBasketItem basketItem = new DownloadBasketItem(
-                                episode.getId(),
-                                series.getName() + " - S" + season.getSeasonNumber() + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
-                                "episode",
-                                episode.getSelectedQuality().getQuality(),
-                                selectedFile.getLink(),
-                                selectedFile.getServer(),
-                                series.getName(),
-                                season.getSeasonNumber(),
-                                episode.getEpisodeNumber()
-                        );
-
-                        downloadBasket.add(basketItem);
-                        addedCount++;
-                    }
-
-                    // Actualizar la tabla
-                    episodesTable.refresh();
-
-                    // Mostrar confirmación
-                    if (addedCount > 0) {
-                        showConfirmation(addedCount + " episodes added to the basket");
-                    } else {
-                        showAlert(Alert.AlertType.INFORMATION, "No Episodes Added", "No new episodes were added to the basket. They might already be in the basket or no compatible servers were found.");
-                    }
-                });
-
-                selectAllBox.getChildren().add(addSelectedButton);
-                selectAllBox.setSpacing(20);
-
-                seasonLayout.getChildren().addAll(selectAllBox, episodesTable);
-                VBox.setVgrow(episodesTable, Priority.ALWAYS);
-
-                seasonTab.setContent(seasonLayout);
-                seasonsTabPane.getTabs().add(seasonTab);
+                SeasonTabContext context = createSeasonTabContext(season);
+                contexts.add(context);
+                seasonsTabPane.getTabs().add(context.tab);
             }
 
-            // Añadir botón para descargar temporada completa
             Button downloadSeasonButton = new Button("Download Complete Season");
             downloadSeasonButton.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white;");
             downloadSeasonButton.setOnAction(e -> {
-                // Obtener la pestaña seleccionada
-                Tab selectedTab = seasonsTabPane.getSelectionModel().getSelectedItem();
-                if (selectedTab == null) {
+                SeasonTabContext context = getSelectedSeasonContext(seasonsTabPane);
+                if (context == null) {
                     showAlert(Alert.AlertType.WARNING, "No Season Selected", "Please select a season to download.");
                     return;
                 }
 
-                // Obtener el número de temporada
-                String tabText = selectedTab.getText();
-                int seasonNumber = Integer.parseInt(tabText.replace("Season ", ""));
+                loadSeasonEpisodes(context, () -> downloadSeasonEpisodes(context));
+            });
 
-                // Encontrar la temporada correspondiente
-                ConnectDataBase.Season selectedSeason = seasons.stream()
-                        .filter(s -> s.getSeasonNumber() == seasonNumber)
-                        .findFirst()
-                        .orElse(null);
-
-                if (selectedSeason == null) {
-                    showAlert(Alert.AlertType.ERROR, "Season Not Found", "Could not find the selected season.");
-                    return;
-                }
-
-                // Cargar todos los episodios de la temporada
-                ObservableList<Episode> allEpisodes = connectDataBase.getEpisodesBySeason(selectedSeason.getId());
-
-                // Verificar si hay episodios
-                if (allEpisodes.isEmpty()) {
-                    showAlert(Alert.AlertType.WARNING, "No Episodes", "No episodes found for this season.");
-                    return;
-                }
-
-                // Configurar valores predeterminados para todos los episodios
-                for (Episode episodeItem : allEpisodes) {
-                    // Crear una copia final del episodio para usar en lambdas si es necesario
-                    final Episode episode = episodeItem;
-
-                    // Establecer idioma predeterminado
-                    List<String> languages = getAvailableEpisodeLanguages(episode.getId());
-                    if (!languages.isEmpty()) {
-                        episode.setSelectedLanguage(languages.get(0));
-                    }
-
-                    // Establecer servidor predeterminado (preferiblemente compatible)
-                    List<String> servers = getAvailableEpisodeServers(episode.getId());
-                    String compatibleServer = servers.stream()
-                            .filter(DirectDownloadUI.this::isServerCompatible)
-                            .findFirst()
-                            .orElse(servers.isEmpty() ? null : servers.get(0));
-
-                    if (compatibleServer != null) {
-                        episode.setSelectedServer(compatibleServer);
-                    }
-
-                    // Establecer calidad predeterminada
-                    if (episode.getSelectedServer() != null) {
-                        List<ConnectDataBase.Quality> qualities = getQualitiesForServer(episode.getId(), episode.getSelectedServer());
-                        if (!qualities.isEmpty()) {
-                            episode.setSelectedQuality(qualities.get(0));
-                        }
-                    }
-                }
-
-                // Filtrar episodios con configuración válida
-                List<Episode> validEpisodes = allEpisodes.stream()
-                        .filter(ep -> ep.getSelectedServer() != null &&
-                                ep.getSelectedQuality() != null &&
-                                isServerCompatible(ep.getSelectedServer()))
-                        .collect(Collectors.toList());
-
-                if (validEpisodes.isEmpty()) {
-                    showAlert(Alert.AlertType.WARNING, "No Valid Episodes", "No episodes with compatible download options found.");
-                    return;
-                }
-
-                // Añadir episodios a la cesta
-                int addedCount = 0;
-                for (Episode episodeItem : validEpisodes) {
-                    // Crear una copia final del episodio para usar en lambdas si es necesario
-                    final Episode episode = episodeItem;
-
-                    // Verificar si ya está en la cesta
-                    boolean alreadyInBasket = downloadBasket.stream()
-                            .anyMatch(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
-
-                    if (alreadyInBasket) {
-                        continue; // Ya está en la cesta, pasar al siguiente
-                    }
-
-                    // Obtener archivos para este episodio
-                    ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
-
-                    // Encontrar archivo para la calidad y servidor seleccionados
-                    String baseServer = episode.getSelectedServer().split(" ")[0];
-                    DirectFile selectedFile = directFiles.stream()
-                            .filter(df -> df.getQualityId() == episode.getSelectedQuality().getId() &&
-                                    df.getServer().equalsIgnoreCase(baseServer))
-                            .findFirst()
-                            .orElse(null);
-
-                    if (selectedFile == null) {
-                        continue; // No hay archivo disponible, pasar al siguiente
-                    }
-
-                    // Añadir a la cesta
-                    DownloadBasketItem basketItem = new DownloadBasketItem(
-                            episode.getId(),
-                            series.getName() + " - S" + seasonNumber + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
-                            "episode",
-                            episode.getSelectedQuality().getQuality(),
-                            selectedFile.getLink(),
-                            selectedFile.getServer(),
-                            series.getName(),
-                            seasonNumber,
-                            episode.getEpisodeNumber()
-                    );
-
-                    downloadBasket.add(basketItem);
-                    addedCount++;
-                }
-
-                // Mostrar confirmación
-                if (addedCount > 0) {
-                    showConfirmation(addedCount + " episodes from Season " + seasonNumber + " added to the basket");
-                } else {
-                    showAlert(Alert.AlertType.INFORMATION, "No Episodes Added",
-                            "No new episodes were added to the basket. They might already be in the basket or no compatible servers were found.");
+            seasonsTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldTab, newTab) -> {
+                if (newTab != null) {
+                    SeasonTabContext context = (SeasonTabContext) newTab.getUserData();
+                    currentSeason = context.season.getSeasonNumber();
+                    loadSeasonEpisodes(context, null);
                 }
             });
 
-            // Crear layout para los botones de acción
             HBox actionButtons = new HBox(10, backButton, downloadSeasonButton);
             actionButtons.setPadding(new Insets(10, 0, 10, 0));
             actionButtons.setAlignment(Pos.CENTER_LEFT);
 
             seriesLayout.getChildren().addAll(actionButtons, seriesLabel, seasonsTabPane);
             VBox.setVgrow(seasonsTabPane, Priority.ALWAYS);
-        } catch (Exception e) {
-            System.err.println("Error getting seasons: " + e.getMessage());
-            e.printStackTrace();
 
-            Label errorLabel = new Label("Error loading seasons: " + e.getMessage());
-            errorLabel.setStyle("-fx-text-fill: red;");
-            seriesLayout.getChildren().addAll(backButton, seriesLabel, errorLabel);
+            if (!contexts.isEmpty()) {
+                SeasonTabContext firstContext = contexts.get(0);
+                seasonsTabPane.getSelectionModel().select(firstContext.tab);
+                currentSeason = firstContext.season.getSeasonNumber();
+                loadSeasonEpisodes(firstContext, null);
+            }
+        }, "Cargando datos iniciales...", "No se pudieron cargar las temporadas.");
+    }
+
+    private List<ConnectDataBase.Season> loadSeasonsForSeries(int movieId) throws Exception {
+        String query = "SELECT id, movie_id, season FROM series_seasons WHERE movie_id = ? ORDER BY season";
+        List<ConnectDataBase.Season> seasons = new ArrayList<>();
+
+        try (PreparedStatement stmt = connectDataBase.getConnection().prepareStatement(query)) {
+            stmt.setInt(1, movieId);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                seasons.add(new ConnectDataBase.Season(
+                        rs.getInt("id"),
+                        rs.getInt("movie_id"),
+                        rs.getInt("season")));
+            }
+        }
+
+        return seasons;
+    }
+
+    private SeasonTabContext createSeasonTabContext(ConnectDataBase.Season season) {
+        Tab seasonTab = new Tab("Season " + season.getSeasonNumber());
+
+        VBox seasonLayout = new VBox(10);
+        seasonLayout.setPadding(new Insets(10));
+
+        HBox selectAllBox = new HBox(10);
+        selectAllBox.setAlignment(Pos.CENTER_LEFT);
+        CheckBox selectAllCheckbox = new CheckBox("Select All Episodes");
+        selectAllBox.getChildren().add(selectAllCheckbox);
+
+        TableView<Episode> episodesTable = new TableView<>();
+        episodesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Episode, Boolean> selectCol = new TableColumn<>("");
+        selectCol.setCellValueFactory(param -> {
+            Episode episode = param.getValue();
+            SimpleBooleanProperty booleanProp = new SimpleBooleanProperty(episode.isSelected());
+            booleanProp.addListener((obs, oldValue, newValue) -> episode.setSelected(newValue));
+            return booleanProp;
+        });
+        selectCol.setCellFactory(p -> {
+            CheckBox checkBox = new CheckBox();
+
+            TableCell<Episode, Boolean> cell = new TableCell<>() {
+                @Override
+                protected void updateItem(Boolean item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty) {
+                        setGraphic(null);
+                    } else {
+                        checkBox.setSelected(item);
+                        setGraphic(checkBox);
+                    }
+                }
+            };
+
+            checkBox.selectedProperty().addListener((obs, wasSelected, isSelected) -> {
+                if (cell.getTableRow() != null && cell.getTableRow().getItem() != null) {
+                    cell.getTableRow().getItem().setSelected(isSelected);
+                    cell.commitEdit(isSelected);
+                }
+            });
+
+            cell.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+            cell.setEditable(true);
+            return cell;
+        });
+        selectCol.setPrefWidth(40);
+
+        TableColumn<Episode, Integer> episodeNumberCol = new TableColumn<>("Episode");
+        episodeNumberCol.setCellValueFactory(new PropertyValueFactory<>("episodeNumber"));
+        episodeNumberCol.setPrefWidth(70);
+
+        TableColumn<Episode, String> titleCol = new TableColumn<>("Title");
+        titleCol.setCellValueFactory(new PropertyValueFactory<>("title"));
+        titleCol.setPrefWidth(250);
+
+        TableColumn<Episode, String> languageCol = new TableColumn<>("Language");
+        languageCol.setCellValueFactory(cellData -> cellData.getValue().selectedLanguageProperty());
+        languageCol.setCellFactory(column -> new TableCell<>() {
+            private final ComboBox<String> comboBox = new ComboBox<>();
+
+            {
+                comboBox.setOnAction(event -> {
+                    if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
+                        Episode episode = getTableRow().getItem();
+                        episode.setSelectedLanguage(comboBox.getValue());
+                        getTableView().refresh();
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                } else {
+                    Episode episode = getTableRow().getItem();
+                    List<String> languages = getAvailableEpisodeLanguages(episode.getId());
+
+                    comboBox.getItems().clear();
+                    comboBox.getItems().addAll(languages);
+
+                    if (item != null && !item.isEmpty() && comboBox.getItems().contains(item)) {
+                        comboBox.setValue(item);
+                    } else if (!comboBox.getItems().isEmpty()) {
+                        comboBox.setValue(comboBox.getItems().get(0));
+                        episode.setSelectedLanguage(comboBox.getValue());
+                    }
+
+                    setGraphic(comboBox);
+                }
+            }
+        });
+        languageCol.setPrefWidth(120);
+
+        TableColumn<Episode, String> serverCol = new TableColumn<>("Server");
+        serverCol.setCellValueFactory(cellData -> cellData.getValue().selectedServerProperty());
+        serverCol.setCellFactory(column -> new TableCell<>() {
+            private final ComboBox<String> comboBox = new ComboBox<>();
+
+            {
+                comboBox.setOnAction(event -> {
+                    if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
+                        Episode episode = getTableRow().getItem();
+                        episode.setSelectedServer(comboBox.getValue());
+                        getTableView().refresh();
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                } else {
+                    Episode episode = getTableRow().getItem();
+                    String selectedLanguage = episode.getSelectedLanguage();
+
+                    List<String> servers;
+                    if (selectedLanguage != null && !selectedLanguage.isEmpty()) {
+                        servers = getServersForEpisodeLanguage(episode.getId(), selectedLanguage);
+                    } else {
+                        servers = getAvailableEpisodeServers(episode.getId());
+                    }
+
+                    comboBox.getItems().clear();
+                    comboBox.getItems().addAll(servers);
+
+                    if (item != null && !item.isEmpty() && comboBox.getItems().contains(item)) {
+                        comboBox.setValue(item);
+                    } else if (!comboBox.getItems().isEmpty()) {
+                        comboBox.setValue(comboBox.getItems().get(0));
+                        episode.setSelectedServer(comboBox.getValue());
+                    }
+
+                    setGraphic(comboBox);
+                }
+            }
+        });
+        serverCol.setPrefWidth(120);
+
+        TableColumn<Episode, ConnectDataBase.Quality> qualityCol = new TableColumn<>("Quality");
+        qualityCol.setCellValueFactory(cellData -> cellData.getValue().selectedQualityProperty());
+        qualityCol.setCellFactory(column -> new TableCell<>() {
+            private final ComboBox<ConnectDataBase.Quality> comboBox = new ComboBox<>();
+
+            {
+                comboBox.setOnAction(event -> {
+                    if (getTableRow() != null && getTableRow().getItem() != null && comboBox.getValue() != null) {
+                        Episode episode = getTableRow().getItem();
+                        episode.setSelectedQuality(comboBox.getValue());
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(ConnectDataBase.Quality item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                } else {
+                    Episode episode = getTableRow().getItem();
+                    String selectedServer = episode.getSelectedServer();
+
+                    List<ConnectDataBase.Quality> qualities;
+                    if (selectedServer != null && !selectedServer.isEmpty()) {
+                        qualities = getQualitiesForServer(episode.getId(), selectedServer);
+                    } else {
+                        qualities = new ArrayList<>(connectDataBase.getQualities());
+                    }
+
+                    comboBox.getItems().clear();
+                    comboBox.getItems().addAll(qualities);
+
+                    if (item != null && comboBox.getItems().contains(item)) {
+                        comboBox.setValue(item);
+                    } else if (!comboBox.getItems().isEmpty()) {
+                        comboBox.setValue(comboBox.getItems().get(0));
+                        episode.setSelectedQuality(comboBox.getValue());
+                    }
+
+                    setGraphic(comboBox);
+                }
+            }
+        });
+        qualityCol.setPrefWidth(100);
+
+        TableColumn<Episode, Void> actionsCol = new TableColumn<>("Actions");
+        actionsCol.setCellFactory(param -> new TableCell<>() {
+            private final Button addButton = new Button("Add");
+            private final Button streamButton = new Button("Stream");
+            private final HBox buttonsBox = new HBox(5);
+
+            {
+                addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
+                streamButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+
+                addButton.setOnAction(event -> {
+                    if (getTableRow() != null && getTableRow().getItem() != null) {
+                        Episode episode = getTableRow().getItem();
+
+                        boolean isInBasket = downloadBasket.stream()
+                                .anyMatch(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
+
+                        if (isInBasket) {
+                            downloadBasket.removeIf(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
+                            addButton.setText("Add");
+                            addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
+                            episode.setSelected(false);
+                            getTableView().refresh();
+                        } else {
+                            String selectedServer = episode.getSelectedServer();
+                            ConnectDataBase.Quality selectedQuality = episode.getSelectedQuality();
+
+                            if (selectedQuality == null) {
+                                showAlert(Alert.AlertType.WARNING, "Select a quality", "Please select a quality for the episode.");
+                                return;
+                            }
+
+                            if (selectedServer == null || selectedServer.isEmpty()) {
+                                showAlert(Alert.AlertType.WARNING, "Select a server", "Please select a server for the episode.");
+                                return;
+                            }
+
+                            if (!isServerCompatible(selectedServer)) {
+                                showAlert(Alert.AlertType.WARNING, "Incompatible Server", "The selected server '" + selectedServer + "' is not compatible with direct download.");
+                                return;
+                            }
+
+                            ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
+                            String baseServer = selectedServer.split(" " )[0];
+                            DirectFile selectedFile = directFiles.stream()
+                                    .filter(df -> df.getQualityId() == selectedQuality.getId() && df.getServer().equalsIgnoreCase(baseServer))
+                                    .findFirst()
+                                    .orElse(null);
+
+                            if (selectedFile == null) {
+                                showAlert(Alert.AlertType.WARNING, "File not available", "No file available for the selected quality and server.");
+                                return;
+                            }
+
+                            DirectDownloader downloader = getDownloaderForServer(selectedServer);
+                            if (downloader == null) {
+                                showAlert(Alert.AlertType.ERROR, "Error", "No downloader available for server: " + selectedServer);
+                                return;
+                            }
+
+                            DownloadBasketItem basketItem = new DownloadBasketItem(
+                                    episode.getId(),
+                                    currentSeries.getName() + " - S" + season.getSeasonNumber() + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
+                                    "episode",
+                                    selectedQuality.getQuality(),
+                                    selectedFile.getLink(),
+                                    selectedFile.getServer(),
+                                    currentSeries.getName(),
+                                    season.getSeasonNumber(),
+                                    episode.getEpisodeNumber()
+                            );
+
+                            downloadBasket.add(basketItem);
+                            addButton.setText("Remove");
+                            addButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
+                            episode.setSelected(true);
+                            getTableView().refresh();
+                        }
+                    }
+                });
+
+                streamButton.setOnAction(event -> {
+                    if (getTableRow() != null && getTableRow().getItem() != null) {
+                        Episode episode = getTableRow().getItem();
+                        String selectedServer = episode.getSelectedServer();
+                        if (selectedServer == null || selectedServer.isEmpty()) {
+                            showAlert(Alert.AlertType.WARNING, "Select a server", "Please select a server to stream from.");
+                            return;
+                        }
+
+                        ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
+                        String baseServer = selectedServer.split(" " )[0];
+                        DirectFile selectedFile = directFiles.stream()
+                                .filter(df -> df.getServer().equalsIgnoreCase(baseServer))
+                                .findFirst()
+                                .orElse(null);
+
+                        if (selectedFile != null) {
+                            int serverId = -1;
+                            String lowerServer = baseServer.toLowerCase();
+                            if (lowerServer.contains("powvideo.org")) {
+                                serverId = 1;
+                            } else if (lowerServer.contains("streamplay.to")) {
+                                serverId = 21;
+                            } else if (lowerServer.contains("streamtape.com")) {
+                                serverId = 497;
+                            } else if (lowerServer.contains("mixdrop.bz")) {
+                                serverId = 15;
+                            } else if (lowerServer.contains("vidmoly")) {
+                                serverId = 3;
+                            }
+
+                            if (serverId != -1) {
+                                streamContent(selectedFile.getLink(), serverId);
+                            } else {
+                                streamContent(selectedFile.getLink());
+                            }
+                        } else {
+                            showAlert(Alert.AlertType.WARNING, "Stream not available", "No stream available for the selected server.");
+                        }
+                    }
+                });
+                buttonsBox.getChildren().addAll(addButton, streamButton);
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                } else {
+                    Episode episode = getTableRow().getItem();
+
+                    boolean isInBasket = downloadBasket.stream()
+                            .anyMatch(basketItem -> basketItem.getType().equals("episode") && basketItem.getEpisodeId() == episode.getId());
+
+                    if (isInBasket) {
+                        addButton.setText("Remove");
+                        addButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
+                        episode.setSelected(true);
+                    } else {
+                        addButton.setText("Add");
+                        addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
+                    }
+
+                    String selectedServer = episode.getSelectedServer();
+                    if (selectedServer != null && !selectedServer.isEmpty()) {
+                        boolean isCompatible = isServerCompatible(selectedServer);
+                        addButton.setDisable(!isCompatible);
+
+                        if (!isCompatible) {
+                            addButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+                        }
+                    }
+
+                    boolean disableStream = false;
+                    if (selectedServer != null && !selectedServer.isEmpty()) {
+                        String baseServer = selectedServer.split(" " )[0].toLowerCase();
+                        disableStream = baseServer.contains("streamplay") || baseServer.contains("powvideo");
+                    }
+                    streamButton.setDisable(disableStream);
+                    streamButton.setStyle(disableStream
+                            ? "-fx-background-color: #95a5a6; -fx-text-fill: white;"
+                            : "-fx-background-color: #3498db; -fx-text-fill: white;");
+
+                    setGraphic(buttonsBox);
+                }
+            }
+        });
+        actionsCol.setPrefWidth(150);
+
+        episodesTable.getColumns().addAll(selectCol, episodeNumberCol, titleCol, languageCol, serverCol, qualityCol, actionsCol);
+
+        ObservableList<Episode> seasonEpisodes = FXCollections.observableArrayList();
+        episodesTable.setItems(seasonEpisodes);
+
+        selectAllCheckbox.setOnAction(e -> {
+            boolean selected = selectAllCheckbox.isSelected();
+
+            for (Episode episode : seasonEpisodes) {
+                episode.setSelected(selected);
+
+                if (selected) {
+                    if (episode.getSelectedLanguage() == null || episode.getSelectedLanguage().isEmpty()) {
+                        List<String> languages = getAvailableEpisodeLanguages(episode.getId());
+                        if (!languages.isEmpty()) {
+                            episode.setSelectedLanguage(languages.get(0));
+                        }
+                    }
+
+                    if (episode.getSelectedServer() == null || episode.getSelectedServer().isEmpty()) {
+                        List<String> servers = getAvailableEpisodeServers(episode.getId());
+                        if (!servers.isEmpty()) {
+                            episode.setSelectedServer(servers.get(0));
+                        }
+                    }
+
+                    if (episode.getSelectedQuality() == null) {
+                        List<ConnectDataBase.Quality> qualities = getQualitiesForServer(episode.getId(), episode.getSelectedServer());
+                        if (!qualities.isEmpty()) {
+                            episode.setSelectedQuality(qualities.get(0));
+                        }
+                    }
+                }
+            }
+
+            episodesTable.refresh();
+        });
+
+        Button addSelectedButton = new Button("Add Selected to Basket");
+        addSelectedButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
+        addSelectedButton.setOnAction(e -> {
+            List<Episode> selectedEpisodes = seasonEpisodes.stream()
+                    .filter(Episode::isSelected)
+                    .collect(Collectors.toList());
+
+            if (selectedEpisodes.isEmpty()) {
+                showAlert(Alert.AlertType.INFORMATION, "No Selection", "Please select at least one episode to add to the basket.");
+                return;
+            }
+
+            int addedCount = 0;
+            for (Episode episodeItem : selectedEpisodes) {
+                Episode episode = episodeItem;
+
+                boolean alreadyInBasket = downloadBasket.stream()
+                        .anyMatch(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
+
+                if (alreadyInBasket) {
+                    continue;
+                }
+
+                if (episode.getSelectedServer() == null || episode.getSelectedQuality() == null) {
+                    if (episode.getSelectedServer() == null) {
+                        List<String> servers = getAvailableEpisodeServers(episode.getId());
+                        if (!servers.isEmpty()) {
+                            episode.setSelectedServer(servers.get(0));
+                        }
+                    }
+
+                    if (episode.getSelectedQuality() == null) {
+                        ObservableList<ConnectDataBase.Quality> qualities = connectDataBase.getQualities();
+                        if (!qualities.isEmpty()) {
+                            episode.setSelectedQuality(qualities.get(0));
+                        }
+                    }
+
+                    if (episode.getSelectedServer() == null || episode.getSelectedQuality() == null) {
+                        continue;
+                    }
+                }
+
+                if (!isServerCompatible(episode.getSelectedServer())) {
+                    continue;
+                }
+
+                ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
+                String baseServer = episode.getSelectedServer().split(" " )[0];
+                DirectFile selectedFile = directFiles.stream()
+                        .filter(df -> df.getQualityId() == episode.getSelectedQuality().getId() && df.getServer().equalsIgnoreCase(baseServer))
+                        .findFirst()
+                        .orElse(null);
+
+                if (selectedFile == null) {
+                    continue;
+                }
+
+                DownloadBasketItem basketItem = new DownloadBasketItem(
+                        episode.getId(),
+                        currentSeries.getName() + " - S" + season.getSeasonNumber() + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
+                        "episode",
+                        episode.getSelectedQuality().getQuality(),
+                        selectedFile.getLink(),
+                        selectedFile.getServer(),
+                        currentSeries.getName(),
+                        season.getSeasonNumber(),
+                        episode.getEpisodeNumber()
+                );
+
+                downloadBasket.add(basketItem);
+                addedCount++;
+            }
+
+            episodesTable.refresh();
+
+            if (addedCount > 0) {
+                showConfirmation(addedCount + " episodes added to the basket");
+            } else {
+                showAlert(Alert.AlertType.INFORMATION, "No Episodes Added", "No new episodes were added to the basket. They might already be in the basket or no compatible servers were found.");
+            }
+        });
+
+        selectAllBox.getChildren().add(addSelectedButton);
+        selectAllBox.setSpacing(20);
+
+        seasonLayout.getChildren().addAll(selectAllBox, episodesTable);
+        VBox.setVgrow(episodesTable, Priority.ALWAYS);
+
+        seasonTab.setContent(seasonLayout);
+
+        SeasonTabContext context = new SeasonTabContext(
+                season,
+                seasonTab,
+                episodesTable,
+                seasonEpisodes,
+                selectAllCheckbox,
+                addSelectedButton);
+        seasonTab.setUserData(context);
+        return context;
+    }
+
+    private SeasonTabContext getSelectedSeasonContext(TabPane seasonsTabPane) {
+        if (seasonsTabPane == null) {
+            return null;
+        }
+        Tab selectedTab = seasonsTabPane.getSelectionModel().getSelectedItem();
+        if (selectedTab == null) {
+            return null;
+        }
+        Object data = selectedTab.getUserData();
+        if (data instanceof SeasonTabContext) {
+            return (SeasonTabContext) data;
+        }
+        return null;
+    }
+
+    private void loadSeasonEpisodes(SeasonTabContext context, Runnable onLoaded) {
+        if (context == null) {
+            return;
+        }
+        if (context.loaded) {
+            if (onLoaded != null) {
+                onLoaded.run();
+            }
+            return;
+        }
+
+        runWithLoading(() -> fetchSeasonEpisodes(context.season), episodes -> {
+            context.episodes.setAll(episodes);
+            context.loaded = true;
+            episodesBySeason.put(context.season.getId(), context.episodes);
+            context.selectAllCheckbox.setSelected(false);
+            context.episodesTable.refresh();
+            if (onLoaded != null) {
+                onLoaded.run();
+            }
+        }, "Cargando datos iniciales...", "No se pudieron cargar los episodios.");
+    }
+
+    private ObservableList<Episode> fetchSeasonEpisodes(ConnectDataBase.Season season) throws Exception {
+        ObservableList<Episode> seasonEpisodes = connectDataBase.getEpisodesBySeason(season.getId());
+        seasonEpisodes.sort(Comparator.comparingInt(Episode::getEpisodeNumber));
+        return seasonEpisodes;
+    }
+
+    private void downloadSeasonEpisodes(SeasonTabContext context) {
+        if (context.episodes.isEmpty()) {
+            showAlert(Alert.AlertType.WARNING, "No Episodes", "No episodes found for this season.");
+            return;
+        }
+
+        for (Episode episode : context.episodes) {
+            List<String> languages = getAvailableEpisodeLanguages(episode.getId());
+            if (episode.getSelectedLanguage() == null && !languages.isEmpty()) {
+                episode.setSelectedLanguage(languages.get(0));
+            }
+
+            if (episode.getSelectedServer() == null) {
+                List<String> servers = getAvailableEpisodeServers(episode.getId());
+                String compatibleServer = servers.stream()
+                        .filter(this::isServerCompatible)
+                        .findFirst()
+                        .orElse(servers.isEmpty() ? null : servers.get(0));
+                if (compatibleServer != null) {
+                    episode.setSelectedServer(compatibleServer);
+                }
+            }
+
+            if (episode.getSelectedServer() != null && episode.getSelectedQuality() == null) {
+                List<ConnectDataBase.Quality> qualities = getQualitiesForServer(episode.getId(), episode.getSelectedServer());
+                if (!qualities.isEmpty()) {
+                    episode.setSelectedQuality(qualities.get(0));
+                }
+            }
+        }
+
+        List<Episode> validEpisodes = context.episodes.stream()
+                .filter(ep -> ep.getSelectedServer() != null
+                        && ep.getSelectedQuality() != null
+                        && isServerCompatible(ep.getSelectedServer()))
+                .collect(Collectors.toList());
+
+        if (validEpisodes.isEmpty()) {
+            showAlert(Alert.AlertType.WARNING, "No Valid Episodes", "No episodes with compatible download options found.");
+            return;
+        }
+
+        int addedCount = 0;
+        for (Episode episode : validEpisodes) {
+            boolean alreadyInBasket = downloadBasket.stream()
+                    .anyMatch(item -> item.getType().equals("episode") && item.getEpisodeId() == episode.getId());
+
+            if (alreadyInBasket) {
+                continue;
+            }
+
+            ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
+            String baseServer = episode.getSelectedServer().split(" " )[0];
+            DirectFile selectedFile = directFiles.stream()
+                    .filter(df -> df.getQualityId() == episode.getSelectedQuality().getId() && df.getServer().equalsIgnoreCase(baseServer))
+                    .findFirst()
+                    .orElse(null);
+
+            if (selectedFile == null) {
+                continue;
+            }
+
+            DownloadBasketItem basketItem = new DownloadBasketItem(
+                    episode.getId(),
+                    currentSeries.getName() + " - S" + context.season.getSeasonNumber() + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
+                    "episode",
+                    episode.getSelectedQuality().getQuality(),
+                    selectedFile.getLink(),
+                    selectedFile.getServer(),
+                    currentSeries.getName(),
+                    context.season.getSeasonNumber(),
+                    episode.getEpisodeNumber()
+            );
+
+            downloadBasket.add(basketItem);
+            addedCount++;
+        }
+
+        context.episodesTable.refresh();
+
+        if (addedCount > 0) {
+            showConfirmation(addedCount + " episodes from Season " + context.season.getSeasonNumber() + " added to the basket");
+        } else {
+            showAlert(Alert.AlertType.INFORMATION, "No Episodes Added",
+                    "No new episodes were added to the basket. They might already be in the basket or no compatible servers were found.");
         }
     }
+
 
     private TabPane findTabPane(Node node) {
         if (node == null) {
