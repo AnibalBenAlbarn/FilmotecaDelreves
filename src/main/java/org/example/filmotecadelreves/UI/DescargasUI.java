@@ -12,6 +12,7 @@ import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
+import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
@@ -44,6 +45,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.DecimalFormat;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -53,6 +55,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -107,6 +110,19 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
     /** Persistencia */
     private final DownloadPersistenceManager persistenceManager = DownloadPersistenceManager.getInstance();
     private final Set<String> pendingTorrentAutoResume = new HashSet<>();
+    private final Queue<QueuedDirectDownload> pendingDirectDownloadQueue = new ArrayDeque<>();
+    private final Map<String, ChangeListener<String>> directDownloadStatusListeners = new HashMap<>();
+    private DirectDownload activeQueuedDirectDownload;
+
+    private static class QueuedDirectDownload {
+        private final DirectDownload download;
+        private final Runnable startAction;
+
+        private QueuedDirectDownload(DirectDownload download, Runnable startAction) {
+            this.download = download;
+            this.startAction = startAction;
+        }
+    }
 
     //==========================================================================
     // CONSTRUCTOR
@@ -2416,6 +2432,17 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
         alert.showAndWait();
     }
 
+    private void runOnFxThread(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        if (Platform.isFxApplicationThread()) {
+            action.run();
+        } else {
+            Platform.runLater(action);
+        }
+    }
+
     /**
      * Pausa una descarga directa
      *
@@ -2525,10 +2552,105 @@ public class DescargasUI implements TorrentDownloader.TorrentNotificationListene
      * @param download La descarga directa a añadir
      */
     public void addDirectDownload(DirectDownload download) {
-        System.out.println("Añadiendo descarga directa: " + download.getName());
-        directDownloads.add(download);
+        if (download == null) {
+            return;
+        }
+        runOnFxThread(() -> {
+            System.out.println("Añadiendo descarga directa: " + download.getName());
+            addDirectDownloadInternal(download);
+        });
+    }
+
+    public void enqueueDirectDownload(DirectDownload download, Runnable startAction) {
+        if (download == null || startAction == null) {
+            return;
+        }
+        runOnFxThread(() -> {
+            System.out.println("Cola descarga directa: " + download.getName());
+            addDirectDownloadInternal(download);
+            attachQueueListener(download);
+            pendingDirectDownloadQueue.offer(new QueuedDirectDownload(download, startAction));
+            processPendingDirectDownloads();
+        });
+    }
+
+    private void addDirectDownloadInternal(DirectDownload download) {
+        boolean alreadyPresent = directDownloads.stream()
+                .anyMatch(existing -> Objects.equals(existing.getId(), download.getId()));
+        if (!alreadyPresent) {
+            directDownloads.add(download);
+        }
         persistenceManager.upsertDirectDownload(download);
         download.markPersistenceSynced();
+    }
+
+    private void attachQueueListener(DirectDownload download) {
+        if (download == null) {
+            return;
+        }
+        if (directDownloadStatusListeners.containsKey(download.getId())) {
+            return;
+        }
+        ChangeListener<String> listener = (obs, oldStatus, newStatus) ->
+                runOnFxThread(() -> handleQueuedDownloadStatusChange(download, newStatus));
+        download.statusProperty().addListener(listener);
+        directDownloadStatusListeners.put(download.getId(), listener);
+    }
+
+    private void handleQueuedDownloadStatusChange(DirectDownload download, String newStatus) {
+        if (download == null || download != activeQueuedDirectDownload) {
+            return;
+        }
+        if (!shouldAdvanceQueue(newStatus)) {
+            return;
+        }
+        detachQueueListener(download);
+        activeQueuedDirectDownload = null;
+        processPendingDirectDownloads();
+    }
+
+    private boolean shouldAdvanceQueue(String status) {
+        if (status == null) {
+            return false;
+        }
+        return "downloading".equalsIgnoreCase(status)
+                || "completed".equalsIgnoreCase(status)
+                || "error".equalsIgnoreCase(status)
+                || "cancelled".equalsIgnoreCase(status);
+    }
+
+    private void detachQueueListener(DirectDownload download) {
+        ChangeListener<String> listener = directDownloadStatusListeners.remove(download.getId());
+        if (listener != null) {
+            download.statusProperty().removeListener(listener);
+        }
+    }
+
+    private void processPendingDirectDownloads() {
+        if (activeQueuedDirectDownload != null) {
+            return;
+        }
+        QueuedDirectDownload next = pendingDirectDownloadQueue.poll();
+        if (next == null) {
+            return;
+        }
+        activeQueuedDirectDownload = next.download;
+        CompletableFuture.runAsync(() -> {
+            try {
+                next.startAction.run();
+            } catch (Exception e) {
+                Logger.getLogger(DescargasUI.class.getName()).log(Level.SEVERE,
+                        "Error iniciando descarga directa: " + next.download.getName(), e);
+                runOnFxThread(() -> {
+                    if (activeQueuedDirectDownload == next.download) {
+                        detachQueueListener(next.download);
+                        activeQueuedDirectDownload = null;
+                        next.download.setStatus("Error");
+                        processPendingDirectDownloads();
+                    }
+                });
+            }
+        });
     }
 
     /**
