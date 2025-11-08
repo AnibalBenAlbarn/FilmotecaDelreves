@@ -11,13 +11,15 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 
+import java.util.concurrent.CountDownLatch;
+
 /**
  * Diálogo para mostrar el progreso de una operación
  */
 public class ProgressDialog {
-    private final Stage dialogStage;
-    private final ProgressBar progressBar;
-    private final Label statusLabel;
+    private Stage dialogStage;
+    private ProgressBar progressBar;
+    private Label statusLabel;
     private Label countdownLabel;
 
     /**
@@ -26,23 +28,7 @@ public class ProgressDialog {
      * @param initialStatus Estado inicial a mostrar
      */
     public ProgressDialog(String title, String initialStatus) {
-        dialogStage = new Stage();
-        dialogStage.setTitle(title);
-        dialogStage.setResizable(false);
-        dialogStage.initModality(Modality.APPLICATION_MODAL);
-
-        VBox layout = new VBox(10);
-        layout.setPadding(new Insets(20));
-        layout.setAlignment(Pos.CENTER);
-
-        statusLabel = new Label(initialStatus);
-        progressBar = new ProgressBar(0);
-        progressBar.setPrefWidth(300);
-
-        layout.getChildren().addAll(statusLabel, progressBar);
-
-        Scene scene = new Scene(layout);
-        dialogStage.setScene(scene);
+        runOnFxThread(() -> initializeDialog(title, initialStatus));
     }
 
     /**
@@ -55,9 +41,11 @@ public class ProgressDialog {
         this(title, initialStatus);
 
         if (showCountdown) {
-            VBox layout = (VBox) dialogStage.getScene().getRoot();
-            countdownLabel = new Label("");
-            layout.getChildren().add(countdownLabel);
+            runOnFxThread(() -> {
+                VBox layout = (VBox) dialogStage.getScene().getRoot();
+                countdownLabel = new Label("");
+                layout.getChildren().add(countdownLabel);
+            });
         }
     }
 
@@ -65,14 +53,14 @@ public class ProgressDialog {
      * Muestra el diálogo
      */
     public void show() {
-        dialogStage.show();
+        runOnFxThread(() -> dialogStage.show());
     }
 
     /**
      * Cierra el diálogo
      */
     public void close() {
-        Platform.runLater(() -> dialogStage.close());
+        runOnFxThread(() -> dialogStage.close());
     }
 
     /**
@@ -103,5 +91,47 @@ public class ProgressDialog {
      */
     public boolean isClosed() {
         return !dialogStage.isShowing();
+    }
+
+    private void initializeDialog(String title, String initialStatus) {
+        dialogStage = new Stage();
+        dialogStage.setTitle(title);
+        dialogStage.setResizable(false);
+        dialogStage.initModality(Modality.APPLICATION_MODAL);
+
+        VBox layout = new VBox(10);
+        layout.setPadding(new Insets(20));
+        layout.setAlignment(Pos.CENTER);
+
+        statusLabel = new Label(initialStatus);
+        progressBar = new ProgressBar(0);
+        progressBar.setPrefWidth(300);
+
+        layout.getChildren().addAll(statusLabel, progressBar);
+
+        Scene scene = new Scene(layout);
+        dialogStage.setScene(scene);
+    }
+
+    private void runOnFxThread(Runnable action) {
+        if (Platform.isFxApplicationThread()) {
+            action.run();
+            return;
+        }
+
+        CountDownLatch latch = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            try {
+                action.run();
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
