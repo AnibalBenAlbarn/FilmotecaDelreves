@@ -130,10 +130,8 @@ public class DownloadManager {
             );
 
             // Añadir a la interfaz de descargas
-            descargasUI.addDirectDownload(directDownload);
-
-            // Iniciar descarga
-            downloader.download(normalizedLink, movieFolder, directDownload);
+            descargasUI.enqueueDirectDownload(directDownload,
+                    () -> downloader.download(normalizedLink, movieFolder, directDownload));
 
             // Incrementar contador si es PowVideo o StreamPlay
             if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
@@ -217,10 +215,8 @@ public class DownloadManager {
             );
 
             // Añadir a la interfaz de descargas
-            descargasUI.addDirectDownload(directDownload);
-
-            // Iniciar descarga
-            downloader.download(normalizedLink, destinationPath, directDownload);
+            descargasUI.enqueueDirectDownload(directDownload,
+                    () -> downloader.download(normalizedLink, destinationPath, directDownload));
 
             // Incrementar contador si es PowVideo o StreamPlay
             if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
