@@ -398,8 +398,8 @@ public class ResumableHttpDownloadTask implements Runnable {
             throw interrupted;
         } catch (ExecutionException executionException) {
             Throwable cause = executionException.getCause();
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
             }
             throw new IOException("No se pudo confirmar el reinicio de la descarga", cause);
         }
