@@ -2,6 +2,7 @@ package org.example.filmotecadelreves.moviesad;
 
 
 import org.example.filmotecadelreves.DirectDownloader;
+import org.example.filmotecadelreves.ManualDownloadCapable;
 import org.example.filmotecadelreves.UI.AjustesUI;
 import org.example.filmotecadelreves.UI.DescargasUI;
 import org.example.filmotecadelreves.downloaders.MixdropDownloader;
@@ -70,23 +71,51 @@ public class DownloadManager {
      * @return true si la descarga se inició correctamente, false en caso contrario
      */
     public static boolean startMovieDownload(DownloadBasketItem item, AjustesUI ajustesUI, DescargasUI descargasUI) {
+        return startMovieDownloadInternal(item, ajustesUI, descargasUI, false);
+    }
+
+    public static boolean startManualMovieDownload(DownloadBasketItem item, AjustesUI ajustesUI, DescargasUI descargasUI) {
+        return startMovieDownloadInternal(item, ajustesUI, descargasUI, true);
+    }
+
+    /**
+     * Inicia una descarga para un episodio
+     * @param item El elemento de la cesta de descargas
+     * @param ajustesUI La interfaz de ajustes para obtener rutas de destino
+     * @param descargasUI La interfaz de descargas para añadir la descarga
+     * @return true si la descarga se inició correctamente, false en caso contrario
+     */
+    public static boolean startEpisodeDownload(DownloadBasketItem item, AjustesUI ajustesUI, DescargasUI descargasUI) {
+        return startEpisodeDownloadInternal(item, ajustesUI, descargasUI, false);
+    }
+
+    public static boolean startManualEpisodeDownload(DownloadBasketItem item, AjustesUI ajustesUI, DescargasUI descargasUI) {
+        return startEpisodeDownloadInternal(item, ajustesUI, descargasUI, true);
+    }
+
+    private static boolean startMovieDownloadInternal(DownloadBasketItem item,
+                                                      AjustesUI ajustesUI,
+                                                      DescargasUI descargasUI,
+                                                      boolean manualMode) {
         try {
-            // Obtener el downloader apropiado
             DirectDownloader downloader = getDownloaderForServer(item.getServer());
             if (downloader == null) {
                 System.err.println("No hay un downloader disponible para el servidor: " + item.getServer());
                 return false;
             }
 
-            String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
+            if (manualMode && !(downloader instanceof ManualDownloadCapable)) {
+                System.err.println("El downloader para el servidor " + item.getServer() + " no soporta modo manual.");
+                return false;
+            }
 
-            // Verificar límites de descarga para PowVideo y StreamPlay
+            String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
             String serverLower = item.getServer().toLowerCase();
-            if ((serverLower.contains("powvideo") || serverLower.contains("streamplay")) &&
-                    DownloadLimitManager.isPowvideoStreamplayLimitReached()) {
+
+            boolean isPowOrStreamplay = serverLower.contains("powvideo") || serverLower.contains("streamplay");
+            if (!manualMode && isPowOrStreamplay && DownloadLimitManager.isPowvideoStreamplayLimitReached()) {
                 System.err.println("Límite de descargas alcanzado para PowVideo/StreamPlay");
 
-                // Crear objeto de descarga con estado de espera
                 String fileName = item.getName() + ".mp4";
                 DescargasUI.DirectDownload directDownload = new DescargasUI.DirectDownload(
                         fileName,
@@ -97,19 +126,14 @@ public class DownloadManager {
                         "",
                         downloader
                 );
-
-                // Añadir a la interfaz de descargas
                 descargasUI.addDirectDownload(directDownload);
-
                 return false;
             }
 
-            // Crear estructura de directorios de destino
             String baseDestination = ajustesUI.getDirectMovieDestination();
             String movieName = item.getName();
             String sanitizedMovieFolderName = sanitizePathComponent(movieName);
 
-            // Crear carpeta de película
             String movieFolder = baseDestination + File.separator + sanitizedMovieFolderName;
             File destDir = new File(movieFolder);
             if (!destDir.exists() && !destDir.mkdirs()) {
@@ -117,7 +141,6 @@ public class DownloadManager {
                 return false;
             }
 
-            // Crear objeto de descarga
             String fileName = movieName + ".mp4";
             DescargasUI.DirectDownload directDownload = new DescargasUI.DirectDownload(
                     fileName,
@@ -129,12 +152,17 @@ public class DownloadManager {
                     downloader
             );
 
-            // Añadir a la interfaz de descargas
-            descargasUI.enqueueDirectDownload(directDownload,
-                    () -> downloader.download(normalizedLink, movieFolder, directDownload));
+            Runnable startAction;
+            if (manualMode) {
+                ManualDownloadCapable manualDownloader = (ManualDownloadCapable) downloader;
+                startAction = () -> manualDownloader.downloadManual(normalizedLink, movieFolder, directDownload);
+            } else {
+                startAction = () -> downloader.download(normalizedLink, movieFolder, directDownload);
+            }
 
-            // Incrementar contador si es PowVideo o StreamPlay
-            if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
+            descargasUI.enqueueDirectDownload(directDownload, startAction);
+
+            if (isPowOrStreamplay) {
                 DownloadLimitManager.incrementPowvideoStreamplayCount();
                 descargasUI.refreshDownloadCounter();
             }
@@ -147,31 +175,29 @@ public class DownloadManager {
         }
     }
 
-    /**
-     * Inicia una descarga para un episodio
-     * @param item El elemento de la cesta de descargas
-     * @param ajustesUI La interfaz de ajustes para obtener rutas de destino
-     * @param descargasUI La interfaz de descargas para añadir la descarga
-     * @return true si la descarga se inició correctamente, false en caso contrario
-     */
-    public static boolean startEpisodeDownload(DownloadBasketItem item, AjustesUI ajustesUI, DescargasUI descargasUI) {
+    private static boolean startEpisodeDownloadInternal(DownloadBasketItem item,
+                                                         AjustesUI ajustesUI,
+                                                         DescargasUI descargasUI,
+                                                         boolean manualMode) {
         try {
-            // Obtener el downloader apropiado
             DirectDownloader downloader = getDownloaderForServer(item.getServer());
             if (downloader == null) {
                 System.err.println("No hay un downloader disponible para el servidor: " + item.getServer());
                 return false;
             }
 
-            String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
+            if (manualMode && !(downloader instanceof ManualDownloadCapable)) {
+                System.err.println("El downloader para el servidor " + item.getServer() + " no soporta modo manual.");
+                return false;
+            }
 
-            // Verificar límites de descarga para PowVideo y StreamPlay
+            String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
             String serverLower = item.getServer().toLowerCase();
-            if ((serverLower.contains("powvideo") || serverLower.contains("streamplay")) &&
-                    DownloadLimitManager.isPowvideoStreamplayLimitReached()) {
+
+            boolean isPowOrStreamplay = serverLower.contains("powvideo") || serverLower.contains("streamplay");
+            if (!manualMode && isPowOrStreamplay && DownloadLimitManager.isPowvideoStreamplayLimitReached()) {
                 System.err.println("Límite de descargas alcanzado para PowVideo/StreamPlay");
 
-                // Crear objeto de descarga con estado de espera
                 String fileName = item.getName() + ".mp4";
                 DescargasUI.DirectDownload directDownload = new DescargasUI.DirectDownload(
                         fileName,
@@ -182,19 +208,14 @@ public class DownloadManager {
                         "",
                         downloader
                 );
-
-                // Añadir a la interfaz de descargas
                 descargasUI.addDirectDownload(directDownload);
-
                 return false;
             }
 
-            // Crear estructura de directorios de destino
             String baseDestination = ajustesUI.getDirectSeriesDestination();
             String sanitizedSeriesFolder = sanitizePathComponent(item.getSeriesName());
             String sanitizedSeasonFolder = sanitizePathComponent("Season " + item.getSeasonNumber());
 
-            // Crear estructura de carpetas serie/temporada
             String destinationPath = baseDestination + File.separator + sanitizedSeriesFolder + File.separator + sanitizedSeasonFolder;
             File destDir = new File(destinationPath);
             if (!destDir.exists() && !destDir.mkdirs()) {
@@ -202,7 +223,6 @@ public class DownloadManager {
                 return false;
             }
 
-            // Crear objeto de descarga
             String fileName = item.getName() + ".mp4";
             DescargasUI.DirectDownload directDownload = new DescargasUI.DirectDownload(
                     fileName,
@@ -214,12 +234,17 @@ public class DownloadManager {
                     downloader
             );
 
-            // Añadir a la interfaz de descargas
-            descargasUI.enqueueDirectDownload(directDownload,
-                    () -> downloader.download(normalizedLink, destinationPath, directDownload));
+            Runnable startAction;
+            if (manualMode) {
+                ManualDownloadCapable manualDownloader = (ManualDownloadCapable) downloader;
+                startAction = () -> manualDownloader.downloadManual(normalizedLink, destinationPath, directDownload);
+            } else {
+                startAction = () -> downloader.download(normalizedLink, destinationPath, directDownload);
+            }
 
-            // Incrementar contador si es PowVideo o StreamPlay
-            if (serverLower.contains("powvideo") || serverLower.contains("streamplay")) {
+            descargasUI.enqueueDirectDownload(directDownload, startAction);
+
+            if (isPowOrStreamplay) {
                 DownloadLimitManager.incrementPowvideoStreamplayCount();
                 descargasUI.refreshDownloadCounter();
             }

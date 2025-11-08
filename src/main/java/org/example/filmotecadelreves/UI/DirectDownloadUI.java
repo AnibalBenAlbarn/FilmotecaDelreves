@@ -954,14 +954,17 @@ public class DirectDownloadUI {
         return new TableCell<Movie, Void>() {
             private final Button downloadBtn = new Button("Download");
             private final Button streamBtn = new Button("Stream");
-            private final HBox buttons = new HBox(5, downloadBtn, streamBtn);
+            private final Button manualBtn = new Button("Descarga manual");
+            private final HBox buttons = new HBox(5, downloadBtn, streamBtn, manualBtn);
 
             {
                 downloadBtn.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
                 streamBtn.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+                manualBtn.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white;");
 
                 downloadBtn.setOnAction(e -> handleDownload(getTableRow().getItem()));
                 streamBtn.setOnAction(e -> handleStream(getTableRow().getItem()));
+                manualBtn.setOnAction(e -> handleManualDownload(getTableRow().getItem()));
             }
 
             @Override
@@ -991,6 +994,14 @@ public class DirectDownloadUI {
                     streamBtn.setStyle(hasServer
                             ? "-fx-background-color: #3498db; -fx-text-fill: white;"
                             : "-fx-background-color: #95a5a6; -fx-text-fill: white;");
+
+                    boolean manualSupported = isManualServer(selectedServer);
+                    manualBtn.setDisable(!manualSupported);
+                    manualBtn.setVisible(manualSupported);
+                    manualBtn.setManaged(manualSupported);
+                    if (manualSupported) {
+                        manualBtn.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white;");
+                    }
 
                     setGraphic(buttons);
                 }
@@ -1069,6 +1080,86 @@ public class DirectDownloadUI {
             showConfirmation("Añadido a la cesta: " + movie.getTitle());
         } else {
             showAlert(Alert.AlertType.WARNING, "Ya en la cesta", "'" + movie.getTitle() + "' ya está en la cesta de descargas.");
+        }
+    }
+
+    private void handleManualDownload(Movie movie) {
+        if (movie == null) {
+            return;
+        }
+
+        String selectedServer = movie.getSelectedServer();
+        if (!isManualServer(selectedServer)) {
+            showAlert(Alert.AlertType.WARNING, "Servidor no compatible", "La descarga manual solo está disponible para PowVideo y Streamplay.");
+            return;
+        }
+
+        DownloadBasketItem item = new DownloadBasketItem(
+                movie.getId(),
+                movie.getTitle(),
+                "movie",
+                movie.getQuality(),
+                movie.getLink(),
+                selectedServer,
+                null,
+                0,
+                0
+        );
+
+        boolean success = DownloadManager.startManualMovieDownload(item, ajustesUI, descargasUI);
+        if (success) {
+            showConfirmation("Descarga manual iniciada para: " + movie.getTitle());
+        } else {
+            showAlert(Alert.AlertType.ERROR, "Error", "No se pudo iniciar la descarga manual para '" + movie.getTitle() + "'.");
+        }
+    }
+
+    private void handleManualEpisodeDownload(Episode episode, ConnectDataBase.Season season) {
+        if (episode == null) {
+            return;
+        }
+
+        String selectedServer = episode.getSelectedServer();
+        if (!isManualServer(selectedServer)) {
+            showAlert(Alert.AlertType.WARNING, "Servidor no compatible", "La descarga manual solo está disponible para PowVideo y Streamplay.");
+            return;
+        }
+
+        ConnectDataBase.Quality selectedQuality = episode.getSelectedQuality();
+        if (selectedQuality == null) {
+            showAlert(Alert.AlertType.WARNING, "Select a quality", "Please select a quality for the episode.");
+            return;
+        }
+
+        ObservableList<DirectFile> directFiles = connectDataBase.getDirectFiles(episode.getId());
+        String baseServer = selectedServer.split(" ")[0];
+        DirectFile selectedFile = directFiles.stream()
+                .filter(df -> df.getQualityId() == selectedQuality.getId() && df.getServer().equalsIgnoreCase(baseServer))
+                .findFirst()
+                .orElse(null);
+
+        if (selectedFile == null) {
+            showAlert(Alert.AlertType.WARNING, "File not available", "No file available for the selected quality and server.");
+            return;
+        }
+
+        DownloadBasketItem item = new DownloadBasketItem(
+                episode.getId(),
+                currentSeries.getName() + " - S" + season.getSeasonNumber() + "E" + episode.getEpisodeNumber() + " - " + episode.getTitle(),
+                "episode",
+                selectedQuality.getQuality(),
+                selectedFile.getLink(),
+                selectedFile.getServer(),
+                currentSeries.getName(),
+                season.getSeasonNumber(),
+                episode.getEpisodeNumber()
+        );
+
+        boolean success = DownloadManager.startManualEpisodeDownload(item, ajustesUI, descargasUI);
+        if (success) {
+            showConfirmation("Descarga manual iniciada para el episodio " + episode.getEpisodeNumber());
+        } else {
+            showAlert(Alert.AlertType.ERROR, "Error", "No se pudo iniciar la descarga manual para el episodio seleccionado.");
         }
     }
 
@@ -1642,11 +1733,13 @@ public class DirectDownloadUI {
         actionsCol.setCellFactory(param -> new TableCell<>() {
             private final Button addButton = new Button("Add");
             private final Button streamButton = new Button("Stream");
+            private final Button manualButton = new Button("Descarga manual");
             private final HBox buttonsBox = new HBox(5);
 
             {
                 addButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white;");
                 streamButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+                manualButton.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white;");
 
                 addButton.setOnAction(event -> {
                     if (getTableRow() != null && getTableRow().getItem() != null) {
@@ -1759,7 +1852,12 @@ public class DirectDownloadUI {
                         }
                     }
                 });
-                buttonsBox.getChildren().addAll(addButton, streamButton);
+                manualButton.setOnAction(event -> {
+                    if (getTableRow() != null && getTableRow().getItem() != null) {
+                        handleManualEpisodeDownload(getTableRow().getItem(), season);
+                    }
+                });
+                buttonsBox.getChildren().addAll(addButton, streamButton, manualButton);
             }
 
             @Override
@@ -1798,6 +1896,15 @@ public class DirectDownloadUI {
                     streamButton.setStyle(hasServer
                             ? "-fx-background-color: #3498db; -fx-text-fill: white;"
                             : "-fx-background-color: #95a5a6; -fx-text-fill: white;");
+
+                    boolean manualSupported = hasServer && isManualServer(selectedServer);
+                    boolean hasQuality = episode.getSelectedQuality() != null;
+                    manualButton.setDisable(!(manualSupported && hasQuality));
+                    manualButton.setVisible(manualSupported);
+                    manualButton.setManaged(manualSupported);
+                    if (manualSupported) {
+                        manualButton.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white;");
+                    }
 
                     setGraphic(buttonsBox);
                 }
@@ -2485,6 +2592,14 @@ public class DirectDownloadUI {
         }
 
         return false;
+    }
+
+    private boolean isManualServer(String server) {
+        if (server == null || server.isEmpty()) {
+            return false;
+        }
+        String lower = server.toLowerCase();
+        return lower.contains("powvideo") || lower.contains("streamplay");
     }
 
     /**

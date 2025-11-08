@@ -33,7 +33,7 @@ import java.util.function.Consumer;
 /**
  * Implementación del descargador para el servidor Powvideo
  */
-public class SeleniumPowvideo implements DirectDownloader {
+public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable {
     private static final String PROVIDER_NAME = "PowVideo";
     private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
@@ -60,19 +60,30 @@ public class SeleniumPowvideo implements DirectDownloader {
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
+        startDownload(videoUrl, destinationPath, directDownload, false);
+    }
+
+    @Override
+    public void downloadManual(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
+        startDownload(videoUrl, destinationPath, directDownload, true);
+    }
+
+    private void startDownload(String videoUrl,
+                               String destinationPath,
+                               DescargasUI.DirectDownload directDownload,
+                               boolean manualMode) {
         isCancelled.set(false);
 
         downloadThread = new Thread(() -> {
             try {
-                // Verificar límite de descargas
                 boolean limitReached = DownloadLimitManager.isPowvideoStreamplayLimitReached();
                 boolean fallbackToVisible = false;
+                boolean manualOverride = manualMode;
 
-                // Actualizar estado a "Processing"
                 updateDownloadStatus(directDownload, "Processing", 0);
 
                 while (!isCancelled.get()) {
-                    boolean requiresUserInteraction = limitReached || fallbackToVisible;
+                    boolean requiresUserInteraction = manualOverride || limitReached || fallbackToVisible;
                     setupBrowser(requiresUserInteraction);
 
                     logDebug("Abriendo enlace original: " + videoUrl);
@@ -83,43 +94,45 @@ public class SeleniumPowvideo implements DirectDownloader {
                     ProgressDialog manualDialog = null;
 
                     try {
-                        if (limitReached && !fallbackToVisible) {
-                            logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
+                        if ((limitReached || manualOverride) && !fallbackToVisible) {
+                            if (manualOverride && !limitReached) {
+                                logDebug("Modo manual solicitado por el usuario. Esperando interacción.");
+                            } else {
+                                logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
+                            }
 
-                            manualDialog = new ProgressDialog(
-                                    "Esperando resolución de CAPTCHA",
-                                    "Por favor, resuelva el CAPTCHA en el navegador",
-                                    true);
+                            String title = (manualOverride && !limitReached)
+                                    ? "Descarga manual en curso"
+                                    : "Esperando resolución de CAPTCHA";
+                            String message = (manualOverride && !limitReached)
+                                    ? "Se abrió una ventana independiente. Resuelva el captcha y pulse los botones correspondientes."
+                                    : "Por favor, resuelva el CAPTCHA en el navegador";
 
+                            manualDialog = new ProgressDialog(title, message, true);
                             ProgressDialog finalManualDialog = manualDialog;
                             javafx.application.Platform.runLater(finalManualDialog::show);
 
-                            // Esperar 2 minutos como máximo para que el usuario resuelva el captcha
                             long startTime = System.currentTimeMillis();
-                            long timeoutMillis = 120000; // 2 minutos
+                            long timeoutMillis = (manualOverride && !limitReached) ? 300000 : 120000;
 
                             while (System.currentTimeMillis() - startTime < timeoutMillis) {
-                                // Verificar si se ha cancelado la descarga
                                 if (isCancelled.get()) {
                                     updateDownloadStatus(directDownload, "Cancelled", 0);
                                     return;
                                 }
 
-                                // Actualizar cuenta atrás
                                 long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
-                                long remainingSeconds = remainingMillis / 1000;
+                                long remainingSeconds = Math.max(0, remainingMillis / 1000);
                                 String countdownText = String.format("Tiempo restante: %02d:%02d",
                                         remainingSeconds / 60, remainingSeconds % 60);
 
                                 ProgressDialog dialogRef = manualDialog;
-                                javafx.application.Platform.runLater(() -> {
-                                    dialogRef.updateCountdown(countdownText);
-                                });
+                                javafx.application.Platform.runLater(() -> dialogRef.updateCountdown(countdownText));
 
                                 try {
                                     WebElement btn = driver.findElement(By.id("btn_download"));
                                     if (btn.isDisplayed() && btn.isEnabled()) {
-                                        logDebug("Captcha resuelto por el usuario, continuando con la descarga.");
+                                        logDebug("Captcha resuelto manualmente, continuando con la descarga.");
                                         break;
                                     }
                                 } catch (NoSuchElementException ignored) {
@@ -131,14 +144,12 @@ public class SeleniumPowvideo implements DirectDownloader {
                                     break;
                                 }
 
-                                // Esperar un poco antes de la siguiente comprobación
                                 Thread.sleep(1000);
                             }
 
-                            // Si se agotó el tiempo, mostrar error
                             if (System.currentTimeMillis() - startTime >= timeoutMillis) {
                                 updateDownloadStatus(directDownload, "Error", 0);
-                                logError("Tiempo agotado esperando que el usuario resuelva el captcha.");
+                                logError("Tiempo agotado esperando que el usuario complete la interacción manual.");
                                 return;
                             }
                         } else if (fallbackToVisible) {
@@ -148,7 +159,6 @@ public class SeleniumPowvideo implements DirectDownloader {
                             ProgressDialog finalManualDialog = manualDialog;
                             javafx.application.Platform.runLater(finalManualDialog::show);
                         } else {
-                            // Esperar a que la extensión resuelva el captcha inicial antes de continuar
                             if (isNopechaInstalled) {
                                 waitForNopechaResolution("PowVideo");
                             } else {
@@ -156,7 +166,6 @@ public class SeleniumPowvideo implements DirectDownloader {
                             }
                         }
 
-                        // Dar un tiempo extra para que el captcha automático finalice
                         try {
                             Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
                         } catch (InterruptedException ie) {
@@ -183,7 +192,6 @@ public class SeleniumPowvideo implements DirectDownloader {
                         logDebug("Enlace del video detectado: " + videoSrc);
                         logPageState("Estado tras detectar enlace de video");
 
-                        // Antes de iniciar la descarga directa ya no necesitamos el navegador
                         shutdownDriver();
 
                         directDownload.setDestinationPath(destinationPath);
