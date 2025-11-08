@@ -46,6 +46,7 @@ public class SeleniumPowvideo implements DirectDownloader {
     private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
 
     private static final int CAPTCHA_GRACE_SECONDS = 10;
+    private static final int MAX_HEADLESS_ATTEMPTS_BEFORE_FALLBACK = 5;
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
     private final Map<String, ResumableHttpDownloadTask> activeDownloads = new ConcurrentHashMap<>();
@@ -55,6 +56,7 @@ public class SeleniumPowvideo implements DirectDownloader {
     private Thread downloadThread;
     private boolean isNopechaInstalled = false;
     private volatile boolean runHeadless = true;
+    private boolean currentSessionHeadless = true;
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -64,128 +66,152 @@ public class SeleniumPowvideo implements DirectDownloader {
             try {
                 // Verificar límite de descargas
                 boolean limitReached = DownloadLimitManager.isPowvideoStreamplayLimitReached();
+                boolean fallbackToVisible = false;
 
                 // Actualizar estado a "Processing"
                 updateDownloadStatus(directDownload, "Processing", 0);
 
-                // Configurar navegador
-                setupBrowser(limitReached);
+                while (!isCancelled.get()) {
+                    boolean requiresUserInteraction = limitReached || fallbackToVisible;
+                    setupBrowser(requiresUserInteraction);
 
-                logDebug("Abriendo enlace original: " + videoUrl);
-                driver.get(videoUrl);
-                wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
-                logPageState("Página inicial cargada");
+                    logDebug("Abriendo enlace original: " + videoUrl);
+                    driver.get(videoUrl);
+                    wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+                    logPageState("Página inicial cargada");
 
-                // Si se ha alcanzado el límite, mostrar navegador para que el usuario resuelva el captcha
-                if (limitReached) {
-                    logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
+                    ProgressDialog manualDialog = null;
 
-                    // Mostrar diálogo de progreso con cuenta atrás
-                    ProgressDialog progressDialog = new ProgressDialog(
-                            "Esperando resolución de CAPTCHA",
-                            "Por favor, resuelva el CAPTCHA en el navegador",
-                            true);
+                    try {
+                        if (limitReached && !fallbackToVisible) {
+                            logWarn("Límite de descargas alcanzado. Se requiere intervención manual para resolver el captcha.");
 
-                    javafx.application.Platform.runLater(() -> {
-                        progressDialog.show();
-                    });
+                            manualDialog = new ProgressDialog(
+                                    "Esperando resolución de CAPTCHA",
+                                    "Por favor, resuelva el CAPTCHA en el navegador",
+                                    true);
 
-                    // Esperar 2 minutos como máximo para que el usuario resuelva el captcha
-                    long startTime = System.currentTimeMillis();
-                    long timeoutMillis = 120000; // 2 minutos
+                            ProgressDialog finalManualDialog = manualDialog;
+                            javafx.application.Platform.runLater(finalManualDialog::show);
 
-                    while (System.currentTimeMillis() - startTime < timeoutMillis) {
-                        // Verificar si se ha cancelado la descarga
-                        if (isCancelled.get()) {
-                            javafx.application.Platform.runLater(() -> progressDialog.close());
-                            updateDownloadStatus(directDownload, "Cancelled", 0);
+                            // Esperar 2 minutos como máximo para que el usuario resuelva el captcha
+                            long startTime = System.currentTimeMillis();
+                            long timeoutMillis = 120000; // 2 minutos
+
+                            while (System.currentTimeMillis() - startTime < timeoutMillis) {
+                                // Verificar si se ha cancelado la descarga
+                                if (isCancelled.get()) {
+                                    updateDownloadStatus(directDownload, "Cancelled", 0);
+                                    return;
+                                }
+
+                                // Actualizar cuenta atrás
+                                long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
+                                long remainingSeconds = remainingMillis / 1000;
+                                String countdownText = String.format("Tiempo restante: %02d:%02d",
+                                        remainingSeconds / 60, remainingSeconds % 60);
+
+                                ProgressDialog dialogRef = manualDialog;
+                                javafx.application.Platform.runLater(() -> {
+                                    dialogRef.updateCountdown(countdownText);
+                                });
+
+                                try {
+                                    WebElement btn = driver.findElement(By.id("btn_download"));
+                                    if (btn.isDisplayed() && btn.isEnabled()) {
+                                        logDebug("Captcha resuelto por el usuario, continuando con la descarga.");
+                                        break;
+                                    }
+                                } catch (NoSuchElementException ignored) {
+                                    // El botón aún no está disponible
+                                }
+
+                                if (driver.getPageSource().contains("v.mp4")) {
+                                    logDebug("Página de video detectada durante la espera manual.");
+                                    break;
+                                }
+
+                                // Esperar un poco antes de la siguiente comprobación
+                                Thread.sleep(1000);
+                            }
+
+                            // Si se agotó el tiempo, mostrar error
+                            if (System.currentTimeMillis() - startTime >= timeoutMillis) {
+                                updateDownloadStatus(directDownload, "Error", 0);
+                                logError("Tiempo agotado esperando que el usuario resuelva el captcha.");
+                                return;
+                            }
+                        } else if (fallbackToVisible) {
+                            manualDialog = new ProgressDialog(
+                                    "Interacción requerida",
+                                    "Se activó el modo visible. Utilice el navegador para resolver el captcha y continuar.");
+                            ProgressDialog finalManualDialog = manualDialog;
+                            javafx.application.Platform.runLater(finalManualDialog::show);
+                        } else {
+                            // Esperar a que la extensión resuelva el captcha inicial antes de continuar
+                            if (isNopechaInstalled) {
+                                waitForNopechaResolution("PowVideo");
+                            } else {
+                                logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
+                            }
+                        }
+
+                        // Dar un tiempo extra para que el captcha automático finalice
+                        try {
+                            Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+
+                        clickProceedButton();
+                        logPageState("Estado tras pulsar botón principal");
+
+                        Optional<String> downloadUrl = waitForMp4Url();
+                        if (downloadUrl.isEmpty()) {
+                            if (isCancelled.get() || Thread.currentThread().isInterrupted()) {
+                                updateDownloadStatus(directDownload, "Cancelled", directDownload.getProgress());
+                                logWarn("Búsqueda de enlace v.mp4 detenida por cancelación.");
+                            } else {
+                                updateDownloadStatus(directDownload, "Error", 0);
+                                logWarn("No se encontró un enlace que termine en v.mp4.");
+                                collectDebugArtifacts("mp4-no-encontrado");
+                            }
                             return;
                         }
 
-                        // Actualizar cuenta atrás
-                        long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
-                        long remainingSeconds = remainingMillis / 1000;
-                        String countdownText = String.format("Tiempo restante: %02d:%02d",
-                                remainingSeconds / 60, remainingSeconds % 60);
+                        String videoSrc = downloadUrl.get();
+                        logDebug("Enlace del video detectado: " + videoSrc);
+                        logPageState("Estado tras detectar enlace de video");
 
-                        javafx.application.Platform.runLater(() -> {
-                            progressDialog.updateCountdown(countdownText);
-                        });
+                        // Antes de iniciar la descarga directa ya no necesitamos el navegador
+                        shutdownDriver();
 
-                        try {
-                            WebElement btn = driver.findElement(By.id("btn_download"));
-                            if (btn.isDisplayed() && btn.isEnabled()) {
-                                logDebug("Captcha resuelto por el usuario, continuando con la descarga.");
-                                break;
-                            }
-                        } catch (NoSuchElementException ignored) {
-                            // El botón aún no está disponible
+                        directDownload.setDestinationPath(destinationPath);
+                        String resolvedName = directDownload.getName();
+                        if (resolvedName != null && !resolvedName.toLowerCase().endsWith(".mp4")) {
+                            directDownload.setName(resolvedName + ".mp4");
                         }
 
-                        if (driver.getPageSource().contains("v.mp4")) {
-                            logDebug("Página de video detectada durante la espera manual.");
-                            break;
-                        }
-
-                        // Esperar un poco antes de la siguiente comprobación
-                        Thread.sleep(1000);
-                    }
-
-                    // Cerrar el diálogo de progreso
-                    javafx.application.Platform.runLater(() -> progressDialog.close());
-
-                    // Si se agotó el tiempo, mostrar error
-                    if (System.currentTimeMillis() - startTime >= timeoutMillis) {
-                        updateDownloadStatus(directDownload, "Error", 0);
-                        logError("Tiempo agotado esperando que el usuario resuelva el captcha.");
+                        startResumableDownload(videoSrc, videoUrl, directDownload);
                         return;
+                    } catch (HeadlessFallbackRequiredException fallback) {
+                        if (fallbackToVisible) {
+                            logError("Se solicitó modo visible a pesar de estar activo: " + fallback.getMessage());
+                            updateDownloadStatus(directDownload, "Error", 0);
+                            return;
+                        }
+
+                        logWarn("El modo headless no logró encontrar el enlace del video. Reintentando en modo visible para permitir la intervención del usuario.");
+                        fallbackToVisible = true;
+                        updateDownloadStatus(directDownload, "Waiting", directDownload.getProgress());
+                    } finally {
+                        if (manualDialog != null) {
+                            manualDialog.close();
+                        }
                     }
-                } else {
-                    // Esperar a que la extensión resuelva el captcha inicial antes de continuar
-                    if (isNopechaInstalled) {
-                        waitForNopechaResolution("PowVideo");
-                    } else {
-                        logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
-                    }
+
+                    shutdownDriver();
                 }
-
-                // Dar un tiempo extra para que el captcha automático finalice
-                try {
-                    Thread.sleep(CAPTCHA_GRACE_SECONDS * 1000L);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
-
-                clickProceedButton();
-                logPageState("Estado tras pulsar botón principal");
-
-                Optional<String> downloadUrl = waitForMp4Url();
-                if (downloadUrl.isEmpty()) {
-                    if (isCancelled.get() || Thread.currentThread().isInterrupted()) {
-                        updateDownloadStatus(directDownload, "Cancelled", directDownload.getProgress());
-                        logWarn("Búsqueda de enlace v.mp4 detenida por cancelación.");
-                    } else {
-                        updateDownloadStatus(directDownload, "Error", 0);
-                        logWarn("No se encontró un enlace que termine en v.mp4.");
-                        collectDebugArtifacts("mp4-no-encontrado");
-                    }
-                    return;
-                }
-
-                String videoSrc = downloadUrl.get();
-                logDebug("Enlace del video detectado: " + videoSrc);
-                logPageState("Estado tras detectar enlace de video");
-
-                // Antes de iniciar la descarga directa ya no necesitamos el navegador
-                shutdownDriver();
-
-                directDownload.setDestinationPath(destinationPath);
-                String resolvedName = directDownload.getName();
-                if (resolvedName != null && !resolvedName.toLowerCase().endsWith(".mp4")) {
-                    directDownload.setName(resolvedName + ".mp4");
-                }
-
-                startResumableDownload(videoSrc, videoUrl, directDownload);
 
             } catch (Exception e) {
                 logException("Error en la descarga de Powvideo", e);
@@ -301,6 +327,7 @@ public class SeleniumPowvideo implements DirectDownloader {
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        currentSessionHeadless = headlessMode;
         logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
 
@@ -404,6 +431,9 @@ public class SeleniumPowvideo implements DirectDownloader {
                 if (!timeoutArtifactCaptured) {
                     collectDebugArtifacts("timeout-buscando-mp4");
                     timeoutArtifactCaptured = true;
+                }
+                if (currentSessionHeadless && attempt >= MAX_HEADLESS_ATTEMPTS_BEFORE_FALLBACK) {
+                    throw new HeadlessFallbackRequiredException("Se alcanzó el máximo de intentos permitidos en modo headless.");
                 }
                 if (!prepareForMp4Retry(attempt)) {
                     reloadPageForRetry(attempt);
@@ -711,6 +741,12 @@ public class SeleniumPowvideo implements DirectDownloader {
             return element.isDisplayed();
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    private static class HeadlessFallbackRequiredException extends RuntimeException {
+        HeadlessFallbackRequiredException(String message) {
+            super(message);
         }
     }
 }
