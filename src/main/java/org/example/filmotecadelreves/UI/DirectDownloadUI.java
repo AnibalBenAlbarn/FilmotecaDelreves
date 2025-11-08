@@ -1558,38 +1558,43 @@ public class DirectDownloadUI {
         episodesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
         TableColumn<Episode, Boolean> selectCol = new TableColumn<>("");
-        selectCol.setCellValueFactory(param -> {
-            Episode episode = param.getValue();
-            SimpleBooleanProperty booleanProp = new SimpleBooleanProperty(episode.isSelected());
-            booleanProp.addListener((obs, oldValue, newValue) -> episode.setSelected(newValue));
-            return booleanProp;
-        });
-        selectCol.setCellFactory(p -> {
-            CheckBox checkBox = new CheckBox();
+        selectCol.setCellValueFactory(param -> param.getValue().selectedProperty());
+        selectCol.setCellFactory(column -> new TableCell<>() {
+            private final CheckBox checkBox = new CheckBox();
+            private Episode boundEpisode;
 
-            TableCell<Episode, Boolean> cell = new TableCell<>() {
-                @Override
-                protected void updateItem(Boolean item, boolean empty) {
-                    super.updateItem(item, empty);
-                    if (empty) {
-                        setGraphic(null);
-                    } else {
-                        checkBox.setSelected(item);
-                        setGraphic(checkBox);
-                    }
+            {
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setEditable(true);
+                setAlignment(Pos.CENTER);
+            }
+
+            @Override
+            protected void updateItem(Boolean item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (boundEpisode != null) {
+                    checkBox.selectedProperty().unbindBidirectional(boundEpisode.selectedProperty());
+                    boundEpisode = null;
                 }
-            };
 
-            checkBox.selectedProperty().addListener((obs, wasSelected, isSelected) -> {
-                if (cell.getTableRow() != null && cell.getTableRow().getItem() != null) {
-                    cell.getTableRow().getItem().setSelected(isSelected);
-                    cell.commitEdit(isSelected);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                } else {
+                    boundEpisode = getTableRow().getItem();
+                    checkBox.selectedProperty().bindBidirectional(boundEpisode.selectedProperty());
+                    setGraphic(checkBox);
                 }
-            });
+            }
 
-            cell.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
-            cell.setEditable(true);
-            return cell;
+            @Override
+            public void updateIndex(int i) {
+                super.updateIndex(i);
+                if (isEmpty() && boundEpisode != null) {
+                    checkBox.selectedProperty().unbindBidirectional(boundEpisode.selectedProperty());
+                    boundEpisode = null;
+                }
+            }
         });
         selectCol.setPrefWidth(40);
 
@@ -3080,7 +3085,7 @@ public class DirectDownloadUI {
         private final int seasonId;
         private final int episodeNumber;
         private final String title;
-        private boolean selected;
+        private final BooleanProperty selected = new SimpleBooleanProperty(false);
 
         // Propiedades para almacenar las selecciones
         private final StringProperty selectedLanguage = new SimpleStringProperty();
@@ -3092,7 +3097,6 @@ public class DirectDownloadUI {
             this.seasonId = seasonId;
             this.episodeNumber = episodeNumber;
             this.title = title;
-            this.selected = false;
         }
 
         // Getters y setters existentes
@@ -3100,8 +3104,9 @@ public class DirectDownloadUI {
         public int getSeasonId() { return seasonId; }
         public int getEpisodeNumber() { return episodeNumber; }
         public String getTitle() { return title; }
-        public boolean isSelected() { return selected; }
-        public void setSelected(boolean selected) { this.selected = selected; }
+        public boolean isSelected() { return selected.get(); }
+        public void setSelected(boolean selected) { this.selected.set(selected); }
+        public BooleanProperty selectedProperty() { return selected; }
 
         // Getters y setters para las propiedades de selección
         public String getSelectedLanguage() { return selectedLanguage.get(); }
