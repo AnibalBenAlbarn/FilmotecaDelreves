@@ -2,6 +2,7 @@ package org.example.filmotecadelreves.downloaders;
 
 
 import org.example.filmotecadelreves.DirectDownloader;
+import org.example.filmotecadelreves.ManualDownloadCapable;
 import org.example.filmotecadelreves.UI.DescargasUI;
 import org.example.filmotecadelreves.moviesad.DownloadLimitManager;
 import org.example.filmotecadelreves.moviesad.ProgressDialog;
@@ -11,10 +12,16 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.nio.file.StandardOpenOption;
 import java.io.File;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
