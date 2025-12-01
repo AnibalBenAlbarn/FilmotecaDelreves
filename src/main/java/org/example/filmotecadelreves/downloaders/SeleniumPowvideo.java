@@ -301,9 +301,23 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
      * @param userInteraction Si es true, no se usa el modo headless para permitir la interacción del usuario
      */
     private void setupBrowser(boolean userInteraction) {
-        System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
+        String driverPath = ChromeExecutableLocator.resolveChromeDriver(CHROME_DRIVER_PATH);
+        if (driverPath != null) {
+            System.setProperty("webdriver.chrome.driver", driverPath);
+            logDebug("Usando ChromeDriver en: " + driverPath);
+        } else {
+            System.clearProperty("webdriver.chrome.driver");
+            logWarn("ChromeDriver empaquetado no disponible. Selenium Manager resolverá la versión adecuada.");
+        }
+
         ChromeOptions options = new ChromeOptions();
-        options.setBinary(CHROME_PATH);
+        String chromeBinary = ChromeExecutableLocator.resolveChromeBinary(CHROME_PATH);
+        if (chromeBinary != null) {
+            options.setBinary(chromeBinary);
+            logDebug("Usando binario de Chrome: " + chromeBinary);
+        } else {
+            logWarn("No se encontró un binario de Chrome personalizado. Se usará el navegador predeterminado del sistema.");
+        }
         boolean headlessMode = !userInteraction && runHeadless;
         logDebug("Configurando navegador (userInteraction=" + userInteraction + ", headless=" + headlessMode + ")");
 
