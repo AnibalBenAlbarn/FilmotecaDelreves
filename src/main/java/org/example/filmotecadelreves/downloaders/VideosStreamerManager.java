@@ -79,7 +79,15 @@ public class VideosStreamerManager {
      */
     protected VideosStreamerManager(List<ServerConfig> customServerConfigs) {
         // Set the path to the ChromeDriver
-        System.setProperty("webdriver.chrome.driver", getAbsolutePath(CHROME_DRIVER_PATH));
+        String packagedDriver = getAbsolutePath(CHROME_DRIVER_PATH);
+        String resolvedDriver = ChromeExecutableLocator.resolveChromeDriver(packagedDriver);
+        if (resolvedDriver != null) {
+            System.setProperty("webdriver.chrome.driver", resolvedDriver);
+            System.out.println("Using ChromeDriver: " + resolvedDriver);
+        } else {
+            System.clearProperty("webdriver.chrome.driver");
+            System.out.println("ChromeDriver no encontrado. Selenium Manager determinará la versión adecuada automáticamente.");
+        }
 
         if (customServerConfigs != null) {
             serverConfigs = new ArrayList<>(customServerConfigs);
@@ -320,7 +328,14 @@ public class VideosStreamerManager {
         ChromeOptions options = new ChromeOptions();
 
         // Set binary location to our custom Chrome
-        options.setBinary(getAbsolutePath(CHROME_PATH));
+        String packagedBinary = getAbsolutePath(CHROME_PATH);
+        String resolvedBinary = ChromeExecutableLocator.resolveChromeBinary(packagedBinary);
+        if (resolvedBinary != null) {
+            options.setBinary(resolvedBinary);
+            System.out.println("Using Chrome binary: " + resolvedBinary);
+        } else {
+            System.out.println("No se encontró un binario de Chrome personalizado. Se utilizará el navegador predeterminado del sistema.");
+        }
 
         // Use a dedicated user data directory per server to avoid interfering with the main browser
         File userDataDir = ensureUserDataDir(config);
