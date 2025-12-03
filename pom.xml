@@ -13,39 +13,43 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>5.10.2</junit.version>
     <jlibtorrent.version>2.0.12.5</jlibtorrent.version>
-    <app.version>1.0.0</app.version>
-    <!-- por si quieres cambiar el binario de jpackage -->
-    <jpackage.bin>jpackage</jpackage.bin>
-    <!-- compilar contra Java 11 -->
-    <maven.compiler.release>11</maven.compiler.release>
+    <javafx.version>21.0.4</javafx.version>
+    <javafx.platform>${os.detected.classifier}</javafx.platform>
+    <!-- compilar contra Java 21 -->
+    <maven.compiler.release>21</maven.compiler.release>
   </properties>
 
   <dependencies>
-    <!-- JavaFX -->
+    <!-- JavaFX 21 con clasificadores por plataforma -->
     <dependency>
       <groupId>org.openjfx</groupId>
       <artifactId>javafx-controls</artifactId>
-      <version>17.0.6</version>
+      <version>${javafx.version}</version>
+      <classifier>${javafx.platform}</classifier>
     </dependency>
     <dependency>
       <groupId>org.openjfx</groupId>
       <artifactId>javafx-fxml</artifactId>
-      <version>17.0.6</version>
+      <version>${javafx.version}</version>
+      <classifier>${javafx.platform}</classifier>
     </dependency>
     <dependency>
       <groupId>org.openjfx</groupId>
       <artifactId>javafx-web</artifactId>
-      <version>17.0.6</version>
+      <version>${javafx.version}</version>
+      <classifier>${javafx.platform}</classifier>
     </dependency>
     <dependency>
       <groupId>org.openjfx</groupId>
       <artifactId>javafx-swing</artifactId>
-      <version>17.0.6</version>
+      <version>${javafx.version}</version>
+      <classifier>${javafx.platform}</classifier>
     </dependency>
     <dependency>
       <groupId>org.openjfx</groupId>
       <artifactId>javafx-media</artifactId>
-      <version>17.0.6</version>
+      <version>${javafx.version}</version>
+      <classifier>${javafx.platform}</classifier>
     </dependency>
 
     <!-- UI / FX -->
@@ -205,150 +209,48 @@
     <build>
         <plugins>
 
-            <!-- 1) JAR con Main-Class y Class-Path: lib/ (forzamos classpath, sin JPMS) -->
-            <plugin>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>org.example.filmotecadelreves.UI.MainUI</mainClass>
-                            <addClasspath>true</addClasspath>
-                            <classpathPrefix>lib/</classpathPrefix>
-                        </manifest>
-                    </archive>
-                    <!-- evita meter module-info.class en el jar -->
-                    <excludes>
-                        <exclude>module-info.class</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-
-            <!-- 2) Copiar TODAS las dependencias runtime a target/app/lib -->
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
+        <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.6.1</version>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.3</version>
                 <executions>
                     <execution>
-                        <id>copy-deps</id>
                         <phase>package</phase>
-                        <goals><goal>copy-dependencies</goal></goals>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
                         <configuration>
-                            <outputDirectory>${project.build.directory}/app/lib</outputDirectory>
-                            <includeScope>runtime</includeScope>
-                            <excludeArtifactIds>${project.artifactId}</excludeArtifactIds>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>fat</shadedClassifierName>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>org.example.filmotecadelreves.UI.MainUI</mainClass>
+                                </transformer>
+                            </transformers>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- 3) Copiar tu JAR a target/app -->
-            <plugin>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-                <executions>
-                    <execution>
-                        <id>copy-jar</id>
-                        <phase>package</phase>
-                        <goals><goal>copy-resources</goal></goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/app</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${project.build.directory}</directory>
-                                    <includes>
-                                        <include>${project.build.finalName}.jar</include>
-                                    </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>copy-jlibtorrent</id>
-                        <phase>package</phase>
-                        <goals><goal>copy-resources</goal></goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/app/lib</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${project.basedir}/libs</directory>
-                                    <includes>
-                                        <include>jlibtorrent-${jlibtorrent.version}.jar</include>
-                                    </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- 4) Crear runtime 11 mínimo (SOLO módulos del JDK) -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-
-                    <execution>
-                        <id>make-runtime11</id>
-                        <phase>package</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <executable>jlink</executable>
-                            <arguments>
-                                <argument>--no-header-files</argument>
-                                <argument>--no-man-pages</argument>
-                                <argument>--strip-debug</argument>
-                                <argument>--compress</argument><argument>2</argument>
-                                <!-- añade módulos del JDK si necesitas más (p.ej. jdk.charsets) -->
-                                <argument>--add-modules</argument>
-                                <argument>java.se,jdk.crypto.ec,jdk.localedata</argument>
-                                <argument>--output</argument>
-                                <argument>${project.build.directory}/runtime11</argument>
-                            </arguments>
-                            <workingDirectory>${project.build.directory}</workingDirectory>
-                        </configuration>
-                    </execution>
-
-                    <!-- 5) jpackage → app-image (carpeta portable con exe dentro) -->
-                    <execution>
-                        <id>jpackage-appimage</id>
-                        <phase>package</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <executable>${jpackage.bin}</executable>
-                            <arguments>
-                                <argument>--type</argument><argument>app-image</argument>
-                                <argument>--name</argument><argument>FilmotecaInvertida</argument>
-
-                                <argument>--input</argument>
-                                <argument>${project.build.directory}/app</argument>
-
-                                <argument>--main-jar</argument>
-                                <argument>${project.build.finalName}.jar</argument>
-
-                                <argument>--runtime-image</argument>
-                                <argument>${project.build.directory}/runtime11</argument>
-
-                                <!-- ICONO (opcional pero funciona también en app-image).
-                                     Deja estas DOS líneas o comenta ambas si no tienes el fichero .ico
-                                <argument>-icon</argument>-->
-            <!--
-            <argument>${project.basedir}/src/main/resources/app.ico</argument>-->
-
-            <argument>--app-version</argument><argument>${app.version}</argument>
-            <argument>--dest</argument><argument>${project.build.directory}/dist</argument>
-            <argument>--verbose</argument>
-        </arguments>
-        <workingDirectory>${project.build.directory}</workingDirectory>
-    </configuration>
-</execution>
-
-</executions>
-</plugin>
-
-<!-- 6) Compilar a Java 11 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -357,16 +259,6 @@
                     <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-maven-plugin</artifactId>
-                <version>0.0.8</version>
-                <configuration>
-                    <mainClass>org.example.filmotecadelreves.UI.MainUI</mainClass>
-                </configuration>
-            </plugin>
-
-
         </plugins>
     </build>
 </project>
