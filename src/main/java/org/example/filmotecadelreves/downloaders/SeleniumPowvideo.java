@@ -12,6 +12,7 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.io.FileInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.*;
@@ -306,42 +307,31 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
      * @param userInteraction Si es true, no se usa el modo headless para permitir la interacción del usuario
      */
     private void setupBrowser(boolean userInteraction) {
-        String driverPath = ChromeExecutableLocator.resolveChromeDriver(CHROME_DRIVER_PATH);
-        if (driverPath != null) {
-            System.setProperty("webdriver.chrome.driver", driverPath);
-            logDebug("Usando ChromeDriver en: " + driverPath);
-        } else {
-            System.clearProperty("webdriver.chrome.driver");
-            logWarn("ChromeDriver empaquetado no disponible. Selenium Manager resolverá la versión adecuada.");
-        }
+
+        // FORZAR USO DE SELENIUM MANAGER
+        System.clearProperty("webdriver.chrome.driver");
+        logDebug("Selenium Manager resolverá automáticamente la versión correcta de ChromeDriver.");
 
         ChromeOptions options = new ChromeOptions();
+
+        // BINARIO DE CHROME (SI EXISTE)
         String chromeBinary = ChromeExecutableLocator.resolveChromeBinary(CHROME_PATH);
         if (chromeBinary != null) {
             options.setBinary(chromeBinary);
             logDebug("Usando binario de Chrome: " + chromeBinary);
-        } else {
-            logWarn("No se encontró un binario de Chrome personalizado. Se usará el navegador predeterminado del sistema.");
         }
+
         boolean headlessMode = !userInteraction && runHeadless;
         logDebug("Configurando navegador (userInteraction=" + userInteraction + ", headless=" + headlessMode + ")");
 
-        // Cargar extensiones
+        // EXTENSIONES
         boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
-        if (!popupExtensionLoaded) {
-            logWarn("No se pudo cargar la extensión de bloqueo de popups.");
-        } else {
+        if (popupExtensionLoaded) {
             logDebug("Extensión de bloqueo de popups cargada correctamente.");
         }
 
-        // Solo cargar la extensión NoPecha si no se requiere interacción del usuario
         if (!userInteraction) {
             isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
-            if (!isNopechaInstalled) {
-                logWarn("No se pudo cargar la extensión NoPeCaptcha.");
-            }
-        } else {
-            isNopechaInstalled = false;
         }
 
         options.addArguments(
@@ -354,16 +344,18 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                 "--remote-allow-origins=*"
         );
 
-        // Usar modo headless solo si no se requiere interacción del usuario
         if (headlessMode) {
             options.addArguments("--headless=new");
         }
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+
         currentSessionHeadless = headlessMode;
-        logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
+
+        logDebug("Navegador inicializado. Modo headless=" + headlessMode);
     }
+
 
     private void shutdownDriver() {
         if (driver == null) {
