@@ -51,6 +51,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
+            "Extension/nopecatcha old",
             "Extension/NopeCaptcha.crx",
             "lib/nopecha.crx",
             "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
