@@ -308,26 +308,28 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
      */
     private void setupBrowser(boolean userInteraction) {
 
-        // FORZAR USO DE SELENIUM MANAGER
+        // ❗ Fuerza a Selenium Manager a elegir el ChromeDriver correcto
         System.clearProperty("webdriver.chrome.driver");
-        logDebug("Selenium Manager resolverá automáticamente la versión correcta de ChromeDriver.");
+
+        // ❗ Usamos SIEMPRE tu Chrome personalizado
+        String customChrome = Paths.get("chrome-win", "Chrome.exe").toAbsolutePath().toString();
 
         ChromeOptions options = new ChromeOptions();
-
-        // BINARIO DE CHROME (SI EXISTE)
-        String chromeBinary = ChromeExecutableLocator.resolveChromeBinary(CHROME_PATH);
-        if (chromeBinary != null) {
-            options.setBinary(chromeBinary);
-            logDebug("Usando binario de Chrome: " + chromeBinary);
-        }
+        options.setBinary(customChrome);
+        logDebug("Usando Chrome personalizado: " + customChrome);
 
         boolean headlessMode = !userInteraction && runHeadless;
-        logDebug("Configurando navegador (userInteraction=" + userInteraction + ", headless=" + headlessMode + ")");
+        logDebug("Configurando navegador (userInteraction=" + userInteraction +
+                ", headless=" + headlessMode + ")");
 
-        // EXTENSIONES
-        boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
+        // ----- EXTENSIONES (CRX FUNCIONAN SOLO CON ESTE CHROME) -----
+        boolean popupExtensionLoaded =
+                addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
+
         if (popupExtensionLoaded) {
             logDebug("Extensión de bloqueo de popups cargada correctamente.");
+        } else {
+            logWarn("No se pudo cargar la extensión de bloqueo de popups.");
         }
 
         if (!userInteraction) {
@@ -337,9 +339,6 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
         options.addArguments(
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                "--disable-background-timer-throttling",
                 "--window-size=1920,1080",
                 "--remote-allow-origins=*"
         );
@@ -348,12 +347,13 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
             options.addArguments("--headless=new");
         }
 
+        // ❗ ChromeDriver lo elegirá Selenium Manager automáticamente según ese Chrome.exe
         driver = new ChromeDriver(options);
-        wait = new WebDriverWait(driver, Duration.ofSeconds(15));
 
+        wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         currentSessionHeadless = headlessMode;
 
-        logDebug("Navegador inicializado. Modo headless=" + headlessMode);
+        logDebug("Navegador inicializado (custom Chrome). Headless=" + headlessMode);
     }
 
 
