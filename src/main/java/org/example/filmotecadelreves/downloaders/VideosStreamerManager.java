@@ -28,7 +28,9 @@ import java.util.concurrent.TimeUnit;
 public class VideosStreamerManager {
     private WebDriver driver;
     private volatile boolean headless;
-    protected static final String CHROME_DRIVER_PATH = buildRelativePath("ChromeDriver", "chromedriver.exe");
+    protected static final String PRIMARY_CHROME_DRIVER = buildRelativePath("chrome-win", "chromedriver.exe");
+    protected static final String FALLBACK_CHROME_DRIVER = buildRelativePath("ChromeDriver", "chromedriver.exe");
+    protected static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER, FALLBACK_CHROME_DRIVER};
     protected static final String CHROME_PATH = buildRelativePath("chrome-win", "chrome.exe");
 
     private static final long EXTENSION_INITIALIZATION_DELAY_MS = 3000L;
@@ -80,8 +82,10 @@ public class VideosStreamerManager {
      */
     protected VideosStreamerManager(List<ServerConfig> customServerConfigs) {
         // Set the path to the ChromeDriver
-        String packagedDriver = getAbsolutePath(CHROME_DRIVER_PATH);
-        String resolvedDriver = ChromeExecutableLocator.resolveChromeDriver(packagedDriver);
+        String resolvedDriver = ChromeExecutableLocator.resolveChromeDriver(
+                getAbsolutePath(PRIMARY_CHROME_DRIVER),
+                getAbsolutePath(FALLBACK_CHROME_DRIVER)
+        );
         if (resolvedDriver != null) {
             System.setProperty("webdriver.chrome.driver", resolvedDriver);
             System.out.println("Using ChromeDriver: " + resolvedDriver);

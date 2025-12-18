@@ -26,7 +26,9 @@ import java.util.function.Consumer;
  */
 public class MixdropDownloader implements DirectDownloader {
     // Configuración
-    private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
+    private static final String PRIMARY_CHROME_DRIVER = resolvePath("chrome-win", "chromedriver.exe");
+    private static final String FALLBACK_CHROME_DRIVER = resolvePath("ChromeDriver", "chromedriver.exe");
+    private static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER, FALLBACK_CHROME_DRIVER};
     private static final String CHROME_BINARY_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final int WAIT_TIME_SECONDS = 10; // Tiempo de espera para Mixdrop
 
@@ -49,9 +51,20 @@ public class MixdropDownloader implements DirectDownloader {
                     Thread.sleep(1000);
                 }
 
-                System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
+                String driverPath = ChromeExecutableLocator.resolveChromeDriver(CHROME_DRIVER_CANDIDATES);
+                if (driverPath != null) {
+                    System.setProperty("webdriver.chrome.driver", driverPath);
+                } else {
+                    System.clearProperty("webdriver.chrome.driver");
+                    System.err.println("ChromeDriver empaquetado no disponible. Selenium Manager resolverá la versión adecuada.");
+                }
                 ChromeOptions options = new ChromeOptions();
-                options.setBinary(CHROME_BINARY_PATH);
+                String chromeBinary = ChromeExecutableLocator.resolveChromeBinary(CHROME_BINARY_PATH);
+                if (chromeBinary != null) {
+                    options.setBinary(chromeBinary);
+                } else {
+                    System.err.println("No se encontró un Chrome personalizado. Se usará el navegador predeterminado del sistema.");
+                }
                 options.addArguments("--no-sandbox", "--disable-dev-shm-usage", "--window-size=1920,1080", "--remote-allow-origins=*");
                 driver = new ChromeDriver(options);
                 WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
