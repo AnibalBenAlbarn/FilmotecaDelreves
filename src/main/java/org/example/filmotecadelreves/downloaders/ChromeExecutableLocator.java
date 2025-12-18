@@ -98,11 +98,11 @@ final class ChromeExecutableLocator {
     }
 
     /**
-     * Resolves the ChromeDriver executable path. If no override exists and the packaged
-     * driver does not exist, {@code null} is returned so Selenium Manager can download
-     * a matching version automatically.
+     * Resolves the ChromeDriver executable path. If no override exists and none of the provided
+     * packaged drivers exist, {@code null} is returned so Selenium Manager can download a matching
+     * version automatically.
      */
-    static String resolveChromeDriver(String packagedDriver) {
+    static String resolveChromeDriver(String... packagedDrivers) {
         if (cachedDriverPath != null) {
             return cachedDriverPath;
         }
@@ -119,7 +119,11 @@ final class ChromeExecutableLocator {
             addIfPresent(candidates, System.getenv(envKey));
         }
 
-        addIfPresent(candidates, packagedDriver);
+        if (packagedDrivers != null) {
+            for (String packagedDriver : packagedDrivers) {
+                addIfPresent(candidates, packagedDriver);
+            }
+        }
 
         cachedDriverPath = firstExistingExecutable(candidates);
         if (cachedDriverPath == null) {
