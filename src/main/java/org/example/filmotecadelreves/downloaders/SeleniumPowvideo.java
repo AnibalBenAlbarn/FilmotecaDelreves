@@ -621,18 +621,16 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                 continue;
             }
 
-            Optional<Path> unpacked = unpackCrxAsUnpacked(addon);
-            if (unpacked.isPresent()) {
-                unpackedExtensions.add(unpacked.get().toString());
-                installed = true;
-                continue;
-            }
-
             try {
                 options.addExtensions(addon);
                 installed = true;
             } catch (Exception e) {
                 logWarn("Fallo instalando la extensión desde CRX, intentando modo unpacked: " + addon.getAbsolutePath());
+                Optional<Path> unpacked = unpackCrxAsUnpacked(addon);
+                if (unpacked.isPresent()) {
+                    unpackedExtensions.add(unpacked.get().toString());
+                    installed = true;
+                }
             }
         }
 
