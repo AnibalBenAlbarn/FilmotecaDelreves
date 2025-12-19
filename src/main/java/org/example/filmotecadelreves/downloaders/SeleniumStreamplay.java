@@ -11,36 +11,26 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
-import java.io.FileInputStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.file.*;
-import java.nio.charset.StandardCharsets;
-import java.io.IOException;
-import java.nio.file.StandardOpenOption;
 import java.io.File;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Implementación de descargador para el servidor Streamplay
@@ -362,12 +352,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                 options.addExtensions(addon);
                 installed = true;
             } catch (Exception e) {
-                logWarn("Fallo instalando la extensión desde CRX, intentando modo unpacked: " + addon.getAbsolutePath());
-                Optional<Path> unpacked = unpackCrxAsUnpacked(addon);
-                if (unpacked.isPresent()) {
-                    unpackedExtensions.add(unpacked.get().toString());
-                    installed = true;
-                }
+                logWarn("Fallo instalando la extensión desde CRX: " + addon.getAbsolutePath() + " => " + e.getMessage());
             }
         }
 
@@ -376,47 +361,6 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         }
 
         return installed;
-    }
-
-    private Optional<Path> unpackCrxAsUnpacked(File crxFile) {
-        try (FileInputStream fis = new FileInputStream(crxFile)) {
-            byte[] header = fis.readNBytes(16);
-            if (header.length < 16 || header[0] != 'C' || header[1] != 'r' || header[2] != '2' || header[3] != '4') {
-                logWarn("El archivo CRX no tiene cabecera válida: " + crxFile.getAbsolutePath());
-                return Optional.empty();
-            }
-
-            ByteBuffer buffer = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
-            buffer.position(8);
-            long publicKeyLength = Integer.toUnsignedLong(buffer.getInt());
-            long signatureLength = Integer.toUnsignedLong(buffer.getInt());
-            long skipBytes = publicKeyLength + signatureLength;
-
-            if (skipBytes > 0) {
-                fis.skipNBytes(skipBytes);
-            }
-
-            Path tempDir = Files.createTempDirectory("crx-unpacked-");
-
-            try (ZipInputStream zis = new ZipInputStream(fis)) {
-                ZipEntry entry;
-                while ((entry = zis.getNextEntry()) != null) {
-                    Path entryPath = tempDir.resolve(entry.getName());
-                    if (entry.isDirectory()) {
-                        Files.createDirectories(entryPath);
-                    } else {
-                        Files.createDirectories(entryPath.getParent());
-                        Files.copy(zis, entryPath, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                }
-            }
-
-            logDebug("Extensión desempaquetada en: " + tempDir);
-            return Optional.of(tempDir);
-        } catch (IOException e) {
-            logWarn("No se pudo desempaquetar la extensión CRX: " + e.getMessage());
-            return Optional.empty();
-        }
     }
 
     private File resolveAddonFile(String addonPath) {
