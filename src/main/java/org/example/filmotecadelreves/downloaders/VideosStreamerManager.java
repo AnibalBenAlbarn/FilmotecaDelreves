@@ -382,7 +382,6 @@ public class VideosStreamerManager {
 
         // Add extensions based on server configuration
         Set<String> packagedExtensions = new LinkedHashSet<>();
-        Set<String> unpackedExtensions = new LinkedHashSet<>();
 
         for (String addonPath : config.getAddons()) {
             if (addonPath == null || addonPath.isEmpty()) {
@@ -395,9 +394,7 @@ public class VideosStreamerManager {
                 String canonicalPath = canonicalAddon.getAbsolutePath();
 
                 if (canonicalAddon.isDirectory()) {
-                    if (!unpackedExtensions.add(canonicalPath)) {
-                        System.out.println("Skipping duplicate unpacked extension: " + canonicalPath);
-                    }
+                    System.out.println("Skipping unpacked extension (only CRX files are supported): " + canonicalPath);
                 } else {
                     if (!packagedExtensions.add(canonicalPath)) {
                         System.out.println("Skipping duplicate extension: " + canonicalPath);
@@ -413,14 +410,7 @@ public class VideosStreamerManager {
             System.out.println("Added extension: " + extensionPath);
         }
 
-        if (!unpackedExtensions.isEmpty()) {
-            options.addArguments("--load-extension=" + String.join(",", unpackedExtensions));
-            for (String extensionPath : unpackedExtensions) {
-                System.out.println("Added unpacked extension: " + extensionPath);
-            }
-        }
-
-        if (packagedExtensions.isEmpty() && unpackedExtensions.isEmpty()) {
+        if (packagedExtensions.isEmpty()) {
             System.out.println("No extensions were loaded for this configuration.");
         }
 
