@@ -1,0 +1,273 @@
+[33m6e6eee5[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m Ignorar chrome-win y configurar Git LFS
+[33mdeb3c7b[m Configurar Git LFS para DLL
+[33m904515f[m Unzip extensions
+[33mbb0c257[m Merge remote-tracking branch 'origin/master'
+[33ma5b1f8a[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge pull request #113 from AnibalBenAlbarn/codex/open-chrome-browser-manually-on-timeout
+[33mf13fc5b[m[33m ([m[1;31morigin/codex/open-chrome-browser-manually-on-timeout[m[33m)[m Launch packaged Chrome for manual Streamplay fallback
+[33m1a619a4[m Merge remote-tracking branch 'origin/master'
+[33mc608d65[m Merge pull request #111 from AnibalBenAlbarn/codex/modify-classes-to-install-crx-extensions
+[33m22eb2d1[m[33m ([m[1;31morigin/codex/modify-classes-to-install-crx-extensions[m[33m)[m Configure CRX extensions with fallback Chrome startup
+[33mba9ebfb[m Merge remote-tracking branch 'origin/master'
+[33meb68a67[m Merge pull request #110 from AnibalBenAlbarn/codex/fix-session-creation-error-in-selenium
+[33m5fb19c8[m[33m ([m[1;31morigin/codex/fix-session-creation-error-in-selenium[m[33m)[m Install CRX extensions directly
+[33m8a74c50[m Prefer unpacked CRX extensions for Selenium
+[33m558f7a0[m Merge remote-tracking branch 'origin/master'
+[33m7afe6e9[m Merge pull request #109 from AnibalBenAlbarn/codex/install-crx-extensions-for-selenium
+[33ma7ca99e[m[33m ([m[1;31morigin/codex/install-crx-extensions-for-selenium[m[33m)[m Prefer direct CRX installation for Selenium extensions
+[33m9331ed7[m Unzip extensions
+[33m4ee0929[m Merge pull request #108 from AnibalBenAlbarn/codex/fix-chromedriver-version-mismatch-issue
+[33m87933c1[m[33m ([m[1;31morigin/codex/fix-chromedriver-version-mismatch-issue[m[33m)[m Allow Selenium Manager to resolve ChromeDriver
+[33m511499f[m Merge pull request #107 from AnibalBenAlbarn/codex/fix-session-creation-error-in-powvideo
+[33m2175ecb[m[33m ([m[1;31morigin/codex/fix-session-creation-error-in-powvideo[m[33m)[m Align ChromeDriver resolution with bundled Chrome
+[33mb306a4e[m Merge pull request #106 from AnibalBenAlbarn/codex/install-selenium-extensions-in-order
+[33md0c2a4b[m[33m ([m[1;31morigin/codex/install-selenium-extensions-in-order[m[33m)[m Prefer unpacked extensions for selenium downloaders
+[33mb2e75ef[m Unzip extensions
+[33m0b3febf[m COmmit
+[33mfcc4f22[m Merge remote-tracking branch 'origin/master'
+[33m8dee7c7[m COmmit
+[33m27aea03[m Merge pull request #105 from AnibalBenAlbarn/codex/install-extensions-for-selenium-with-chromium
+[33m8a184cf[m[33m ([m[1;31morigin/codex/install-extensions-for-selenium-with-chromium[m[33m)[m Add unpacked extension fallback for Selenium downloaders
+[33m414b54e[m[33m ([m[1;31morigin/codex/update-pom-for-javafx-21-and-unify-versions[m[33m)[m Fix POM for Java 21 tooling
+[33m1408bc4[m[33m ([m[1;33mtag: [m[1;33m0.1[m[33m)[m Merge pull request #103 from AnibalBenAlbarn/codex/review-fat-jar-configuration-options
+[33m9d171ec[m[33m ([m[1;31morigin/codex/review-fat-jar-configuration-options[m[33m)[m Build shaded fat jar with JavaFX 21
+[33maba3255[m Merge pull request #102 from AnibalBenAlbarn/codex/fix-user-browser-search-not-starting
+[33mac87b29[m[33m ([m[1;31morigin/codex/fix-user-browser-search-not-starting[m[33m)[m Allow configuring Selenium Chrome binaries
+[33mc4a1c57[m COmmit
+[33mecc1ea1[m Merge pull request #101 from AnibalBenAlbarn/codex/fix-download-error-in-powvideo
+[33m276983c[m[33m ([m[1;31morigin/codex/fix-download-error-in-powvideo[m[33m)[m Fix ProgressDialog creation off FX thread
+[33m5521f27[m Merge pull request #100 from AnibalBenAlbarn/codex/fix-checkbox-issue-in-downloads
+[33m0ed5b4e[m[33m ([m[1;31morigin/codex/fix-checkbox-issue-in-downloads[m[33m)[m Fix episode selection checkbox persistence
+[33m65ca51f[m Merge pull request #99 from AnibalBenAlbarn/codex/add-loading-windows-for-database-queries-60bczt
+[33ma24d79d[m[33m ([m[1;31morigin/codex/add-loading-windows-for-database-queries-60bczt[m[33m)[m Preload episode metadata under loading dialog
+[33m8f23625[m Merge pull request #98 from AnibalBenAlbarn/codex/add-loading-windows-for-database-queries
+[33m1f014f4[m[33m ([m[1;31morigin/codex/add-loading-windows-for-database-queries[m[33m)[m Show unified loading dialog message for database queries
+[33mde594d5[m Merge pull request #97 from AnibalBenAlbarn/codex/add-manual-download-button-for-specific-servers
+[33m94ad514[m[33m ([m[1;31morigin/codex/add-manual-download-button-for-specific-servers[m[33m)[m Add manual manual download workflow for PowVideo and Streamplay
+[33mb7e06f3[m Merge pull request #96 from AnibalBenAlbarn/codex/fix-issue-with-mp4-link-timeout
+[33m2889686[m[33m ([m[1;31morigin/codex/fix-issue-with-mp4-link-timeout[m[33m)[m Fallback PowVideo downloads to visible mode after repeated headless timeouts
+[33m2999f3b[m Merge pull request #95 from AnibalBenAlbarn/codex/enable-stream-button-for-powvideo-and-streamplay
+[33m78c7ae3[m[33m ([m[1;31morigin/codex/enable-stream-button-for-powvideo-and-streamplay[m[33m)[m Enable default browser streaming for Powvideo and Streamplay
+[33m204cbe8[m Merge pull request #94 from AnibalBenAlbarn/codex/fix-direct-download-series-processing-issue
+[33mfd3e63d[m[33m ([m[1;31morigin/codex/fix-direct-download-series-processing-issue[m[33m)[m Queue direct downloads sequentially
+[33m517a294[m Merge pull request #93 from AnibalBenAlbarn/codex/add-options-for-download-paths
+[33m8c269b3[m[33m ([m[1;31morigin/codex/add-options-for-download-paths[m[33m)[m Add separate paths and improve direct series loading
+[33meaee274[m Merge pull request #92 from AnibalBenAlbarn/codex/fix-graphical-loading-frames
+[33mc7888b6[m[33m ([m[1;31morigin/codex/fix-graphical-loading-frames[m[33m)[m Improve loading dialog reuse
+[33mc3c0d26[m Merge pull request #91 from AnibalBenAlbarn/codex/fix-pause-button-functionality
+[33mb16ab53[m[33m ([m[1;31morigin/codex/fix-pause-button-functionality[m[33m)[m Improve direct download pause resume handling
+[33m27da9ee[m Merge pull request #90 from AnibalBenAlbarn/codex/fix-error
+[33m0f0296e[m[33m ([m[1;31morigin/codex/fix-error[m[33m)[m Fix Java 11 incompatible instanceof pattern
+[33ma580b59[m Merge pull request #89 from AnibalBenAlbarn/codex/fix-download-session-not-resuming
+[33me9b6aac[m[33m ([m[1;31morigin/codex/fix-download-session-not-resuming[m[33m)[m Add confirmation before restarting failed direct downloads
+[33mdd6e855[m Merge pull request #88 from AnibalBenAlbarn/codex/fix-method-argument-type-mismatch
+[33mc2c32c7[m[33m ([m[1;31morigin/codex/fix-method-argument-type-mismatch[m[33m)[m Fix Streamplay resumable download URL argument
+[33mebdda7e[m Merge pull request #87 from AnibalBenAlbarn/codex/fix-imported-method-failure
+[33mc3e71db[m[33m ([m[1;31morigin/codex/fix-imported-method-failure[m[33m)[m Avoid HttpURLConnection constants unavailable on some JDKs
+[33mfdb07cb[m Merge pull request #86 from AnibalBenAlbarn/codex/add-persistent-pause/resume-for-downloads-kcokui
+[33m148d50c[m[33m ([m[1;31morigin/codex/add-persistent-pause/resume-for-downloads-kcokui[m[33m)[m Merge branch 'master' into codex/add-persistent-pause/resume-for-downloads-kcokui
+[33m69ba972[m Enable resumable downloads for Streamplay and Powvideo
+[33mbc2d393[m Merge pull request #85 from AnibalBenAlbarn/codex/add-persistent-pause/resume-for-downloads
+[33m80fe17e[m[33m ([m[1;31morigin/codex/add-persistent-pause/resume-for-downloads[m[33m)[m Add resumable direct download support with persisted metadata
+[33mf13e030[m Merge pull request #84 from AnibalBenAlbarn/codex/equiparacion-de-codigo-entre-streamplay-y-powvideo
+[33m415ba99[m[33m ([m[1;31morigin/codex/equiparacion-de-codigo-entre-streamplay-y-powvideo[m[33m)[m Align Streamplay downloader flow with Powvideo
+[33me1eee42[m Merge pull request #83 from AnibalBenAlbarn/codex/investigate-selenium-button-click-issue
+[33mc8323cf[m[33m ([m[1;31morigin/codex/investigate-selenium-button-click-issue[m[33m)[m Prevent throttling when Selenium window is backgrounded
+[33m03eb8f0[m Merge pull request #82 from AnibalBenAlbarn/codex/guardar-estado-de-descargas-directas
+[33maba2201[m[33m ([m[1;31morigin/codex/guardar-estado-de-descargas-directas[m[33m)[m Persist direct download state across shutdown
+[33mf650fab[m Merge pull request #81 from AnibalBenAlbarn/codex/fix-application-not-closing-properly
+[33ma45eab5[m[33m ([m[1;31morigin/codex/fix-application-not-closing-properly[m[33m)[m Cancel active downloads when exiting
+[33m5da45a9[m Merge pull request #80 from AnibalBenAlbarn/codex/fix-headless-option-for-selenium
+[33m5a6f993[m[33m ([m[1;31morigin/codex/fix-headless-option-for-selenium[m[33m)[m Respect headless preference for Selenium streamers
+[33m19b2f60[m Merge pull request #79 from AnibalBenAlbarn/codex/fix-powvideo-download-interruptions
+[33mfd50c5b[m[33m ([m[1;31morigin/codex/fix-powvideo-download-interruptions[m[33m)[m Handle interruptions during PowVideo mp4 wait
+[33m8edcdb9[m Merge pull request #78 from AnibalBenAlbarn/codex/disable-stream-button-for-specific-servers
+[33mbe4f75f[m[33m ([m[1;31morigin/codex/disable-stream-button-for-specific-servers[m[33m)[m Disable streaming for Streamplay and Powvideo servers
+[33m73b1d9b[m Merge pull request #77 from AnibalBenAlbarn/codex/set-download-speed-to-zero-upon-completion
+[33m15e74aa[m[33m ([m[1;31morigin/codex/set-download-speed-to-zero-upon-completion[m[33m)[m Ensure completed direct downloads show zero speed
+[33m97295dd[m Merge pull request #76 from AnibalBenAlbarn/codex/fix-powvideo/streamplay-download-counter-logic
+[33m183f298[m[33m ([m[1;31morigin/codex/fix-powvideo/streamplay-download-counter-logic[m[33m)[m Fix PowVideo/StreamPlay download limit handling
+[33m1130dcb[m Merge pull request #75 from AnibalBenAlbarn/codex/fix-headless-mode-functionality
+[33mb613654[m[33m ([m[1;31morigin/codex/fix-headless-mode-functionality[m[33m)[m Improve headless mode handling and stream retries
+[33m7141f6e[m Merge pull request #74 from AnibalBenAlbarn/codex/make-video-link-fetching-recurrent
+[33md645514[m[33m ([m[1;31morigin/codex/make-video-link-fetching-recurrent[m[33m)[m Improve PowVideo retries and headless control
+[33ma584183[m Merge pull request #73 from AnibalBenAlbarn/codex/fix-selenium-session-management-during-downloads
+[33mdbfb4b3[m[33m ([m[1;31morigin/codex/fix-selenium-session-management-during-downloads[m[33m)[m Improve Streamplay Selenium stability
+[33m9705f1a[m Merge pull request #72 from AnibalBenAlbarn/codex/add-non-headless-option-for-download
+[33m7252457[m[33m ([m[1;31morigin/codex/add-non-headless-option-for-download[m[33m)[m Add option to toggle Streamplay headless mode
+[33mc52f01b[m Merge pull request #71 from AnibalBenAlbarn/codex/add-background-download-support-with-mini-icon
+[33madfb6a5[m[33m ([m[1;31morigin/codex/add-background-download-support-with-mini-icon[m[33m)[m Draw tray icon procedurally
+[33mdaaf52b[m Merge pull request #70 from AnibalBenAlbarn/codex/debug-obtaining-v.mp4-links-in-headless-mode
+[33m4d474eb[m[33m ([m[1;31morigin/codex/debug-obtaining-v.mp4-links-in-headless-mode[m[33m)[m Improve Selenium debug instrumentation for headless streams
+[33m99d0fa5[m Merge pull request #69 from AnibalBenAlbarn/codex/suggest-improvements-for-download-manager
+[33m9beae8f[m[33m ([m[1;31morigin/codex/suggest-improvements-for-download-manager[m[33m)[m Add configurability and tests for download persistence manager
+[33ma18fc4f[m Merge pull request #68 from AnibalBenAlbarn/codex/create-stream-managers-for-powvideo-and-streamplat-wg5oco
+[33mdc17095[m[33m ([m[1;31morigin/codex/create-stream-managers-for-powvideo-and-streamplat-wg5oco[m[33m)[m Merge branch 'master' into codex/create-stream-managers-for-powvideo-and-streamplat-wg5oco
+[33m52fd09e[m Enhance stealth browser emulation
+[33m8ab0784[m Merge pull request #67 from AnibalBenAlbarn/codex/create-stream-managers-for-powvideo-and-streamplat
+[33m9de3fce[m[33m ([m[1;31morigin/codex/create-stream-managers-for-powvideo-and-streamplat[m[33m)[m Add dedicated Powvideo and Streamplay stream managers
+[33m48d0d78[m Merge pull request #65 from AnibalBenAlbarn/codex/improve-downloads-for-powvideo-and-streamplay
+[33m68e2ffd[m[33m ([m[1;31morigin/codex/improve-downloads-for-powvideo-and-streamplay[m[33m)[m Refactor streamplay and powvideo download extraction
+[33m13ad098[m Merge pull request #64 from AnibalBenAlbarn/codex/modificar-urls-de-powvideo-y-streamplay
+[33me977442[m[33m ([m[1;31morigin/codex/modificar-urls-de-powvideo-y-streamplay[m[33m)[m Normalize PowVideo and StreamPlay URLs
+[33m7b0b04e[m Merge pull request #63 from AnibalBenAlbarn/codex/fix-errors-in-videostreammanager.java
+[33m4be9438[m[33m ([m[1;31morigin/codex/fix-errors-in-videostreammanager.java[m[33m)[m Fix Selenium compatibility issues
+[33mf10b7cb[m Merge pull request #62 from AnibalBenAlbarn/codex/implement-download-via-streamplay-and-powvideo
+[33md4c257c[m[33m ([m[1;31morigin/codex/implement-download-via-streamplay-and-powvideo[m[33m)[m Wait for NoPeCaptcha on Powvideo and Streamplay downloads
+[33m755d660[m Merge pull request #61 from AnibalBenAlbarn/codex/add-3-seconds-streaming-delay-for-extensions
+[33mf3be713[m[33m ([m[1;31morigin/codex/add-3-seconds-streaming-delay-for-extensions[m[33m)[m Delay stream window until extensions load
+[33m904f425[m Merge pull request #60 from AnibalBenAlbarn/codex/fix-type-issues-in-copyselectiontoclipboard
+[33m0263b0e[m[33m ([m[1;31morigin/codex/fix-type-issues-in-copyselectiontoclipboard[m[33m)[m Fix TableUtils clipboard selection generics
+[33m426081a[m Merge pull request #59 from AnibalBenAlbarn/codex/fix-incompatible-types-error-in-tableutils.java
+[33m769a9ea[m[33m ([m[1;31morigin/codex/fix-incompatible-types-error-in-tableutils.java[m[33m)[m Fix TableUtils generics for clipboard copy
+[33m6f04c13[m Merge pull request #58 from AnibalBenAlbarn/codex/add-copy-and-context-menu-options
+[33m1a5f9d0[m[33m ([m[1;31morigin/codex/add-copy-and-context-menu-options[m[33m)[m Enhance table interaction controls
+[33m6af44c7[m Merge pull request #57 from AnibalBenAlbarn/codex/fix-window-display-settings
+[33m4a464cb[m[33m ([m[1;31morigin/codex/fix-window-display-settings[m[33m)[m Improve main window initialization
+[33m2459100[m Merge pull request #56 from AnibalBenAlbarn/codex/fix-streamtape-url-path-replacement
+[33m962af5a[m[33m ([m[1;31morigin/codex/fix-streamtape-url-path-replacement[m[33m)[m Normalize StreamTape streaming URLs
+[33m888604a[m segundo commit con el contenido de chrome-win
+[33mec2feb9[m chrome-win 140
+[33mfce31da[m delete chrome-win de 143
+[33ma8d1d62[m Merge pull request #55 from AnibalBenAlbarn/codex/fix-torrent-link-id-handling-issues-xxxq87
+[33m4bbbae5[m[33m ([m[1;31morigin/codex/fix-torrent-link-id-handling-issues-xxxq87[m[33m)[m Merge branch 'master' into codex/fix-torrent-link-id-handling-issues-xxxq87
+[33mee8be58[m Expose relative extension constants for stream managers
+[33m53ca5b6[m Merge pull request #54 from AnibalBenAlbarn/codex/fix-torrent-link-id-handling-issues
+[33m80fd871[m[33m ([m[1;31morigin/codex/fix-torrent-link-id-handling-issues[m[33m)[m Refine downloader paths and selection UIs
+[33m07aec99[m Subo carpeta chrome-win al repositorio
+[33m4af8880[m Añadir DLL de Chrome con Git LFS
+[33m94c4dd6[m delete chrome test y unpacket extension
+[33mc9a97b5[m Merge pull request #53 from AnibalBenAlbarn/codex/modify-extension-installation-sequence
+[33m45a25a1[m[33m ([m[1;31morigin/codex/modify-extension-installation-sequence[m[33m)[m Adjust Streamtape launch extensions and window mode
+[33m332aea7[m Merge pull request #52 from AnibalBenAlbarn/codex/install-streamtapedownloader-and-popupstrictold-extensions
+[33m10c22d0[m[33m ([m[1;31morigin/codex/install-streamtapedownloader-and-popupstrictold-extensions[m[33m)[m Allow CRX extensions from Extension directory
+[33m45cf25d[m Merge pull request #51 from AnibalBenAlbarn/codex/fix-extension-loading-error-in-chromedriver
+[33maa40ec9[m[33m ([m[1;31morigin/codex/fix-extension-loading-error-in-chromedriver[m[33m)[m Fix Streamtape extension handling
+[33mbf94570[m chrome browser test
+[33mdd4efa0[m Merge pull request #50 from AnibalBenAlbarn/codex/add-independent-stream-class-for-servers
+[33mfa7ae14[m[33m ([m[1;31morigin/codex/add-independent-stream-class-for-servers[m[33m)[m Refactor stream launcher to isolate browser and add Streamtape manager
+[33maacf19b[m Merge pull request #48 from AnibalBenAlbarn/codex/fix-direct-download-error
+[33m46909cc[m[33m ([m[1;31morigin/codex/fix-direct-download-error[m[33m)[m Sanitize download directories for Windows
+[33md8b82d6[m Merge pull request #47 from AnibalBenAlbarn/codex/fix-server-selection-in-download-links-eb3y7g
+[33m776e217[m[33m ([m[1;31morigin/codex/fix-server-selection-in-download-links-eb3y7g[m[33m)[m Merge branch 'master' into codex/fix-server-selection-in-download-links-eb3y7g
+[33m264ccb4[m Ensure direct download server selection maps to correct link
+[33m070bda8[m Merge pull request #46 from AnibalBenAlbarn/codex/fix-server-selection-in-download-links
+[33m25720c8[m[33m ([m[1;31morigin/codex/fix-server-selection-in-download-links[m[33m)[m Fix direct download server selection by using stored language
+[33mbe50f3c[m Merge pull request #45 from AnibalBenAlbarn/codex/implement-alternative-streamtape-downloader
+[33mf466a64[m[33m ([m[1;31morigin/codex/implement-alternative-streamtape-downloader[m[33m)[m Replace Streamtape downloader Selenium flow with Jsoup
+[33m4c0d43f[m Merge pull request #44 from AnibalBenAlbarn/codex/update-chrome-driver-and-search-paths
+[33m889d4be[m[33m ([m[1;31morigin/codex/update-chrome-driver-and-search-paths[m[33m)[m Update Selenium Chrome binary paths
+[33m17273be[m chrome browser test
+[33m6f292bf[m Añadir DLL de Chrome con Git LFS
+[33mb4c537d[m Chrome driver commit
+[33m48d661c[m infohash import
+[33m0234758[m Revert "Añadir DLL de Chrome con Git LFS"
+[33ma71957a[m Revert "error code confirm"
+[33m6be70d7[m Revert "Chromedriver commit"
+[33m3272ce7[m Chromedriver commit
+[33m38fecf8[m error code confirm
+[33m646138a[m Añadir DLL de Chrome con Git LFS
+[33m443ea43[m Merge pull request #43 from AnibalBenAlbarn/codex/add-loading-wheel-during-database-initialization
+[33mf40908a[m[33m ([m[1;31morigin/codex/add-loading-wheel-during-database-initialization[m[33m)[m Show startup loading spinner until initial data ready
+[33m574ec17[m Merge pull request #42 from AnibalBenAlbarn/codex/fix-download-pause-and-resume-features
+[33mdc3a72a[m[33m ([m[1;31morigin/codex/fix-download-pause-and-resume-features[m[33m)[m Improve download controls, persistence, and theme
+[33me880342[m Merge pull request #41 from AnibalBenAlbarn/codex/arreglar-el-juego-m4xt5r
+[33m96cd0fb[m[33m ([m[1;31morigin/codex/arreglar-el-juego-m4xt5r[m[33m)[m Merge branch 'master' into codex/arreglar-el-juego-m4xt5r
+[33m7425733[m Make torrent state descriptions tolerant of enum changes
+[33m154c39e[m Merge pull request #39 from AnibalBenAlbarn/codex/arreglar-el-juego
+[33m94cde7d[m[33m ([m[1;31morigin/codex/arreglar-el-juego[m[33m)[m Replace switch on TorrentStatus.State with safe comparisons
+[33m5b0ae74[m Merge pull request #38 from AnibalBenAlbarn/codex/fix-torrent-pause-button-functionality
+[33m130c753[m[33m ([m[1;31morigin/codex/fix-torrent-pause-button-functionality[m[33m)[m Improve torrent pause handling and quality selection
+[33m2bd4f3f[m Merge pull request #37 from AnibalBenAlbarn/codex/add-loading-window-during-startup
+[33m73c29df[m[33m ([m[1;31morigin/codex/add-loading-window-during-startup[m[33m)[m Show startup loading dialog when creating torrent downloader
+[33md13b663[m Merge pull request #36 from AnibalBenAlbarn/codex/enable-method-usage-with-interface
+[33m4d449b1[m[33m ([m[1;31morigin/codex/enable-method-usage-with-interface[m[33m)[m Integrar controles avanzados de torrents en la UI
+[33m4e33d0d[m Merge pull request #35 from AnibalBenAlbarn/codex/resolve-unused-notifications-pc66d4
+[33mff04504[m[33m ([m[1;31morigin/codex/resolve-unused-notifications-pc66d4[m[33m)[m Merge branch 'master' into codex/resolve-unused-notifications-pc66d4
+[33md2a5fa3[m Tighten torrent downloader null-safety and remove dead code
+[33m04980ae[m Merge pull request #34 from AnibalBenAlbarn/codex/resolve-unused-notifications
+[33m55c5e0c[m[33m ([m[1;31morigin/codex/resolve-unused-notifications[m[33m)[m Refine torrent downloader to address static warnings
+[33m4a95eb7[m error code confirm
+[33m01d4add[m Merge pull request #33 from AnibalBenAlbarn/codex/crear-logs-para-descargas-torrent
+[33m537e65f[m[33m ([m[1;31morigin/codex/crear-logs-para-descargas-torrent[m[33m)[m Add torrent activity logging and diagnostics
+[33m713ff67[m Merge pull request #32 from AnibalBenAlbarn/codex/fix-torrent-starting-issue-in-jlibtorrent
+[33md212d7d[m[33m ([m[1;31morigin/codex/fix-torrent-starting-issue-in-jlibtorrent[m[33m)[m Fix paused torrents when disabling auto management
+[33m96a5373[m Merge pull request #31 from AnibalBenAlbarn/codex/fix-missing-symbols-in-torrentdownloader
+[33mb7ba953[m[33m ([m[1;31morigin/codex/fix-missing-symbols-in-torrentdownloader[m[33m)[m Fix jlibtorrent compatibility issues
+[33mee325df[m Merge pull request #30 from AnibalBenAlbarn/codex/remove-last-scraped-boxes
+[33m09cc983[m[33m ([m[1;31morigin/codex/remove-last-scraped-boxes[m[33m)[m Remove scraper boxes and persist interface settings
+[33m07352ff[m Merge pull request #29 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed-lo9491
+[33m9074b9d[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed-lo9491[m[33m)[m Merge branch 'master' into codex/optimize-session-manager-for-download-speed-lo9491
+[33mbf730f3[m Improve torrent ramp-up and throughput tuning
+[33m23948c1[m Merge pull request #28 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed-6eubbh
+[33m32a1615[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed-6eubbh[m[33m)[m Merge branch 'master' into codex/optimize-session-manager-for-download-speed-6eubbh
+[33mabcb311[m libtorrent ejemplosde clases
+[33m9870765[m Improve peer handling and buffering for torrents
+[33m5325362[m Añadir DB a Git LFS
+[33m92e78bf[m Merge pull request #27 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed-bxpveo
+[33mfbb94f9[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed-bxpveo[m[33m)[m Merge branch 'master' into codex/optimize-session-manager-for-download-speed-bxpveo
+[33ma9b6caf[m Tune session startup and tracker settings for faster swarms
+[33med0c538[m Merge pull request #25 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed-wozgv4
+[33m172d4d6[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed-wozgv4[m[33m)[m Merge branch 'master' into codex/optimize-session-manager-for-download-speed-wozgv4
+[33m26bee6b[m Improve peer utilisation and session rate tracking
+[33mff50c7b[m Merge pull request #26 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed-lvc218
+[33mdb15c89[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed-lvc218[m[33m)[m Merge branch 'master' into codex/optimize-session-manager-for-download-speed-lvc218
+[33m4677307[m Improve torrent bandwidth allocation and peer usage
+[33mb69439d[m Improve peer discovery and session tuning
+[33m2bcea43[m Merge pull request #24 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed-7u1ny4
+[33m132bff9[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed-7u1ny4[m[33m)[m Enhance torrent session autotuning and peer discovery
+[33ma070d50[m Merge pull request #23 from AnibalBenAlbarn/codex/optimize-session-manager-for-download-speed
+[33m6f0fd37[m DLL necesario para jlibtorrent
+[33m90f6e23[m POM definitivo
+[33m2a02322[m[33m ([m[1;31morigin/codex/optimize-session-manager-for-download-speed[m[33m)[m Improve torrent connectivity defaults
+[33mc8fb767[m Merge pull request #22 from AnibalBenAlbarn/codex/fix-torrent-download-not-starting
+[33m9f47207[m[33m ([m[1;31morigin/codex/fix-torrent-download-not-starting[m[33m)[m Fix torrent table bindings and layout
+[33me269087[m Merge pull request #21 from AnibalBenAlbarn/codex/fix-errors-and-resolve-alerts-in-torrenthandle
+[33mbd37bee[m[33m ([m[1;31morigin/codex/fix-errors-and-resolve-alerts-in-torrenthandle[m[33m)[m Fix jlibtorrent API usage and sequential flag handling
+[33m924dbe8[m Merge pull request #20 from AnibalBenAlbarn/codex/fix-torrent-client-ui-and-integrate-downloads
+[33mecf115f[m[33m ([m[1;31morigin/codex/fix-torrent-client-ui-and-integrate-downloads[m[33m)[m Fix torrent downloader integration with jlibtorrent
+[33m450c8db[m Merge pull request #19 from AnibalBenAlbarn/codex/transformar-a-jlibtorrent-2.0.12.5
+[33m130fc9a[m[33m ([m[1;31morigin/codex/transformar-a-jlibtorrent-2.0.12.5[m[33m)[m Switch to jlibtorrent 2.0.12.5
+[33md466384[m Merge pull request #18 from AnibalBenAlbarn/codex/ensure-jlibtorrent-client-functionality
+[33m921d06b[m[33m ([m[1;31morigin/codex/ensure-jlibtorrent-client-functionality[m[33m)[m Enhance torrent downloader configuration and controls
+[33mb96eaf4[m intial db
+[33m88716c0[m intial db
+[33m694bd58[m Merge pull request #16 from AnibalBenAlbarn/codex/update-torrentdownloader-for-libtorrent4j-api
+[33m28dcc51[m[33m ([m[1;31morigin/codex/update-torrentdownloader-for-libtorrent4j-api[m[33m)[m Fix StateChangedAlert API usage
+[33m9c6b7f8[m Merge pull request #14 from AnibalBenAlbarn/codex/fix-torrent-download-functionality
+[33m0510021[m Merge pull request #15 from AnibalBenAlbarn/codex/update-tracking-for-direct-and-torrent-pages
+[33mbaae590[m[33m ([m[1;31morigin/codex/update-tracking-for-direct-and-torrent-pages[m[33m)[m Track scraper progress and require existing databases
+[33m5773a10[m[33m ([m[1;31morigin/codex/fix-torrent-download-functionality[m[33m)[m Fix torrent downloader initialization and UI errors
+[33mdfd2d24[m Merge pull request #13 from AnibalBenAlbarn/codex/reimplement-torrentdownloader-class-for-torrent4j
+[33mca9b1e5[m[33m ([m[1;31morigin/codex/reimplement-torrentdownloader-class-for-torrent4j[m[33m)[m Refactor torrent downloader to use libtorrent4j
+[33mc579fbe[m Merge pull request #12 from AnibalBenAlbarn/codex/implement-torrent4j-logic-in-downloader-classes
+[33m0b176be[m[33m ([m[1;31morigin/codex/implement-torrent4j-logic-in-downloader-classes[m[33m)[m Add torrent stats helper for libtorrent integration
+[33m500863f[m Merge pull request #11 from AnibalBenAlbarn/codex/migrate-from-jlibtorrent-to-libtorrent4j
+[33m1c1ccdc[m[33m ([m[1;31morigin/codex/migrate-from-jlibtorrent-to-libtorrent4j[m[33m)[m Migrar a libtorrent4j
+[33m857320a[m Merge pull request #10 from AnibalBenAlbarn/codex/add-loading-indicators-for-database-and-streaming
+[33mf518f17[m[33m ([m[1;31morigin/codex/add-loading-indicators-for-database-and-streaming[m[33m)[m chore: rely on async loader for initial direct movies
+[33m23cfc69[m intial db
+[33ma5d5e74[m Configurar LFS para .db
+[33m3b6c828[m Merge pull request #9 from AnibalBenAlbarn/codex/fix-dark-theme-loading-errors
+[33m129acac[m[33m ([m[1;31morigin/codex/fix-dark-theme-loading-errors[m[33m)[m fix: apply windows-style dark theme
+[33mf811ed6[m Merge pull request #8 from AnibalBenAlbarn/codex/fix-database-settings-implementation
+[33m4969976[m[33m ([m[1;31morigin/codex/fix-database-settings-implementation[m[33m)[m Reload database connections and enhance dark theme
+[33m787af1b[m Merge pull request #7 from AnibalBenAlbarn/codex/fix-missing-database-tables-error
+[33m5b60fa5[m[33m ([m[1;31morigin/codex/fix-missing-database-tables-error[m[33m)[m fix: use configured path for direct downloads
+[33m4cfd5e0[m feat: create database tables on demand
+[33m35d6531[m ajustes
+[33mf78a459[m ajustes
+[33m8bbeee3[m Merge remote-tracking branch 'origin/master'
+[33mc15375f[m Merge pull request #6 from AnibalBenAlbarn/codex/fix-jar-execution-issues-in-intellij-c63e7s
+[33mb2d9c57[m[33m ([m[1;31morigin/codex/fix-jar-execution-issues-in-intellij-c63e7s[m[33m)[m Add explicit imports for standard library usage
+[33m9e4149b[m Merge remote-tracking branch 'origin/master'
+[33mcab02b9[m Merge pull request #5 from AnibalBenAlbarn/codex/fix-jar-execution-issues-in-intellij
+[33me21a0b5[m[33m ([m[1;31morigin/codex/fix-jar-execution-issues-in-intellij[m[33m)[m Configure JavaFX modules and plugin
+[33m520cb55[m Merge remote-tracking branch 'origin/master'
+[33m1add861[m module info
+[33m4ea00cd[m Merge pull request #4 from AnibalBenAlbarn/codex/fix-download-loop-for-wii-file
+[33med2cd15[m[33m ([m[1;31morigin/codex/fix-download-loop-for-wii-file[m[33m)[m Use long for file size in direct downloaders
+[33m52d83ca[m Merge pull request #2 from AnibalBenAlbarn/codex/refactor-code-to-remove-/db-and-/lib-wzrxgb
+[33m007c42f[m[33m ([m[1;31morigin/codex/refactor-code-to-remove-/db-and-/lib-wzrxgb[m[33m)[m Add JavaFX module requirements to module descriptor
+[33m9e72de8[m Merge pull request #1 from AnibalBenAlbarn/codex/refactor-code-to-remove-/db-and-/lib
+[33m3011363[m[33m ([m[1;31morigin/codex/refactor-code-to-remove-/db-and-/lib[m[33m)[m Refactor packages to FilmotecaDelreves
+[33mddbdef9[m Initial commit
