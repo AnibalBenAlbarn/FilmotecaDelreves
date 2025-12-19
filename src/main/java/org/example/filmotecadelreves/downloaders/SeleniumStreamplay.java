@@ -46,10 +46,12 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
     };
     private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
+    private static final int MAX_MP4_TIMEOUTS_BEFORE_MANUAL = 2;
 
     private static final int CAPTCHA_GRACE_SECONDS = 10; // Tiempo para que NoCaptcha resuelva automáticamente
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
+    private final AtomicBoolean manualFallbackLaunched = new AtomicBoolean(false);
     private final Map<String, ResumableHttpDownloadTask> activeDownloads = new ConcurrentHashMap<>();
 
     private WebDriver driver;
@@ -73,6 +75,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                                DescargasUI.DirectDownload directDownload,
                                boolean manualMode) {
         isCancelled.set(false);
+        manualFallbackLaunched.set(false);
 
         downloadThread = new Thread(() -> {
             try {
@@ -178,11 +181,14 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                 clickProceedButton();
                 logPageState("Estado tras pulsar botón principal");
 
-                Optional<String> downloadUrl = waitForMp4Url();
+                Optional<String> downloadUrl = waitForMp4Url(videoUrl);
                 if (downloadUrl.isEmpty()) {
                     if (isCancelled.get() || Thread.currentThread().isInterrupted()) {
                         updateDownloadStatus(directDownload, "Cancelled", directDownload.getProgress());
                         logWarn("Búsqueda de enlace v.mp4 detenida por cancelación.");
+                    } else if (manualFallbackLaunched.get()) {
+                        updateDownloadStatus(directDownload, "Manual", directDownload.getProgress());
+                        logWarn("No se encontró un enlace que termine en v.mp4. Se abrió el navegador empaquetado para intervención manual.");
                     } else {
                         updateDownloadStatus(directDownload, "Error", 0);
                         logWarn("No se encontró un enlace que termine en v.mp4.");
@@ -427,10 +433,11 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         collectDebugArtifacts("boton-proceed-reintentos-agotados");
     }
 
-    private Optional<String> waitForMp4Url() {
+    private Optional<String> waitForMp4Url(String videoUrl) {
         Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
         int attempt = 1;
         boolean timeoutArtifactCaptured = false;
+        int consecutiveTimeouts = 0;
         while (!isCancelled.get()) {
             try {
                 logDebug("Iniciando espera activa para enlaces v.mp4... (intento " + attempt + ")");
@@ -452,11 +459,17 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                     return Optional.of(url);
                 }
             } catch (TimeoutException e) {
+                consecutiveTimeouts++;
                 logWarn("Tiempo de espera agotado buscando el enlace mp4 (intento " + attempt + "). Se reintentará.");
                 logPageState("Estado al agotar la espera de mp4 (intento " + attempt + ")");
                 if (!timeoutArtifactCaptured) {
                     collectDebugArtifacts("timeout-buscando-mp4");
                     timeoutArtifactCaptured = true;
+                }
+                if (consecutiveTimeouts >= MAX_MP4_TIMEOUTS_BEFORE_MANUAL && manualFallbackLaunched.compareAndSet(false, true)) {
+                    logWarn("Se alcanzó el límite de espera del mp4. Abriendo el navegador empaquetado para completar la descarga manualmente.");
+                    launchManualFallbackBrowser(videoUrl);
+                    return Optional.empty();
                 }
                 if (!prepareForMp4Retry(attempt)) {
                     reloadPageForRetry(attempt);
@@ -468,6 +481,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             } catch (WebDriverException e) {
                 logError("Error consultando el enlace mp4: " + e.getMessage());
                 collectDebugArtifacts("error-obteniendo-mp4");
+                consecutiveTimeouts = 0;
                 if (!prepareForMp4Retry(attempt)) {
                     reloadPageForRetry(attempt);
                 }
@@ -477,6 +491,28 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
 
         logWarn("Se detuvo la espera de enlaces v.mp4 porque la descarga fue cancelada.");
         return Optional.empty();
+    }
+
+    private void launchManualFallbackBrowser(String videoUrl) {
+        Path packagedChrome = Paths.get(CHROME_PATH);
+        if (!Files.isRegularFile(packagedChrome)) {
+            logError("No se pudo abrir el navegador manual porque no existe el binario empaquetado en: " + packagedChrome);
+            return;
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add(packagedChrome.toString());
+        command.add("--user-data-dir=" + Paths.get("ChromeProfiles", "streamplay-manual").toAbsolutePath());
+        command.add("--no-first-run");
+        command.add("--disable-extensions");
+        command.add(videoUrl);
+
+        try {
+            new ProcessBuilder(command).start();
+            logDebug("Navegador manual iniciado con el Chrome empaquetado en: " + packagedChrome);
+        } catch (IOException e) {
+            logError("No se pudo lanzar el navegador manual empaquetado: " + e.getMessage());
+        }
     }
 
     private boolean prepareForMp4Retry(int attempt) {
