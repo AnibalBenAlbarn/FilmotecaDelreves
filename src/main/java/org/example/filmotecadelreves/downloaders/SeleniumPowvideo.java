@@ -621,16 +621,19 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                 continue;
             }
 
+            // Preferir extensiones desempaquetadas para evitar errores de "cannot unzip" en Chrome 114+.
+            Optional<Path> unpacked = unpackCrxAsUnpacked(addon);
+            if (unpacked.isPresent()) {
+                unpackedExtensions.add(unpacked.get().toString());
+                installed = true;
+                continue;
+            }
+
             try {
                 options.addExtensions(addon);
                 installed = true;
             } catch (Exception e) {
-                logWarn("Fallo instalando la extensión desde CRX, intentando modo unpacked: " + addon.getAbsolutePath());
-                Optional<Path> unpacked = unpackCrxAsUnpacked(addon);
-                if (unpacked.isPresent()) {
-                    unpackedExtensions.add(unpacked.get().toString());
-                    installed = true;
-                }
+                logWarn("Fallo instalando la extensión desde CRX: " + addon.getAbsolutePath() + " => " + e.getMessage());
             }
         }
 
