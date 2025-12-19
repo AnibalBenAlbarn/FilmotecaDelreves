@@ -98,6 +98,22 @@ final class ChromeExecutableLocator {
     }
 
     /**
+     * Resolves the Chrome binary to the provided packaged path only.
+     * <p>
+     * This helper is intended for download flows that need the bundled Chrome
+     * (to allow CRX installation) regardless of any user-installed browser.
+     * If the packaged binary does not exist or is not executable, {@code null}
+     * is returned so callers can decide how to proceed.
+     */
+    static String resolvePackagedChromeBinary(String packagedBinary) {
+        Path packagedPath = normalizeToPath(packagedBinary);
+        if (packagedPath != null && Files.isRegularFile(packagedPath) && Files.isExecutable(packagedPath)) {
+            return packagedPath.toString();
+        }
+        return null;
+    }
+
+    /**
      * Resolves the ChromeDriver executable path. If no override exists and none of the provided
      * packaged drivers exist, {@code null} is returned so Selenium Manager can download a matching
      * version automatically.
