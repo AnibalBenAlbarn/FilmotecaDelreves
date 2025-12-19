@@ -49,9 +49,6 @@ import java.util.zip.ZipInputStream;
 public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable {
     private static final String PROVIDER_NAME = "PowVideo";
     private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
-    private static final String PRIMARY_CHROME_DRIVER = resolvePath("chrome-win", "chromedriver.exe");
-    private static final String FALLBACK_CHROME_DRIVER = resolvePath("ChromeDriver", "chromedriver.exe");
-    private static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER, FALLBACK_CHROME_DRIVER};
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
             "Extension/nopecatcha old",
@@ -311,14 +308,8 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
      */
     private void setupBrowser(boolean userInteraction) {
 
-        String driverPath = ChromeExecutableLocator.resolveChromeDriver(CHROME_DRIVER_CANDIDATES);
-        if (driverPath != null) {
-            System.setProperty("webdriver.chrome.driver", driverPath);
-            logDebug("Usando ChromeDriver en: " + driverPath);
-        } else {
-            System.clearProperty("webdriver.chrome.driver");
-            logWarn("ChromeDriver empaquetado no disponible. Selenium Manager determinará la versión adecuada.");
-        }
+        System.clearProperty("webdriver.chrome.driver");
+        logDebug("webdriver.chrome.driver limpiado. Selenium Manager elegirá el ChromeDriver adecuado.");
 
         ChromeOptions options = new ChromeOptions();
         String customChrome = ChromeExecutableLocator.resolveChromeBinary(CHROME_PATH);
