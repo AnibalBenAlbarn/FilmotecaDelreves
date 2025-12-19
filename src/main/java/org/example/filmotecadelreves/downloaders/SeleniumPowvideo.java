@@ -340,7 +340,27 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
         }
 
         // ❗ ChromeDriver lo elegirá Selenium Manager automáticamente según ese Chrome.exe
-        driver = new ChromeDriver(options);
+        try {
+            driver = new ChromeDriver(options);
+        } catch (SessionNotCreatedException e) {
+            logWarn("[PowVideo] Falló Chrome con extensiones. Reintentando sin extensiones..." + e.getMessage());
+
+            ChromeOptions clean = new ChromeOptions();
+            if (customChrome != null) {
+                clean.setBinary(customChrome);
+            }
+            clean.addArguments(
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--window-size=1920,1080",
+                    "--remote-allow-origins=*"
+            );
+            if (headlessMode) {
+                clean.addArguments("--headless=new");
+            }
+            isNopechaInstalled = false;
+            driver = new ChromeDriver(clean);
+        }
 
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         currentSessionHeadless = headlessMode;
@@ -596,7 +616,6 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
             return false;
         }
 
-        List<String> unpackedExtensions = new ArrayList<>();
         boolean installed = false;
 
         for (String candidate : candidates) {
@@ -606,8 +625,7 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
             }
 
             if (addon.isDirectory()) {
-                unpackedExtensions.add(addon.getAbsolutePath());
-                installed = true;
+                logWarn("Se omitió la extensión sin empaquetar (solo se aceptan CRX): " + addon.getAbsolutePath());
                 continue;
             }
 
@@ -617,10 +635,6 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
             } catch (Exception e) {
                 logWarn("Fallo instalando la extensión desde CRX: " + addon.getAbsolutePath() + " => " + e.getMessage());
             }
-        }
-
-        if (!unpackedExtensions.isEmpty()) {
-            options.addArguments("--load-extension=" + String.join(",", unpackedExtensions));
         }
 
         return installed;

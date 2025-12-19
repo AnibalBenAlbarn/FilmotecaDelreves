@@ -323,7 +323,31 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             options.addArguments("--headless=new");
         }
 
-        driver = new ChromeDriver(options);
+        try {
+            driver = new ChromeDriver(options);
+        } catch (SessionNotCreatedException e) {
+            logWarn("[Streamplay] Falló Chrome con extensiones. Reintentando sin extensiones..." + e.getMessage());
+
+            ChromeOptions clean = new ChromeOptions();
+            if (chromeBinary != null) {
+                clean.setBinary(chromeBinary);
+            }
+            clean.addArguments(
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-background-timer-throttling",
+                    "--window-size=1920,1080",
+                    "--remote-allow-origins=*"
+            );
+
+            if (headlessMode) {
+                clean.addArguments("--headless=new");
+            }
+            isNopechaInstalled = false;
+            driver = new ChromeDriver(clean);
+        }
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
@@ -333,7 +357,6 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             return false;
         }
 
-        List<String> unpackedExtensions = new ArrayList<>();
         boolean installed = false;
 
         for (String candidate : candidates) {
@@ -343,8 +366,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             }
 
             if (addon.isDirectory()) {
-                unpackedExtensions.add(addon.getAbsolutePath());
-                installed = true;
+                logWarn("Se omitió la extensión sin empaquetar (solo se aceptan CRX): " + addon.getAbsolutePath());
                 continue;
             }
 
@@ -354,10 +376,6 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             } catch (Exception e) {
                 logWarn("Fallo instalando la extensión desde CRX: " + addon.getAbsolutePath() + " => " + e.getMessage());
             }
-        }
-
-        if (!unpackedExtensions.isEmpty()) {
-            options.addArguments("--load-extension=" + String.join(",", unpackedExtensions));
         }
 
         return installed;
