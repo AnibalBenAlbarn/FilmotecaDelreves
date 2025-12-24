@@ -319,7 +319,15 @@ public class VideosStreamerManager {
 
         // Set binary location to our custom Chrome
         String packagedBinary = getAbsolutePath(CHROME_PATH);
-        String resolvedBinary = ChromeExecutableLocator.resolveChromeBinary(packagedBinary);
+        String resolvedBinary;
+        if (prefersPackagedChrome(config)) {
+            resolvedBinary = ChromeExecutableLocator.resolvePackagedChromeBinary(packagedBinary);
+            if (resolvedBinary == null) {
+                resolvedBinary = ChromeExecutableLocator.resolveChromeBinary(packagedBinary);
+            }
+        } else {
+            resolvedBinary = ChromeExecutableLocator.resolveChromeBinary(packagedBinary);
+        }
         if (resolvedBinary != null) {
             options.setBinary(resolvedBinary);
             System.out.println("Using Chrome binary: " + resolvedBinary);
@@ -619,6 +627,13 @@ public class VideosStreamerManager {
      */
     protected void afterNavigateTo(WebDriver driver, String url, ServerConfig config) {
         // Default implementation does nothing.
+    }
+
+    /**
+     * Allows subclasses to force the packaged Chromium binary when required.
+     */
+    protected boolean prefersPackagedChrome(ServerConfig config) {
+        return false;
     }
 
     private File ensureUserDataDir(ServerConfig config) {
