@@ -915,6 +915,9 @@ public class DirectDownloadUI {
         // Columna de acciones
         TableColumn<Movie, Void> actionsCol = new TableColumn<>("Actions");
         actionsCol.setCellFactory(param -> createActionButtonsCell());
+        actionsCol.setMinWidth(320);
+        actionsCol.setPrefWidth(340);
+        actionsCol.setResizable(false);
 
         moviesTable.getColumns().addAll(nameCol, yearCol, genreCol, languageCol, serverCol, qualityCol, actionsCol);
 
@@ -1928,6 +1931,9 @@ public class DirectDownloadUI {
                 }
             }
         });
+        actionsCol.setMinWidth(320);
+        actionsCol.setPrefWidth(340);
+        actionsCol.setResizable(false);
         actionsCol.setPrefWidth(150);
 
         episodesTable.getColumns().addAll(selectCol, episodeNumberCol, titleCol, languageCol, serverCol, qualityCol, actionsCol);
