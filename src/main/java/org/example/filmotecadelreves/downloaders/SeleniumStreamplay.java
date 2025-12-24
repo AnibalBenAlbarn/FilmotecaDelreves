@@ -21,9 +21,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,9 +43,8 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
     private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
-            "Extension/NopeCaptcha.crx",
-            "lib/nopecha.crx",
-            "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
+            "Extension/nopecaptcha.crx",
+            "Extension/NopeCaptcha.crx"
     };
     private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
     private static final int MAX_MP4_TIMEOUTS_BEFORE_MANUAL = 2;
@@ -305,20 +306,14 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         boolean headlessMode = !userInteraction && runHeadless;
         logDebug("Configurando navegador (userInteraction=" + userInteraction + ", headless=" + headlessMode + ")");
 
-        boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates());
-        if (!popupExtensionLoaded) {
-            logWarn("No se pudo cargar la extensión de bloqueo de popups.");
-        } else {
-            logDebug("Extensión de bloqueo de popups cargada correctamente.");
-        }
+        Set<Path> loadedExtensions = new HashSet<>();
+        boolean popupExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getPopupExtensionCandidates(), loadedExtensions);
+        boolean streamtapeExtensionLoaded = addExtensionFromCandidates(options, VideosStreamerManager.getStreamtapePackagedCandidates(), loadedExtensions);
+        isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES, loadedExtensions);
 
-        if (!userInteraction) {
-            isNopechaInstalled = addExtensionFromCandidates(options, NOPECHA_EXTENSION_CANDIDATES);
-            if (!isNopechaInstalled) {
-                logWarn("No se pudo cargar la extensión NoPeCaptcha.");
-            }
-        } else {
-            isNopechaInstalled = false;
+        if (!popupExtensionLoaded || !streamtapeExtensionLoaded || !isNopechaInstalled) {
+            logWarn("No se pudieron cargar todas las extensiones requeridas desde Extension/.");
+            throw new IllegalStateException("Extensiones requeridas no instaladas.");
         }
 
         options.addArguments(
@@ -338,33 +333,14 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         try {
             driver = new ChromeDriver(options);
         } catch (SessionNotCreatedException e) {
-            logWarn("[Streamplay] Falló Chrome con extensiones. Reintentando sin extensiones..." + e.getMessage());
-
-            ChromeOptions clean = new ChromeOptions();
-            if (chromeBinary != null) {
-                clean.setBinary(chromeBinary);
-            }
-            clean.addArguments(
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-renderer-backgrounding",
-                    "--disable-background-timer-throttling",
-                    "--window-size=1920,1080",
-                    "--remote-allow-origins=*"
-            );
-
-            if (headlessMode) {
-                clean.addArguments("--headless=new");
-            }
-            isNopechaInstalled = false;
-            driver = new ChromeDriver(clean);
+            logWarn("[Streamplay] Falló Chrome con extensiones. " + e.getMessage());
+            throw e;
         }
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
         logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
 
-    private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates) {
+    private boolean addExtensionFromCandidates(ChromeOptions options, String[] candidates, Set<Path> loadedExtensions) {
         if (candidates == null) {
             return false;
         }
@@ -374,19 +350,26 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         for (String candidate : candidates) {
             File addon = resolveAddonFile(candidate);
             if (addon == null || !addon.exists()) {
+                logWarn("Extensión no encontrada (relativa): " + candidate);
                 continue;
             }
 
             if (addon.isDirectory()) {
-                logWarn("Se omitió la extensión sin empaquetar (solo se aceptan CRX): " + addon.getAbsolutePath());
+                logWarn("Se omitió carpeta (solo CRX): " + candidate);
                 continue;
             }
 
             try {
+                Path realPath = addon.toPath().toRealPath();
+                if (!loadedExtensions.add(realPath)) {
+                    logDebug("Extensión duplicada omitida: " + addon.getName());
+                    return true;
+                }
+                logDebug("Cargando extensión: " + addon.getName() + " [" + candidate + "]");
                 options.addExtensions(addon);
                 installed = true;
             } catch (Exception e) {
-                logWarn("Fallo instalando la extensión desde CRX: " + addon.getAbsolutePath() + " => " + e.getMessage());
+                logWarn("Fallo instalando CRX: " + addon.getName() + " [" + candidate + "] => " + e.getMessage());
             }
         }
 
@@ -394,24 +377,19 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
     }
 
     private File resolveAddonFile(String addonPath) {
-        if (addonPath == null || addonPath.isEmpty()) {
+        if (addonPath == null || addonPath.isBlank()) {
             return null;
         }
 
-        File addon = new File(addonPath);
-        if (addon.exists()) {
-            return addon;
+        Path candidate = Paths.get(addonPath.replace("\\", File.separator));
+        if (candidate.isAbsolute() || addonPath.contains(":")) {
+            return null;
         }
 
-        if (addonPath.contains(":")) {
-            String normalized = addonPath.replace("\\", File.separator);
-            addon = new File(normalized);
-            if (addon.exists()) {
-                return addon;
-            }
-        }
-
-        return null;
+        Path base = Paths.get(System.getProperty("user.dir"));
+        Path resolved = base.resolve(candidate).normalize();
+        File addon = resolved.toFile();
+        return addon.exists() ? addon : null;
     }
 
     private void clickProceedButton() {
