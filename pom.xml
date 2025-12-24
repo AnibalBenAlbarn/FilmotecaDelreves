@@ -288,4 +288,40 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>javafx-win</id>
+      <activation>
+        <os>
+          <family>Windows</family>
+        </os>
+      </activation>
+      <properties>
+        <javafx.platform>win</javafx.platform>
+      </properties>
+    </profile>
+    <profile>
+      <id>javafx-linux</id>
+      <activation>
+        <os>
+          <family>Unix</family>
+        </os>
+      </activation>
+      <properties>
+        <javafx.platform>linux</javafx.platform>
+      </properties>
+    </profile>
+    <profile>
+      <id>javafx-mac</id>
+      <activation>
+        <os>
+          <family>Mac</family>
+        </os>
+      </activation>
+      <properties>
+        <javafx.platform>mac</javafx.platform>
+      </properties>
+    </profile>
+  </profiles>
 </project>
