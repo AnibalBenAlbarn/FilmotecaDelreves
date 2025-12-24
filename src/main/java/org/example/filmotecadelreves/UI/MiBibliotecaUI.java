@@ -12,6 +12,7 @@ import javafx.scene.control.*;
 import javafx.scene.Cursor;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.*;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.DirectoryChooser;
@@ -24,6 +25,8 @@ import java.awt.Desktop;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.text.Normalizer;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -125,8 +128,8 @@ public class MiBibliotecaUI {
         Runnable refreshView = () -> {
             LibraryCatalog catalog = catalogStore.loadCatalog(configManager.getLibraryDataDir(entry));
             Node view = entry.getType() == LibraryEntry.LibraryType.MOVIES
-                    ? buildMoviesView(entry, catalog)
-                    : buildSeriesView(entry, catalog);
+                    ? buildMoviesView(entry, catalog, refreshView)
+                    : buildSeriesView(entry, catalog, refreshView);
             mainPane.getChildren().setAll(view);
         };
 
@@ -138,7 +141,7 @@ public class MiBibliotecaUI {
         return libraryTab;
     }
 
-    private Node buildMoviesView(LibraryEntry entry, LibraryCatalog catalog) {
+    private Node buildMoviesView(LibraryEntry entry, LibraryCatalog catalog, Runnable refreshView) {
         VBox container = new VBox(12);
 
         TextField searchField = new TextField();
@@ -182,7 +185,7 @@ public class MiBibliotecaUI {
                     .filter(item -> director == null || director.equalsIgnoreCase(item.getDirector()))
                     .collect(Collectors.toList());
             grid.getChildren().setAll(filtered.stream()
-                    .map(this::buildMovieCard)
+                    .map(item -> buildMovieCard(entry, catalog, item, refreshView))
                     .collect(Collectors.toList()));
         };
 
@@ -200,7 +203,7 @@ public class MiBibliotecaUI {
         return container;
     }
 
-    private Node buildSeriesView(LibraryEntry entry, LibraryCatalog catalog) {
+    private Node buildSeriesView(LibraryEntry entry, LibraryCatalog catalog, Runnable refreshView) {
         VBox container = new VBox(12);
 
         TextField searchField = new TextField();
@@ -214,11 +217,11 @@ public class MiBibliotecaUI {
         Runnable applyFilters = () -> {
             String query = searchField.getText() == null ? "" : searchField.getText().toLowerCase();
             List<SeriesEntry> filtered = catalog.getSeries().stream()
-                    .filter(item -> query.isBlank() || item.getTitle().toLowerCase().contains(query))
+                    .filter(item -> query.isBlank() || matchesSeriesQuery(item, query))
                     .sorted(Comparator.comparing(SeriesEntry::getTitle))
                     .collect(Collectors.toList());
             grid.getChildren().setAll(filtered.stream()
-                    .map(this::buildSeriesCard)
+                    .map(series -> buildSeriesCard(entry, catalog, series, refreshView))
                     .collect(Collectors.toList()));
         };
 
@@ -233,22 +236,18 @@ public class MiBibliotecaUI {
         return container;
     }
 
-    private Node buildMovieCard(MediaItem item) {
+    private Node buildMovieCard(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
         VBox card = new VBox(8);
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
         card.setPrefWidth(180);
-        configureCardInteractions(card);
+        ContextMenu contextMenu = createMovieContextMenu(entry, catalog, item, refreshView);
+        configureCardInteractions(card, () -> openFile(item.getFilePath()), contextMenu);
 
         StackPane posterPane = new StackPane();
         posterPane.getStyleClass().add("library-poster");
         Node poster = createPosterContent(item.getPosterPath(), item.getTitle());
         posterPane.getChildren().add(poster);
-
-        Button playButton = new Button("▶");
-        playButton.getStyleClass().add("library-play");
-        playButton.setOnAction(event -> openFile(item.getFilePath()));
-        posterPane.getChildren().add(playButton);
 
         Label title = new Label(item.getTitle());
         title.getStyleClass().add("library-card-title");
@@ -259,22 +258,18 @@ public class MiBibliotecaUI {
         return card;
     }
 
-    private Node buildSeriesCard(SeriesEntry series) {
+    private Node buildSeriesCard(LibraryEntry entry, LibraryCatalog catalog, SeriesEntry series, Runnable refreshView) {
         VBox card = new VBox(8);
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
         card.setPrefWidth(180);
-        configureCardInteractions(card);
+        ContextMenu contextMenu = createSeriesContextMenu(entry, catalog, series, refreshView);
+        configureCardInteractions(card, () -> openSeriesDialog(series), contextMenu);
 
         StackPane posterPane = new StackPane();
         posterPane.getStyleClass().add("library-poster");
         Node poster = createPosterContent(series.getPosterPath(), series.getTitle());
         posterPane.getChildren().add(poster);
-
-        Button viewButton = new Button("Ver temporadas");
-        viewButton.getStyleClass().add("library-play");
-        viewButton.setOnAction(event -> openSeriesDialog(series));
-        posterPane.getChildren().add(viewButton);
 
         Label title = new Label(series.getTitle());
         title.getStyleClass().add("library-card-title");
@@ -285,13 +280,29 @@ public class MiBibliotecaUI {
         return card;
     }
 
-    private void configureCardInteractions(Region card) {
+    private void configureCardInteractions(Region card, Runnable openAction, ContextMenu contextMenu) {
         card.setCursor(Cursor.HAND);
         card.setFocusTraversable(true);
-        card.setOnMouseClicked(event -> selectCard(card));
+        card.setOnMouseClicked(event -> {
+            if (event.getButton() == MouseButton.PRIMARY) {
+                selectCard(card);
+                if (event.getClickCount() == 2) {
+                    openAction.run();
+                }
+            }
+        });
+        card.setOnContextMenuRequested(event -> {
+            selectCard(card);
+            if (contextMenu != null) {
+                contextMenu.show(card, event.getScreenX(), event.getScreenY());
+            }
+        });
         card.setOnKeyPressed(event -> {
             switch (event.getCode()) {
-                case ENTER, SPACE -> selectCard(card);
+                case ENTER, SPACE -> {
+                    selectCard(card);
+                    openAction.run();
+                }
                 default -> {
                 }
             }
@@ -345,13 +356,48 @@ public class MiBibliotecaUI {
     }
 
     private boolean matchesQuery(MediaItem item, String query) {
-        if (item.getTitle().toLowerCase().contains(query)) {
+        String normalizedQuery = normalizeSearchText(query);
+        if (normalizedQuery.isBlank()) {
             return true;
         }
-        if (item.getDirector() != null && item.getDirector().toLowerCase().contains(query)) {
+        List<String> haystack = new ArrayList<>();
+        haystack.add(item.getTitle());
+        haystack.add(item.getScrapedTitle());
+        haystack.add(item.getDirector());
+        haystack.add(item.getFilePath());
+        if (item.getYear() != null) {
+            haystack.add(String.valueOf(item.getYear()));
+        }
+        haystack.addAll(item.getGenres());
+        return haystack.stream()
+                .filter(Objects::nonNull)
+                .map(this::normalizeSearchText)
+                .anyMatch(text -> text.contains(normalizedQuery));
+    }
+
+    private boolean matchesSeriesQuery(SeriesEntry series, String query) {
+        String normalizedQuery = normalizeSearchText(query);
+        if (normalizedQuery.isBlank()) {
             return true;
         }
-        return item.getGenres().stream().anyMatch(genre -> genre.toLowerCase().contains(query));
+        List<String> haystack = new ArrayList<>();
+        haystack.add(series.getTitle());
+        haystack.add(series.getScrapedTitle());
+        return haystack.stream()
+                .filter(Objects::nonNull)
+                .map(this::normalizeSearchText)
+                .anyMatch(text -> text.contains(normalizedQuery));
+    }
+
+    private String normalizeSearchText(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase();
+        normalized = normalized.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", " ").trim();
+        return normalized.replaceAll("\\s{2,}", " ");
     }
 
     private void scanLibrary(LibraryEntry entry, StackPane container, Runnable refreshView) {
@@ -489,6 +535,7 @@ public class MiBibliotecaUI {
         if (metadata == null) {
             return;
         }
+        item.setScrapedTitle(metadata.getTitle());
         item.setYear(metadata.getYear());
         item.setDirector(metadata.getDirector());
         item.setOverview(metadata.getOverview());
@@ -506,6 +553,7 @@ public class MiBibliotecaUI {
         if (metadata == null) {
             return;
         }
+        series.setScrapedTitle(metadata.getTitle());
         if (metadata.getPosterUrl() != null) {
             Path posterPath = configManager.getLibraryDataDir(entry)
                     .resolve("posters")
@@ -524,19 +572,44 @@ public class MiBibliotecaUI {
         BorderPane root = new BorderPane();
         root.setPadding(new Insets(12));
 
-        TreeItem<String> rootItem = new TreeItem<>(series.getTitle());
+        TreeItem<SeriesNode> rootItem = new TreeItem<>(new SeriesNode(series.getTitle(), null));
         rootItem.setExpanded(true);
         for (Map.Entry<Integer, List<EpisodeItem>> season : series.getSeasons().entrySet()) {
-            TreeItem<String> seasonItem = new TreeItem<>("Temporada " + season.getKey());
+            TreeItem<SeriesNode> seasonItem = new TreeItem<>(new SeriesNode("Temporada " + season.getKey(), null));
             for (EpisodeItem episode : season.getValue()) {
-                TreeItem<String> episodeItem = new TreeItem<>(episode.getTitle());
-                episodeItem.setGraphic(createPlayIcon(episode.getFilePath()));
+                TreeItem<SeriesNode> episodeItem = new TreeItem<>(new SeriesNode(episode.getTitle(), episode));
                 seasonItem.getChildren().add(episodeItem);
             }
             rootItem.getChildren().add(seasonItem);
         }
-        TreeView<String> treeView = new TreeView<>(rootItem);
+        TreeView<SeriesNode> treeView = new TreeView<>(rootItem);
         treeView.setShowRoot(false);
+        treeView.setCellFactory(tv -> new TreeCell<>() {
+            @Override
+            protected void updateItem(SeriesNode item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setContextMenu(null);
+                } else {
+                    setText(item.getLabel());
+                    if (item.getEpisode() != null) {
+                        setContextMenu(createEpisodeContextMenu(item.getEpisode()));
+                    } else {
+                        setContextMenu(null);
+                    }
+                }
+            }
+        });
+        treeView.setOnMouseClicked(event -> {
+            if (event.getButton() != MouseButton.PRIMARY || event.getClickCount() != 2) {
+                return;
+            }
+            TreeItem<SeriesNode> selected = treeView.getSelectionModel().getSelectedItem();
+            if (selected != null && selected.getValue() != null && selected.getValue().getEpisode() != null) {
+                openFile(selected.getValue().getEpisode().getFilePath());
+            }
+        });
 
         root.setCenter(treeView);
 
@@ -545,11 +618,381 @@ public class MiBibliotecaUI {
         dialog.showAndWait();
     }
 
-    private Button createPlayIcon(String filePath) {
-        Button button = new Button("▶");
-        button.getStyleClass().add("library-play-mini");
-        button.setOnAction(event -> openFile(filePath));
-        return button;
+    private ContextMenu createMovieContextMenu(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
+        MenuItem openItem = new MenuItem("Ver película");
+        openItem.setOnAction(event -> openFile(item.getFilePath()));
+
+        MenuItem revealItem = new MenuItem("Mostrar en el explorador");
+        revealItem.setOnAction(event -> openInExplorer(item.getFilePath()));
+
+        MenuItem propertiesItem = new MenuItem("Propiedades");
+        propertiesItem.setOnAction(event -> showMovieProperties(item));
+
+        MenuItem manualScrape = new MenuItem("Scrapear manualmente...");
+        manualScrape.setOnAction(event -> openManualScrapeDialog(entry, catalog, item, refreshView));
+
+        return new ContextMenu(openItem, revealItem, propertiesItem, manualScrape);
+    }
+
+    private ContextMenu createSeriesContextMenu(LibraryEntry entry, LibraryCatalog catalog, SeriesEntry series, Runnable refreshView) {
+        MenuItem openItem = new MenuItem("Ver temporadas");
+        openItem.setOnAction(event -> openSeriesDialog(series));
+
+        MenuItem revealItem = new MenuItem("Mostrar en el explorador");
+        revealItem.setOnAction(event -> {
+            String filePath = findSeriesRepresentativeFile(series);
+            if (filePath != null) {
+                openInExplorer(filePath);
+            } else {
+                showAlert("Sin archivos", "No se encontró un episodio para mostrar.");
+            }
+        });
+
+        MenuItem propertiesItem = new MenuItem("Propiedades");
+        propertiesItem.setOnAction(event -> showSeriesProperties(series));
+
+        MenuItem manualScrape = new MenuItem("Scrapear manualmente...");
+        manualScrape.setOnAction(event -> openManualScrapeDialog(entry, catalog, series, refreshView));
+
+        return new ContextMenu(openItem, revealItem, propertiesItem, manualScrape);
+    }
+
+    private ContextMenu createEpisodeContextMenu(EpisodeItem episode) {
+        MenuItem openItem = new MenuItem("Ver episodio");
+        openItem.setOnAction(event -> openFile(episode.getFilePath()));
+
+        MenuItem revealItem = new MenuItem("Mostrar en el explorador");
+        revealItem.setOnAction(event -> openInExplorer(episode.getFilePath()));
+
+        MenuItem propertiesItem = new MenuItem("Propiedades");
+        propertiesItem.setOnAction(event -> showEpisodeProperties(episode));
+
+        return new ContextMenu(openItem, revealItem, propertiesItem);
+    }
+
+    private void openManualScrapeDialog(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
+        MetadataScraper.Provider provider = resolveProvider(entry.getScraperProvider());
+        if (provider != MetadataScraper.Provider.TMDB) {
+            showAlert("No disponible", "La búsqueda manual solo está disponible con TMDB.");
+            return;
+        }
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Scrapeo manual");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        TextField titleField = new TextField(item.getScrapedTitle() == null ? item.getTitle() : item.getScrapedTitle());
+        TextField yearField = new TextField(item.getYear() == null ? "" : String.valueOf(item.getYear()));
+        TextField directorField = new TextField(item.getDirector() == null ? "" : item.getDirector());
+        TextField genreField = new TextField(item.getGenres().isEmpty() ? "" : String.join(", ", item.getGenres()));
+
+        ListView<MetadataSearchResult> results = new ListView<>();
+        results.setPrefHeight(220);
+
+        Button searchButton = new Button("Buscar");
+        ProgressIndicator indicator = new ProgressIndicator();
+        indicator.setVisible(false);
+
+        searchButton.setOnAction(event -> {
+            Integer year = parseYearField(yearField.getText());
+            String director = blankToNull(directorField.getText());
+            String genre = blankToNull(genreField.getText());
+            String query = titleField.getText().trim();
+            if (query.isBlank()) {
+                showAlert("Falta información", "Escribe un título para buscar.");
+                return;
+            }
+            indicator.setVisible(true);
+            results.getItems().clear();
+            Task<List<MetadataSearchResult>> task = new Task<>() {
+                @Override
+                protected List<MetadataSearchResult> call() throws Exception {
+                    return metadataScraper.searchMovies(query, year, director, genre, provider, entry.getScraperApiKey());
+                }
+            };
+            task.setOnSucceeded(done -> {
+                results.getItems().setAll(task.getValue());
+                indicator.setVisible(false);
+            });
+            task.setOnFailed(done -> {
+                indicator.setVisible(false);
+                showAlert("Error", "No se pudo buscar: " + task.getException().getMessage());
+            });
+            new Thread(task).start();
+        });
+
+        HBox searchRow = new HBox(10, searchButton, indicator);
+        VBox content = new VBox(10,
+                new Label("Título"), titleField,
+                new Label("Año"), yearField,
+                new Label("Director"), directorField,
+                new Label("Género"), genreField,
+                searchRow,
+                new Label("Resultados"), results);
+        dialog.getDialogPane().setContent(content);
+
+        Button applyButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        applyButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            if (results.getSelectionModel().getSelectedItem() == null) {
+                showAlert("Selecciona una opción", "Elige un resultado antes de aplicar.");
+                event.consume();
+            }
+        });
+
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
+            return;
+        }
+        MetadataSearchResult selected = results.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        Task<Void> applyTask = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                MediaMetadata metadata = metadataScraper.fetchTmdbById(selected.getId(), "movie", entry.getScraperApiKey());
+                applyMetadata(entry, item, metadata);
+                return null;
+            }
+        };
+        applyTask.setOnSucceeded(done -> {
+            catalogStore.saveCatalog(configManager.getLibraryDataDir(entry), catalog);
+            refreshView.run();
+        });
+        applyTask.setOnFailed(done -> showAlert("Error", "No se pudo aplicar el scraping: " + applyTask.getException().getMessage()));
+        new Thread(applyTask).start();
+    }
+
+    private void openManualScrapeDialog(LibraryEntry entry, LibraryCatalog catalog, SeriesEntry series, Runnable refreshView) {
+        MetadataScraper.Provider provider = resolveProvider(entry.getScraperProvider());
+        if (provider != MetadataScraper.Provider.TMDB) {
+            showAlert("No disponible", "La búsqueda manual solo está disponible con TMDB.");
+            return;
+        }
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Scrapeo manual");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        TextField titleField = new TextField(series.getScrapedTitle() == null ? series.getTitle() : series.getScrapedTitle());
+        TextField yearField = new TextField();
+        TextField directorField = new TextField();
+        TextField genreField = new TextField();
+
+        ListView<MetadataSearchResult> results = new ListView<>();
+        results.setPrefHeight(220);
+
+        Button searchButton = new Button("Buscar");
+        ProgressIndicator indicator = new ProgressIndicator();
+        indicator.setVisible(false);
+
+        searchButton.setOnAction(event -> {
+            Integer year = parseYearField(yearField.getText());
+            String director = blankToNull(directorField.getText());
+            String genre = blankToNull(genreField.getText());
+            String query = titleField.getText().trim();
+            if (query.isBlank()) {
+                showAlert("Falta información", "Escribe un título para buscar.");
+                return;
+            }
+            indicator.setVisible(true);
+            results.getItems().clear();
+            Task<List<MetadataSearchResult>> task = new Task<>() {
+                @Override
+                protected List<MetadataSearchResult> call() throws Exception {
+                    return metadataScraper.searchSeries(query, year, director, genre, provider, entry.getScraperApiKey());
+                }
+            };
+            task.setOnSucceeded(done -> {
+                results.getItems().setAll(task.getValue());
+                indicator.setVisible(false);
+            });
+            task.setOnFailed(done -> {
+                indicator.setVisible(false);
+                showAlert("Error", "No se pudo buscar: " + task.getException().getMessage());
+            });
+            new Thread(task).start();
+        });
+
+        HBox searchRow = new HBox(10, searchButton, indicator);
+        VBox content = new VBox(10,
+                new Label("Título"), titleField,
+                new Label("Año"), yearField,
+                new Label("Creador/Director"), directorField,
+                new Label("Género"), genreField,
+                searchRow,
+                new Label("Resultados"), results);
+        dialog.getDialogPane().setContent(content);
+
+        Button applyButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        applyButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            if (results.getSelectionModel().getSelectedItem() == null) {
+                showAlert("Selecciona una opción", "Elige un resultado antes de aplicar.");
+                event.consume();
+            }
+        });
+
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
+            return;
+        }
+        MetadataSearchResult selected = results.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        Task<Void> applyTask = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                MediaMetadata metadata = metadataScraper.fetchTmdbById(selected.getId(), "tv", entry.getScraperApiKey());
+                applyMetadata(entry, series, metadata);
+                return null;
+            }
+        };
+        applyTask.setOnSucceeded(done -> {
+            catalogStore.saveCatalog(configManager.getLibraryDataDir(entry), catalog);
+            refreshView.run();
+        });
+        applyTask.setOnFailed(done -> showAlert("Error", "No se pudo aplicar el scraping: " + applyTask.getException().getMessage()));
+        new Thread(applyTask).start();
+    }
+
+    private Integer parseYearField(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private void showMovieProperties(MediaItem item) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Propiedades");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
+
+        GridPane grid = buildPropertiesGrid();
+        addPropertyRow(grid, 0, "Nombre original", item.getTitle());
+        addPropertyRow(grid, 1, "Nombre scrappeado", item.getScrapedTitle());
+        addPropertyRow(grid, 2, "Año", item.getYear() == null ? null : String.valueOf(item.getYear()));
+        addPropertyRow(grid, 3, "Director", item.getDirector());
+        addPropertyRow(grid, 4, "Género", item.getGenres().isEmpty() ? null : String.join(", ", item.getGenres()));
+        addPropertyRow(grid, 5, "Formato", getFileExtension(item.getFilePath()));
+        addPropertyRow(grid, 6, "Archivo", new File(item.getFilePath()).getName());
+        addPropertyRow(grid, 7, "Ruta", item.getFilePath());
+        dialog.getDialogPane().setContent(grid);
+        dialog.showAndWait();
+    }
+
+    private void showSeriesProperties(SeriesEntry series) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Propiedades");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
+
+        GridPane grid = buildPropertiesGrid();
+        addPropertyRow(grid, 0, "Nombre original", series.getTitle());
+        addPropertyRow(grid, 1, "Nombre scrappeado", series.getScrapedTitle());
+        addPropertyRow(grid, 2, "Temporadas", String.valueOf(series.getSeasons().size()));
+        long episodes = series.getSeasons().values().stream().mapToLong(List::size).sum();
+        addPropertyRow(grid, 3, "Episodios", String.valueOf(episodes));
+        String sample = findSeriesRepresentativeFile(series);
+        if (sample != null) {
+            addPropertyRow(grid, 4, "Carpeta", new File(sample).getParent());
+        }
+        dialog.getDialogPane().setContent(grid);
+        dialog.showAndWait();
+    }
+
+    private void showEpisodeProperties(EpisodeItem episode) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Propiedades");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
+
+        GridPane grid = buildPropertiesGrid();
+        addPropertyRow(grid, 0, "Título", episode.getTitle());
+        addPropertyRow(grid, 1, "Temporada", String.valueOf(episode.getSeason()));
+        addPropertyRow(grid, 2, "Episodio", String.valueOf(episode.getEpisode()));
+        addPropertyRow(grid, 3, "Formato", getFileExtension(episode.getFilePath()));
+        addPropertyRow(grid, 4, "Archivo", new File(episode.getFilePath()).getName());
+        addPropertyRow(grid, 5, "Ruta", episode.getFilePath());
+        dialog.getDialogPane().setContent(grid);
+        dialog.showAndWait();
+    }
+
+    private GridPane buildPropertiesGrid() {
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(6);
+        grid.setPadding(new Insets(10));
+        ColumnConstraints labelCol = new ColumnConstraints();
+        labelCol.setMinWidth(120);
+        ColumnConstraints valueCol = new ColumnConstraints();
+        valueCol.setHgrow(Priority.ALWAYS);
+        grid.getColumnConstraints().addAll(labelCol, valueCol);
+        return grid;
+    }
+
+    private void addPropertyRow(GridPane grid, int row, String label, String value) {
+        Label labelNode = new Label(label + ":");
+        Label valueNode = new Label(value == null || value.isBlank() ? "—" : value);
+        valueNode.setWrapText(true);
+        grid.add(labelNode, 0, row);
+        grid.add(valueNode, 1, row);
+    }
+
+    private String getFileExtension(String filePath) {
+        if (filePath == null) {
+            return "";
+        }
+        int index = filePath.lastIndexOf('.');
+        if (index < 0 || index == filePath.length() - 1) {
+            return "";
+        }
+        return filePath.substring(index + 1).toLowerCase();
+    }
+
+    private String findSeriesRepresentativeFile(SeriesEntry series) {
+        return series.getSeasons().values().stream()
+                .flatMap(List::stream)
+                .findFirst()
+                .map(EpisodeItem::getFilePath)
+                .orElse(null);
+    }
+
+    private void openInExplorer(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return;
+        }
+        File file = new File(filePath);
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                new ProcessBuilder("explorer", "/select,", file.getAbsolutePath()).start();
+            } else if (os.contains("mac")) {
+                new ProcessBuilder("open", "-R", file.getAbsolutePath()).start();
+            } else {
+                File parent = file.getParentFile();
+                if (parent != null) {
+                    new ProcessBuilder("xdg-open", parent.getAbsolutePath()).start();
+                }
+            }
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo abrir el explorador: " + e.getMessage());
+        }
     }
 
     private void openFile(String filePath) {
@@ -697,6 +1140,24 @@ public class MiBibliotecaUI {
             return MetadataScraper.Provider.valueOf(value);
         } catch (IllegalArgumentException e) {
             return MetadataScraper.Provider.TMDB;
+        }
+    }
+
+    private static class SeriesNode {
+        private final String label;
+        private final EpisodeItem episode;
+
+        private SeriesNode(String label, EpisodeItem episode) {
+            this.label = label;
+            this.episode = episode;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public EpisodeItem getEpisode() {
+            return episode;
         }
     }
 

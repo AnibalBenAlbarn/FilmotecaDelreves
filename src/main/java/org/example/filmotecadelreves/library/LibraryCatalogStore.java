@@ -35,6 +35,7 @@ public class LibraryCatalogStore {
                         String.valueOf(item.get("filePath")),
                         String.valueOf(item.get("title"))
                 );
+                media.setScrapedTitle((String) item.get("scrapedTitle"));
                 media.setYear(parseInt(item.get("year")));
                 media.setDirector((String) item.get("director"));
                 media.setOverview((String) item.get("overview"));
@@ -55,6 +56,7 @@ public class LibraryCatalogStore {
                         String.valueOf(item.get("id")),
                         String.valueOf(item.get("title"))
                 );
+                entry.setScrapedTitle((String) item.get("scrapedTitle"));
                 entry.setPosterPath((String) item.get("posterPath"));
                 JSONArray seasons = (JSONArray) item.getOrDefault("seasons", new JSONArray());
                 for (Object seasonObj : seasons) {
@@ -89,6 +91,7 @@ public class LibraryCatalogStore {
             media.put("id", item.getId());
             media.put("filePath", item.getFilePath());
             media.put("title", item.getTitle());
+            media.put("scrapedTitle", item.getScrapedTitle());
             media.put("year", item.getYear());
             media.put("director", item.getDirector());
             media.put("overview", item.getOverview());
@@ -105,6 +108,7 @@ public class LibraryCatalogStore {
             JSONObject series = new JSONObject();
             series.put("id", entry.getId());
             series.put("title", entry.getTitle());
+            series.put("scrapedTitle", entry.getScrapedTitle());
             series.put("posterPath", entry.getPosterPath());
             JSONArray seasons = new JSONArray();
             for (Map.Entry<Integer, List<EpisodeItem>> seasonEntry : entry.getSeasons().entrySet()) {

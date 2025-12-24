@@ -38,21 +38,35 @@ public class MetadataScraper {
             .build();
 
     public MediaMetadata fetchMovie(String title, Provider provider, String apiKey) throws IOException, InterruptedException, ParseException {
-        return switch (provider) {
-            case TMDB -> fetchTmdbMovie(title, apiKey);
-            case OMDB -> fetchOmdb(title, "movie", apiKey);
-            case TVMAZE -> null;
-            default -> null;
-        };
+        List<String> candidates = buildSearchCandidates(title);
+        for (String candidate : candidates) {
+            MediaMetadata metadata = switch (provider) {
+                case TMDB -> fetchTmdbMovie(candidate, apiKey);
+                case OMDB -> fetchOmdb(candidate, "movie", apiKey);
+                case TVMAZE -> null;
+                default -> null;
+            };
+            if (metadata != null) {
+                return metadata;
+            }
+        }
+        return null;
     }
 
     public MediaMetadata fetchSeries(String title, Provider provider, String apiKey) throws IOException, InterruptedException, ParseException {
-        return switch (provider) {
-            case TMDB -> fetchTmdbSeries(title, apiKey);
-            case OMDB -> fetchOmdb(title, "series", apiKey);
-            case TVMAZE -> fetchTvMaze(title);
-            default -> null;
-        };
+        List<String> candidates = buildSearchCandidates(title);
+        for (String candidate : candidates) {
+            MediaMetadata metadata = switch (provider) {
+                case TMDB -> fetchTmdbSeries(candidate, apiKey);
+                case OMDB -> fetchOmdb(candidate, "series", apiKey);
+                case TVMAZE -> fetchTvMaze(candidate);
+                default -> null;
+            };
+            if (metadata != null) {
+                return metadata;
+            }
+        }
+        return null;
     }
 
     public void downloadImage(String url, Path target) throws IOException, InterruptedException {
@@ -80,7 +94,7 @@ public class MetadataScraper {
         if (results == null || results.isEmpty()) {
             return null;
         }
-        JSONObject top = (JSONObject) results.get(0);
+        JSONObject top = selectBestTmdbResult(results, title, "title");
         Long id = (Long) top.get("id");
         String movieTitle = (String) top.get("title");
         String releaseDate = (String) top.getOrDefault("release_date", "");
@@ -126,7 +140,7 @@ public class MetadataScraper {
         if (results == null || results.isEmpty()) {
             return null;
         }
-        JSONObject top = (JSONObject) results.get(0);
+        JSONObject top = selectBestTmdbResult(results, title, "name");
         Long id = (Long) top.get("id");
         String name = (String) top.get("name");
         String firstAir = (String) top.getOrDefault("first_air_date", "");
@@ -191,6 +205,222 @@ public class MetadataScraper {
             posterUrl = (String) image.get("medium");
         }
         return new MediaMetadata("TVmaze", "tv", name, year, overview, posterUrl, null, List.of());
+    }
+
+    public List<MetadataSearchResult> searchMovies(String title, Integer year, String director, String genre,
+                                                   Provider provider, String apiKey)
+            throws IOException, InterruptedException, ParseException {
+        if (provider != Provider.TMDB) {
+            return List.of();
+        }
+        return searchTmdb(title, year, director, genre, apiKey, "movie");
+    }
+
+    public List<MetadataSearchResult> searchSeries(String title, Integer year, String director, String genre,
+                                                   Provider provider, String apiKey)
+            throws IOException, InterruptedException, ParseException {
+        if (provider != Provider.TMDB) {
+            return List.of();
+        }
+        return searchTmdb(title, year, director, genre, apiKey, "tv");
+    }
+
+    public MediaMetadata fetchTmdbById(long id, String type, String token) throws IOException, InterruptedException, ParseException {
+        TmdbAuth auth = resolveTmdbAuth(token);
+        String detailsUrl = "https://api.themoviedb.org/3/" + ("tv".equalsIgnoreCase(type) ? "tv" : "movie") + "/" + id +
+                "?language=es-ES&append_to_response=credits";
+        JSONObject details = getJsonWithAuth(detailsUrl, auth);
+        String titleKey = "tv".equalsIgnoreCase(type) ? "name" : "title";
+        String dateKey = "tv".equalsIgnoreCase(type) ? "first_air_date" : "release_date";
+        String title = (String) details.get(titleKey);
+        String date = (String) details.getOrDefault(dateKey, "");
+        Integer year = parseYear(date);
+        String overview = (String) details.getOrDefault("overview", "");
+        String posterPath = (String) details.get("poster_path");
+        String posterUrl = posterPath == null ? null : TMDB_IMAGE_BASE + posterPath;
+
+        List<String> genres = new ArrayList<>();
+        JSONArray genreArray = (JSONArray) details.get("genres");
+        if (genreArray != null) {
+            for (Object obj : genreArray) {
+                JSONObject genre = (JSONObject) obj;
+                genres.add(String.valueOf(genre.get("name")));
+            }
+        }
+
+        String director = null;
+        JSONObject credits = (JSONObject) details.get("credits");
+        if (credits != null && "movie".equalsIgnoreCase(type)) {
+            JSONArray crew = (JSONArray) credits.get("crew");
+            if (crew != null) {
+                for (Object obj : crew) {
+                    JSONObject crewMember = (JSONObject) obj;
+                    if ("Director".equalsIgnoreCase(String.valueOf(crewMember.get("job")))) {
+                        director = String.valueOf(crewMember.get("name"));
+                        break;
+                    }
+                }
+            }
+        }
+        return new MediaMetadata("TMDB", type, title, year, overview, posterUrl, director, genres);
+    }
+
+    private List<String> buildSearchCandidates(String title) {
+        if (title == null || title.isBlank()) {
+            return List.of();
+        }
+        String trimmed = title.trim();
+        List<String> candidates = new ArrayList<>();
+        candidates.add(trimmed);
+        String withoutYear = trimmed.replaceAll("(?i)\\b\\d{4}\\b", " ").replaceAll("\\s{2,}", " ").trim();
+        if (!withoutYear.isBlank() && !withoutYear.equals(trimmed)) {
+            candidates.add(withoutYear);
+        }
+        String normalized = normalizeText(trimmed);
+        if (!normalized.equalsIgnoreCase(trimmed) && !normalized.isBlank()) {
+            candidates.add(normalized);
+        }
+        String shortTitle = trimmed.replaceAll("(?i)\\b(1080p|720p|480p|x264|x265|h264|h265|bluray|bdrip|webrip|webdl|dvdrip)\\b", " ")
+                .replaceAll("\\s{2,}", " ").trim();
+        if (!shortTitle.isBlank() && !candidates.contains(shortTitle)) {
+            candidates.add(shortTitle);
+        }
+        return candidates.stream().distinct().toList();
+    }
+
+    private String normalizeText(String value) {
+        String normalized = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        normalized = normalized.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", " ").trim();
+        normalized = normalized.replaceAll("\\s{2,}", " ");
+        return normalized;
+    }
+
+    private JSONObject selectBestTmdbResult(JSONArray results, String query, String titleKey) {
+        String normalizedQuery = normalizeText(query).toLowerCase();
+        JSONObject best = (JSONObject) results.get(0);
+        int bestScore = -1;
+        for (Object obj : results) {
+            JSONObject candidate = (JSONObject) obj;
+            String title = String.valueOf(candidate.getOrDefault(titleKey, ""));
+            String normalizedTitle = normalizeText(title).toLowerCase();
+            int score = scoreMatch(normalizedTitle, normalizedQuery);
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private int scoreMatch(String candidate, String query) {
+        if (candidate.equals(query)) {
+            return 3;
+        }
+        if (candidate.startsWith(query) || query.startsWith(candidate)) {
+            return 2;
+        }
+        if (candidate.contains(query) || query.contains(candidate)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private List<MetadataSearchResult> searchTmdb(String title, Integer year, String director, String genre, String token, String type)
+            throws IOException, InterruptedException, ParseException {
+        if (title == null || title.isBlank()) {
+            return List.of();
+        }
+        TmdbAuth auth = resolveTmdbAuth(token);
+        String queryType = "tv".equalsIgnoreCase(type) ? "tv" : "movie";
+        StringBuilder url = new StringBuilder("https://api.themoviedb.org/3/search/").append(queryType)
+                .append("?language=es-ES&query=").append(URLEncoder.encode(title, StandardCharsets.UTF_8));
+        if (year != null) {
+            String yearParam = "tv".equalsIgnoreCase(type) ? "first_air_date_year" : "year";
+            url.append("&").append(yearParam).append("=").append(year);
+        }
+        JSONObject root = getJsonWithAuth(url.toString(), auth);
+        JSONArray results = (JSONArray) root.get("results");
+        if (results == null) {
+            return List.of();
+        }
+        List<MetadataSearchResult> output = new ArrayList<>();
+        String normalizedDirector = director == null ? null : normalizeText(director).toLowerCase();
+        String normalizedGenre = genre == null ? null : normalizeText(genre).toLowerCase();
+        for (Object obj : results) {
+            if (output.size() >= 15) {
+                break;
+            }
+            JSONObject item = (JSONObject) obj;
+            Long id = (Long) item.get("id");
+            String titleKey = "tv".equalsIgnoreCase(type) ? "name" : "title";
+            String dateKey = "tv".equalsIgnoreCase(type) ? "first_air_date" : "release_date";
+            String itemTitle = String.valueOf(item.getOrDefault(titleKey, ""));
+            Integer itemYear = parseYear(String.valueOf(item.getOrDefault(dateKey, "")));
+            String overview = String.valueOf(item.getOrDefault("overview", ""));
+            String posterPath = (String) item.get("poster_path");
+            String posterUrl = posterPath == null ? null : TMDB_IMAGE_BASE + posterPath;
+            if (id == null) {
+                continue;
+            }
+            if (normalizedDirector != null || normalizedGenre != null) {
+                JSONObject details = getJsonWithAuth("https://api.themoviedb.org/3/" + queryType + "/" + id +
+                        "?language=es-ES&append_to_response=credits", auth);
+                if (normalizedGenre != null && !normalizedGenre.isBlank()) {
+                    JSONArray genres = (JSONArray) details.get("genres");
+                    boolean matchesGenre = false;
+                    if (genres != null) {
+                        for (Object genreObj : genres) {
+                            JSONObject genreJson = (JSONObject) genreObj;
+                            String genreName = normalizeText(String.valueOf(genreJson.get("name"))).toLowerCase();
+                            if (genreName.contains(normalizedGenre) || normalizedGenre.contains(genreName)) {
+                                matchesGenre = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!matchesGenre) {
+                        continue;
+                    }
+                }
+                if (normalizedDirector != null && !normalizedDirector.isBlank()) {
+                    boolean matchesDirector = false;
+                    if ("movie".equalsIgnoreCase(type)) {
+                        JSONObject credits = (JSONObject) details.get("credits");
+                        if (credits != null) {
+                            JSONArray crew = (JSONArray) credits.get("crew");
+                            if (crew != null) {
+                                for (Object crewObj : crew) {
+                                    JSONObject crewMember = (JSONObject) crewObj;
+                                    if ("Director".equalsIgnoreCase(String.valueOf(crewMember.get("job")))) {
+                                        String name = normalizeText(String.valueOf(crewMember.get("name"))).toLowerCase();
+                                        matchesDirector = name.contains(normalizedDirector) || normalizedDirector.contains(name);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        JSONArray creators = (JSONArray) details.get("created_by");
+                        if (creators != null) {
+                            for (Object creatorObj : creators) {
+                                JSONObject creator = (JSONObject) creatorObj;
+                                String name = normalizeText(String.valueOf(creator.get("name"))).toLowerCase();
+                                if (name.contains(normalizedDirector) || normalizedDirector.contains(name)) {
+                                    matchesDirector = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!matchesDirector) {
+                        continue;
+                    }
+                }
+            }
+            output.add(new MetadataSearchResult("TMDB", queryType, id, itemTitle, itemYear, overview, posterUrl));
+        }
+        return output;
     }
 
     private JSONObject getJsonWithAuth(String url, TmdbAuth auth) throws IOException, InterruptedException, ParseException {

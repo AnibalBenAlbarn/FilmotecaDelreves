@@ -9,6 +9,7 @@ public class SeriesEntry {
     private final String id;
     private final String title;
     private String posterPath;
+    private String scrapedTitle;
     private final Map<Integer, List<EpisodeItem>> seasons = new LinkedHashMap<>();
 
     public SeriesEntry(String id, String title) {
@@ -30,6 +31,14 @@ public class SeriesEntry {
 
     public void setPosterPath(String posterPath) {
         this.posterPath = posterPath;
+    }
+
+    public String getScrapedTitle() {
+        return scrapedTitle;
+    }
+
+    public void setScrapedTitle(String scrapedTitle) {
+        this.scrapedTitle = scrapedTitle;
     }
 
     public Map<Integer, List<EpisodeItem>> getSeasons() {

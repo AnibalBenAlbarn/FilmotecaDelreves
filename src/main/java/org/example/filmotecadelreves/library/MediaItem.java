@@ -7,6 +7,7 @@ public class MediaItem {
     private final String id;
     private final String filePath;
     private final String title;
+    private String scrapedTitle;
     private Integer year;
     private String director;
     private List<String> genres = new ArrayList<>();
@@ -29,6 +30,14 @@ public class MediaItem {
 
     public String getTitle() {
         return title;
+    }
+
+    public String getScrapedTitle() {
+        return scrapedTitle;
+    }
+
+    public void setScrapedTitle(String scrapedTitle) {
+        this.scrapedTitle = scrapedTitle;
     }
 
     public Integer getYear() {
