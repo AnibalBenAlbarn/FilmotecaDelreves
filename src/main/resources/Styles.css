@@ -219,10 +219,30 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 12, 0.25, 0, 4);
 }
 
+.library-poster {
+    -fx-background-color: -color-border;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-border-color: transparent;
+    -fx-padding: 6;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.2), 10, 0.2, 0, 2);
+}
+
+.library-card:hover .library-poster {
+    -fx-background-color: -color-surface-alt;
+    -fx-border-color: -color-accent;
+    -fx-effect: dropshadow(gaussian, rgba(75, 163, 219, 0.4), 14, 0.25, 0, 5);
+}
+
 .library-card:selected {
     -fx-border-color: -color-accent;
     -fx-background-color: -color-surface-alt;
     -fx-effect: dropshadow(gaussian, rgba(75, 163, 219, 0.45), 16, 0.25, 0, 6);
+}
+
+.library-card:selected .library-poster {
+    -fx-border-color: -color-accent;
+    -fx-effect: dropshadow(gaussian, rgba(75, 163, 219, 0.55), 18, 0.3, 0, 6);
 }
 
 .library-card-title {
