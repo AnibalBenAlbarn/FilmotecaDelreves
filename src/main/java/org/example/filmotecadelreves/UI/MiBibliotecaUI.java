@@ -123,18 +123,20 @@ public class MiBibliotecaUI {
 
         libraryTab.setContent(content);
 
-        Runnable refreshView = () -> {
+        AtomicReference<Runnable> refreshView = new AtomicReference<>();
+        refreshView.set(() -> {
             LibraryCatalog catalog = catalogStore.loadCatalog(configManager.getLibraryDataDir(entry));
+            Runnable viewRef = refreshView.get();
             Node view = entry.getType() == LibraryEntry.LibraryType.MOVIES
-                    ? buildMoviesView(entry, catalog, refreshView)
-                    : buildSeriesView(entry, catalog, refreshView);
+                    ? buildMoviesView(entry, catalog, viewRef)
+                    : buildSeriesView(entry, catalog, viewRef);
             mainPane.getChildren().setAll(view);
-        };
+        });
 
-        refreshView.run();
+        refreshView.get().run();
 
-        scanButton.setOnAction(event -> scanLibrary(entry, mainPane, refreshView));
-        scrapeButton.setOnAction(event -> openScrapeDialog(entry, mainPane, refreshView));
+        scanButton.setOnAction(event -> scanLibrary(entry, mainPane, refreshView.get()));
+        scrapeButton.setOnAction(event -> openScrapeDialog(entry, mainPane, refreshView.get()));
 
         return libraryTab;
     }
