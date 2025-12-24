@@ -302,12 +302,12 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
         logDebug("webdriver.chrome.driver limpiado. Selenium Manager elegirá el ChromeDriver adecuado.");
 
         ChromeOptions options = new ChromeOptions();
-        String customChrome = ChromeExecutableLocator.resolveChromeBinary(CHROME_PATH);
+        String customChrome = ChromeExecutableLocator.resolvePackagedChromeBinary(CHROME_PATH);
         if (customChrome != null) {
             options.setBinary(customChrome);
             logDebug("Usando Chrome personalizado: " + customChrome);
         } else {
-            logWarn("No se encontró un binario de Chrome personalizado. Se usará el navegador predeterminado del sistema.");
+            logWarn("No se encontró el Chrome empaquetado. Se usará el navegador predeterminado del sistema.");
         }
 
         boolean headlessMode = !userInteraction && runHeadless;

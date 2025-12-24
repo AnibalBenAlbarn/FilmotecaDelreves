@@ -289,12 +289,12 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         logDebug("webdriver.chrome.driver limpiado. Selenium Manager elegirá el ChromeDriver adecuado.");
 
         ChromeOptions options = new ChromeOptions();
-        String chromeBinary = ChromeExecutableLocator.resolveChromeBinary(CHROME_PATH);
+        String chromeBinary = ChromeExecutableLocator.resolvePackagedChromeBinary(CHROME_PATH);
         if (chromeBinary != null) {
             options.setBinary(chromeBinary);
             logDebug("Usando binario de Chrome: " + chromeBinary);
         } else {
-            logWarn("No se encontró un binario de Chrome personalizado. Se usará el navegador predeterminado del sistema.");
+            logWarn("No se encontró el Chrome empaquetado. Se usará el navegador predeterminado del sistema.");
         }
         boolean headlessMode = !userInteraction && runHeadless;
         logDebug("Configurando navegador (userInteraction=" + userInteraction + ", headless=" + headlessMode + ")");
