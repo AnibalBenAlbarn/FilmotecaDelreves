@@ -28,9 +28,8 @@ import java.util.concurrent.TimeUnit;
 public class VideosStreamerManager {
     private WebDriver driver;
     private volatile boolean headless;
-    protected static final String PRIMARY_CHROME_DRIVER = buildRelativePath("chrome-win", "chromedriver.exe");
-    protected static final String FALLBACK_CHROME_DRIVER = buildRelativePath("ChromeDriver", "chromedriver.exe");
-    protected static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER, FALLBACK_CHROME_DRIVER};
+    protected static final String PRIMARY_CHROME_DRIVER = buildRelativePath("ChromeDriver", "chromedriver.exe");
+    protected static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER};
     protected static final String CHROME_PATH = buildRelativePath("chrome-win", "chrome.exe");
 
     private static final long EXTENSION_INITIALIZATION_DELAY_MS = 3000L;
@@ -41,7 +40,6 @@ public class VideosStreamerManager {
     private static final String POPUP_EXTENSION = POPUP_EXTENSION_RELATIVE;
 
     protected static final String[] POPUP_EXTENSION_CANDIDATES = {
-            buildRelativePath("Extension", "PopUpStrictOld"),
             POPUP_EXTENSION,
             "lib/PopUp Strict.crx"
     };
@@ -51,11 +49,6 @@ public class VideosStreamerManager {
     protected static final String[] STREAMTAPE_PACKAGED_CANDIDATES = {
             STREAMTAPE_EXTENSION,
             "lib/Streamtape.crx"
-    };
-
-    protected static final String[] STREAMTAPE_UNPACKED_CANDIDATES = {
-            "Extension/streamtape-extension-master",
-            "Extension/StreamtapeDownloader"
     };
 
     protected static final String ADBLOCK_PATH = "lib/adblock2.crx";
@@ -83,8 +76,7 @@ public class VideosStreamerManager {
     protected VideosStreamerManager(List<ServerConfig> customServerConfigs) {
         // Set the path to the ChromeDriver
         String resolvedDriver = ChromeExecutableLocator.resolveChromeDriver(
-                getAbsolutePath(PRIMARY_CHROME_DRIVER),
-                getAbsolutePath(FALLBACK_CHROME_DRIVER)
+                getAbsolutePath(PRIMARY_CHROME_DRIVER)
         );
         if (resolvedDriver != null) {
             System.setProperty("webdriver.chrome.driver", resolvedDriver);
@@ -117,10 +109,6 @@ public class VideosStreamerManager {
         return STREAMTAPE_PACKAGED_CANDIDATES.clone();
     }
 
-    protected static String[] getStreamtapeUnpackedCandidates() {
-        return STREAMTAPE_UNPACKED_CANDIDATES.clone();
-    }
-
     private String[] buildAddonList(boolean includeAdblock, boolean includeStreamtape) {
         LinkedHashSet<String> addons = new LinkedHashSet<>();
         addons.add(POPUP_EXTENSION);
@@ -133,7 +121,6 @@ public class VideosStreamerManager {
         if (includeStreamtape) {
             addons.add(STREAMTAPE_EXTENSION);
             addons.addAll(Arrays.asList(getStreamtapePackagedCandidates()));
-            addons.addAll(Arrays.asList(getStreamtapeUnpackedCandidates()));
         }
 
         return addons.toArray(new String[0]);
@@ -393,12 +380,8 @@ public class VideosStreamerManager {
                 File canonicalAddon = toCanonicalFile(addon);
                 String canonicalPath = canonicalAddon.getAbsolutePath();
 
-                if (canonicalAddon.isDirectory()) {
-                    System.out.println("Skipping unpacked extension (only CRX files are supported): " + canonicalPath);
-                } else {
-                    if (!packagedExtensions.add(canonicalPath)) {
-                        System.out.println("Skipping duplicate extension: " + canonicalPath);
-                    }
+                if (!packagedExtensions.add(canonicalPath)) {
+                    System.out.println("Skipping duplicate extension: " + canonicalPath);
                 }
             } else {
                 System.out.println("Warning: Extension not found at: " + addonPath);

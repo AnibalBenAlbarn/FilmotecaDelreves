@@ -66,6 +66,7 @@ public class AjustesUI {
     private Slider directDownloadSpeedLimitSlider;
     private CheckBox autoStartDirectDownloadsCheckbox;
     private CheckBox streamplayHeadlessCheckbox;
+    private CheckBox powvideoHeadlessCheckbox;
     private TextField apiKeyCaptchaField;
 
     // Configuración de interfaz
@@ -402,6 +403,13 @@ public class AjustesUI {
         );
         streamplayHeadlessCheckbox.setTooltip(streamplayHeadlessTooltip);
 
+        powvideoHeadlessCheckbox = new CheckBox("Ejecutar Powvideo en segundo plano (modo headless)");
+        powvideoHeadlessCheckbox.setSelected(true);
+        Tooltip powvideoHeadlessTooltip = new Tooltip(
+                "Desactiva esta opción para ver el navegador de Powvideo mientras se automatiza la descarga."
+        );
+        powvideoHeadlessCheckbox.setTooltip(powvideoHeadlessTooltip);
+
         grid.add(maxConcurrentDirectDownloadsLabel, 0, 0);
         grid.add(maxConcurrentDirectDownloadsSlider, 0, 1);
         grid.add(maxConcurrentDirectDownloadsValueLabel, 1, 1);
@@ -410,6 +418,7 @@ public class AjustesUI {
         grid.add(directDownloadSpeedLimitValueLabel, 1, 3);
         grid.add(autoStartDirectDownloadsCheckbox, 0, 4);
         grid.add(streamplayHeadlessCheckbox, 0, 5, 2, 1);
+        grid.add(powvideoHeadlessCheckbox, 0, 6, 2, 1);
 
         TitledPane directDownloadsPane = new TitledPane("Configuración de Descargas Directas", grid);
         directDownloadsPane.setExpanded(true);
@@ -960,6 +969,7 @@ public class AjustesUI {
         config.put("directDownloadSpeedLimit", (int) directDownloadSpeedLimitSlider.getValue());
         config.put("autoStartDirectDownloads", autoStartDirectDownloadsCheckbox.isSelected());
         config.put("streamplayHeadless", streamplayHeadlessCheckbox.isSelected());
+        config.put("powvideoHeadless", powvideoHeadlessCheckbox.isSelected());
         config.put("apiKeyCaptcha", apiKeyCaptchaField.getText());
 
 // Configuración de interfaz
@@ -997,6 +1007,7 @@ public class AjustesUI {
             if (mainUI != null) {
                 mainUI.updateConfig(config);
                 mainUI.applyStreamplayHeadlessPreference(streamplayHeadlessCheckbox.isSelected());
+                mainUI.applyPowvideoHeadlessPreference(powvideoHeadlessCheckbox.isSelected());
             }
 
             // Generar y aplicar el archivo CSS solo si el tema seleccionado es "Personalizado".
@@ -1124,12 +1135,18 @@ public class AjustesUI {
                 } else {
                     streamplayHeadlessCheckbox.setSelected(true);
                 }
+                if (config.containsKey("powvideoHeadless")) {
+                    powvideoHeadlessCheckbox.setSelected((Boolean) config.get("powvideoHeadless"));
+                } else {
+                    powvideoHeadlessCheckbox.setSelected(true);
+                }
                 if (config.containsKey("apiKeyCaptcha")) {
                     apiKeyCaptchaField.setText((String) config.get("apiKeyCaptcha"));
                 }
 
                 if (mainUI != null) {
                     mainUI.applyStreamplayHeadlessPreference(streamplayHeadlessCheckbox.isSelected());
+                    mainUI.applyPowvideoHeadlessPreference(powvideoHeadlessCheckbox.isSelected());
                 }
 
 // Configuración de interfaz
@@ -1249,6 +1266,7 @@ public class AjustesUI {
         directDownloadSpeedLimitSlider.setValue(0);
         autoStartDirectDownloadsCheckbox.setSelected(true);
         streamplayHeadlessCheckbox.setSelected(true);
+        powvideoHeadlessCheckbox.setSelected(true);
         apiKeyCaptchaField.setText("");
 
 // Configuración de interfaz
@@ -1263,6 +1281,7 @@ public class AjustesUI {
 
         if (mainUI != null) {
             mainUI.applyStreamplayHeadlessPreference(true);
+            mainUI.applyPowvideoHeadlessPreference(true);
         }
 
 // Restaurar colores predeterminados
@@ -1366,6 +1385,10 @@ public class AjustesUI {
 
     public boolean isStreamplayHeadless() {
         return streamplayHeadlessCheckbox == null || streamplayHeadlessCheckbox.isSelected();
+    }
+
+    public boolean isPowvideoHeadless() {
+        return powvideoHeadlessCheckbox == null || powvideoHeadlessCheckbox.isSelected();
     }
 
     public String getApiKeyCaptcha() {

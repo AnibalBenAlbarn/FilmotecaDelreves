@@ -40,8 +40,8 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
     private static final String PROVIDER_NAME = "PowVideo";
     private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
     private static final String CHROME_PATH = resolvePath("chrome-win", "chrome.exe");
+    private static final String CHROME_DRIVER_PATH = resolvePath("ChromeDriver", "chromedriver.exe");
     private static final String[] NOPECHA_EXTENSION_CANDIDATES = {
-            "Extension/nopecatcha old",
             "Extension/NopeCaptcha.crx",
             "lib/nopecha.crx",
             "C:\\Users\\Anibal\\IdeaProjects\\FilmotecaDelreves\\Extension\\NopeCaptcha.crx"
@@ -298,8 +298,14 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
      */
     private void setupBrowser(boolean userInteraction) {
 
-        System.clearProperty("webdriver.chrome.driver");
-        logDebug("webdriver.chrome.driver limpiado. Selenium Manager elegirá el ChromeDriver adecuado.");
+        String resolvedDriver = ChromeExecutableLocator.resolveChromeDriver(CHROME_DRIVER_PATH);
+        if (resolvedDriver != null) {
+            System.setProperty("webdriver.chrome.driver", resolvedDriver);
+            logDebug("Usando ChromeDriver: " + resolvedDriver);
+        } else {
+            System.clearProperty("webdriver.chrome.driver");
+            logWarn("ChromeDriver no encontrado. Selenium Manager determinará la versión adecuada automáticamente.");
+        }
 
         ChromeOptions options = new ChromeOptions();
         String customChrome = ChromeExecutableLocator.resolvePackagedChromeBinary(CHROME_PATH);

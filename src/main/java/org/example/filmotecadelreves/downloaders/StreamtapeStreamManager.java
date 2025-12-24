@@ -1,6 +1,5 @@
 package org.example.filmotecadelreves.downloaders;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,32 +70,14 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
             addIfMissing(addons, POPUP_EXTENSION_RELATIVE);
         }
 
-        boolean hasUnpacked = false;
-        for (String candidate : getStreamtapeUnpackedCandidates()) {
-            File unpackedDir = new File(candidate);
-            if (unpackedDir.isDirectory()) {
-                String absolutePath = unpackedDir.getAbsolutePath();
-                if (!addons.contains(absolutePath)) {
-                    addons.add(absolutePath);
-                }
-                hasUnpacked = true;
-            }
+        boolean packagedFound = false;
+        for (String candidate : getStreamtapePackagedCandidates()) {
+            packagedFound = addIfExists(addons, candidate) | packagedFound;
         }
 
-        if (hasUnpacked) {
-            for (String candidate : getStreamtapePackagedCandidates()) {
-                addIfExists(addons, candidate);
-            }
-        } else {
-            boolean packagedFound = false;
-            for (String candidate : getStreamtapePackagedCandidates()) {
-                packagedFound = addIfExists(addons, candidate) | packagedFound;
-            }
-
-            if (!packagedFound) {
-                // Keep the relative path as a fallback to show a clear warning when missing.
-                addIfMissing(addons, STREAMTAPE_EXTENSION_RELATIVE);
-            }
+        if (!packagedFound) {
+            // Keep the relative path as a fallback to show a clear warning when missing.
+            addIfMissing(addons, STREAMTAPE_EXTENSION_RELATIVE);
         }
 
         if (addons.isEmpty()) {

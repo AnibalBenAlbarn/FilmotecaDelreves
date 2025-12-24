@@ -26,9 +26,8 @@ import java.util.function.Consumer;
  */
 public class MixdropDownloader implements DirectDownloader {
     // Configuración
-    private static final String PRIMARY_CHROME_DRIVER = resolvePath("chrome-win", "chromedriver.exe");
-    private static final String FALLBACK_CHROME_DRIVER = resolvePath("ChromeDriver", "chromedriver.exe");
-    private static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER, FALLBACK_CHROME_DRIVER};
+    private static final String PRIMARY_CHROME_DRIVER = resolvePath("ChromeDriver", "chromedriver.exe");
+    private static final String[] CHROME_DRIVER_CANDIDATES = {PRIMARY_CHROME_DRIVER};
     private static final String CHROME_BINARY_PATH = resolvePath("chrome-win", "chrome.exe");
     private static final int WAIT_TIME_SECONDS = 10; // Tiempo de espera para Mixdrop
 
