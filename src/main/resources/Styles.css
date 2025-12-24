@@ -209,12 +209,20 @@
     -fx-border-radius: 12;
     -fx-background-radius: 12;
     -fx-padding: 10;
+    -fx-cursor: hand;
 }
 
 .library-card:hover {
     -fx-background-color: -color-surface-alt;
     -fx-scale-x: 1.02;
     -fx-scale-y: 1.02;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 12, 0.25, 0, 4);
+}
+
+.library-card:selected {
+    -fx-border-color: -color-accent;
+    -fx-background-color: -color-surface-alt;
+    -fx-effect: dropshadow(gaussian, rgba(75, 163, 219, 0.45), 16, 0.25, 0, 6);
 }
 
 .library-card-title {
