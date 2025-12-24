@@ -1,5 +1,6 @@
 package org.example.filmotecadelreves.downloaders;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,6 +42,11 @@ public class StreamtapeStreamManager extends VideosStreamerManager {
         }
 
         return prepared;
+    }
+
+    @Override
+    protected boolean prefersPackagedChrome(ServerConfig config) {
+        return true;
     }
 
     private static List<ServerConfig> createConfigs() {
