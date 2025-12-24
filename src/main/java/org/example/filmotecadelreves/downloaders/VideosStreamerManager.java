@@ -40,15 +40,13 @@ public class VideosStreamerManager {
     private static final String POPUP_EXTENSION = POPUP_EXTENSION_RELATIVE;
 
     protected static final String[] POPUP_EXTENSION_CANDIDATES = {
-            POPUP_EXTENSION,
-            "lib/PopUp Strict.crx"
+            POPUP_EXTENSION
     };
 
     protected static final String STREAMTAPE_EXTENSION_RELATIVE = buildRelativePath("Extension", "StreamtapeDownloader.crx");
     private static final String STREAMTAPE_EXTENSION = STREAMTAPE_EXTENSION_RELATIVE;
     protected static final String[] STREAMTAPE_PACKAGED_CANDIDATES = {
-            STREAMTAPE_EXTENSION,
-            "lib/Streamtape.crx"
+            STREAMTAPE_EXTENSION
     };
 
     protected static final String ADBLOCK_PATH = "lib/adblock2.crx";
@@ -368,7 +366,8 @@ public class VideosStreamerManager {
         options.setExperimentalOption("useAutomationExtension", false);
 
         // Add extensions based on server configuration
-        Set<String> packagedExtensions = new LinkedHashSet<>();
+        Set<Path> packagedExtensions = new LinkedHashSet<>();
+        List<File> resolvedExtensions = new ArrayList<>();
 
         for (String addonPath : config.getAddons()) {
             if (addonPath == null || addonPath.isEmpty()) {
@@ -377,23 +376,32 @@ public class VideosStreamerManager {
 
             File addon = resolveAddonFile(addonPath);
             if (addon != null && addon.exists()) {
-                File canonicalAddon = toCanonicalFile(addon);
-                String canonicalPath = canonicalAddon.getAbsolutePath();
+                if (addon.isDirectory()) {
+                    System.out.println("Se omitió carpeta (solo CRX): " + addonPath);
+                    continue;
+                }
 
-                if (!packagedExtensions.add(canonicalPath)) {
-                    System.out.println("Skipping duplicate extension: " + canonicalPath);
+                try {
+                    Path realPath = addon.toPath().toRealPath();
+                    if (!packagedExtensions.add(realPath)) {
+                        System.out.println("Extensión duplicada omitida: " + addon.getName());
+                        continue;
+                    }
+                    resolvedExtensions.add(addon);
+                    System.out.println("Cargando extensión: " + addon.getName() + " [" + addonPath + "]");
+                } catch (IOException e) {
+                    System.out.println("Fallo instalando CRX: " + addon.getName() + " [" + addonPath + "] => " + e.getMessage());
                 }
             } else {
-                System.out.println("Warning: Extension not found at: " + addonPath);
+                System.out.println("Advertencia: Extensión no encontrada (relativa): " + addonPath);
             }
         }
 
-        for (String extensionPath : packagedExtensions) {
-            options.addExtensions(new File(extensionPath));
-            System.out.println("Added extension: " + extensionPath);
+        for (File extension : resolvedExtensions) {
+            options.addExtensions(extension);
         }
 
-        if (packagedExtensions.isEmpty()) {
+        if (resolvedExtensions.isEmpty()) {
             System.out.println("No extensions were loaded for this configuration.");
         }
 
@@ -623,24 +631,19 @@ public class VideosStreamerManager {
         return profileDir;
     }
 
-    private File toCanonicalFile(File addon) {
-        try {
-            return addon.getCanonicalFile();
-        } catch (IOException e) {
-            return addon.getAbsoluteFile();
-        }
-    }
-
     private File resolveAddonFile(String addonPath) {
-        if (addonPath == null || addonPath.isEmpty()) {
+        if (addonPath == null || addonPath.isBlank()) {
             return null;
         }
 
-        File addon = new File(addonPath);
-        if (addon.exists()) {
-            return addon;
+        Path candidate = Paths.get(addonPath.replace("\\", File.separator));
+        if (candidate.isAbsolute() || addonPath.contains(":")) {
+            return null;
         }
 
-        return null;
+        Path base = Paths.get(System.getProperty("user.dir"));
+        Path resolved = base.resolve(candidate).normalize();
+        File addon = resolved.toFile();
+        return addon.exists() ? addon : null;
     }
 }
