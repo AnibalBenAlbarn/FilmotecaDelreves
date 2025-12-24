@@ -235,6 +235,29 @@
     -fx-font-size: 12px;
 }
 
+.library-details {
+    -fx-background-color: -color-surface;
+    -fx-border-color: -color-border;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 12;
+}
+
+.library-details-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: 600;
+    -fx-text-fill: -color-text;
+}
+
+.library-details-meta {
+    -fx-text-fill: -color-text-muted;
+    -fx-font-size: 12px;
+}
+
+.library-details-body {
+    -fx-text-fill: -color-text;
+}
+
 .library-poster {
     -fx-background-color: derive(-color-surface, -5%);
     -fx-border-radius: 10;
