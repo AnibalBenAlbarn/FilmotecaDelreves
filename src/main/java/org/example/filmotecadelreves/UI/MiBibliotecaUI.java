@@ -60,11 +60,9 @@ public class MiBibliotecaUI {
         root.setPadding(new Insets(10));
 
         VBox header = new VBox(6);
-        Label title = new Label("Biblioteca personal");
+        Label title = new Label("Bibloteca personal");
         title.getStyleClass().add("library-title");
-        Label subtitle = new Label("Gestiona tus pelis y series descargadas con estilo Netflix.");
-        subtitle.getStyleClass().add("library-subtitle");
-        header.getChildren().addAll(title, subtitle);
+        header.getChildren().addAll(title);
 
         HBox actions = new HBox(10);
         actions.setAlignment(Pos.CENTER_LEFT);
@@ -175,6 +173,21 @@ public class MiBibliotecaUI {
         grid.setVgap(16);
         grid.setPrefWrapLength(1000);
 
+        Label detailsTitle = new Label();
+        detailsTitle.getStyleClass().add("library-details-title");
+        Label detailsMeta = new Label();
+        detailsMeta.getStyleClass().add("library-details-meta");
+        Label detailsOverview = new Label();
+        detailsOverview.getStyleClass().add("library-details-body");
+        detailsOverview.setWrapText(true);
+        Label detailsFile = new Label();
+        detailsFile.getStyleClass().add("library-details-meta");
+        detailsFile.setWrapText(true);
+
+        VBox detailsBox = new VBox(6, detailsTitle, detailsMeta, detailsOverview, detailsFile);
+        detailsBox.getStyleClass().add("library-details");
+        showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile);
+
         Runnable applyFilters = () -> {
             String query = searchField.getText() == null ? "" : searchField.getText().toLowerCase();
             String genre = genreFilter.getValue();
@@ -184,8 +197,12 @@ public class MiBibliotecaUI {
                     .filter(item -> genre == null || item.getGenres().contains(genre))
                     .filter(item -> director == null || director.equalsIgnoreCase(item.getDirector()))
                     .collect(Collectors.toList());
+            clearSelectedCard();
+            showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile);
             grid.getChildren().setAll(filtered.stream()
-                    .map(item -> buildMovieCard(entry, catalog, item, refreshView))
+                    .map(item -> buildMovieCard(entry, catalog, item, refreshView, () -> {
+                        showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile);
+                    }))
                     .collect(Collectors.toList()));
         };
 
@@ -199,7 +216,7 @@ public class MiBibliotecaUI {
         scrollPane.setFitToWidth(true);
         scrollPane.getStyleClass().add("library-scroll");
 
-        container.getChildren().addAll(filters, scrollPane);
+        container.getChildren().addAll(filters, scrollPane, detailsBox);
         return container;
     }
 
@@ -214,14 +231,30 @@ public class MiBibliotecaUI {
         grid.setVgap(16);
         grid.setPrefWrapLength(1000);
 
+        Label detailsTitle = new Label();
+        detailsTitle.getStyleClass().add("library-details-title");
+        Label detailsMeta = new Label();
+        detailsMeta.getStyleClass().add("library-details-meta");
+        Label detailsBody = new Label();
+        detailsBody.getStyleClass().add("library-details-body");
+        detailsBody.setWrapText(true);
+
+        VBox detailsBox = new VBox(6, detailsTitle, detailsMeta, detailsBody);
+        detailsBox.getStyleClass().add("library-details");
+        showSeriesPlaceholder(detailsTitle, detailsMeta, detailsBody);
+
         Runnable applyFilters = () -> {
             String query = searchField.getText() == null ? "" : searchField.getText().toLowerCase();
             List<SeriesEntry> filtered = catalog.getSeries().stream()
                     .filter(item -> query.isBlank() || matchesSeriesQuery(item, query))
                     .sorted(Comparator.comparing(SeriesEntry::getTitle))
                     .collect(Collectors.toList());
+            clearSelectedCard();
+            showSeriesPlaceholder(detailsTitle, detailsMeta, detailsBody);
             grid.getChildren().setAll(filtered.stream()
-                    .map(series -> buildSeriesCard(entry, catalog, series, refreshView))
+                    .map(series -> buildSeriesCard(entry, catalog, series, refreshView, () -> {
+                        showSeriesDetails(series, detailsTitle, detailsMeta, detailsBody);
+                    }))
                     .collect(Collectors.toList()));
         };
 
@@ -232,17 +265,17 @@ public class MiBibliotecaUI {
         scrollPane.setFitToWidth(true);
         scrollPane.getStyleClass().add("library-scroll");
 
-        container.getChildren().addAll(searchField, scrollPane);
+        container.getChildren().addAll(searchField, scrollPane, detailsBox);
         return container;
     }
 
-    private Node buildMovieCard(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
+    private Node buildMovieCard(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView, Runnable onSelect) {
         VBox card = new VBox(8);
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
         card.setPrefWidth(180);
         ContextMenu contextMenu = createMovieContextMenu(entry, catalog, item, refreshView);
-        configureCardInteractions(card, () -> openFile(item.getFilePath()), contextMenu);
+        configureCardInteractions(card, () -> openFile(item.getFilePath()), contextMenu, onSelect);
 
         StackPane posterPane = new StackPane();
         posterPane.getStyleClass().add("library-poster");
@@ -258,13 +291,13 @@ public class MiBibliotecaUI {
         return card;
     }
 
-    private Node buildSeriesCard(LibraryEntry entry, LibraryCatalog catalog, SeriesEntry series, Runnable refreshView) {
+    private Node buildSeriesCard(LibraryEntry entry, LibraryCatalog catalog, SeriesEntry series, Runnable refreshView, Runnable onSelect) {
         VBox card = new VBox(8);
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
         card.setPrefWidth(180);
         ContextMenu contextMenu = createSeriesContextMenu(entry, catalog, series, refreshView);
-        configureCardInteractions(card, () -> openSeriesDialog(series), contextMenu);
+        configureCardInteractions(card, () -> openSeriesDialog(series), contextMenu, onSelect);
 
         StackPane posterPane = new StackPane();
         posterPane.getStyleClass().add("library-poster");
@@ -280,12 +313,15 @@ public class MiBibliotecaUI {
         return card;
     }
 
-    private void configureCardInteractions(Region card, Runnable openAction, ContextMenu contextMenu) {
+    private void configureCardInteractions(Region card, Runnable openAction, ContextMenu contextMenu, Runnable selectAction) {
         card.setCursor(Cursor.HAND);
         card.setFocusTraversable(true);
         card.setOnMouseClicked(event -> {
             if (event.getButton() == MouseButton.PRIMARY) {
                 selectCard(card);
+                if (selectAction != null) {
+                    selectAction.run();
+                }
                 if (event.getClickCount() == 2) {
                     openAction.run();
                 }
@@ -293,6 +329,9 @@ public class MiBibliotecaUI {
         });
         card.setOnContextMenuRequested(event -> {
             selectCard(card);
+            if (selectAction != null) {
+                selectAction.run();
+            }
             if (contextMenu != null) {
                 contextMenu.show(card, event.getScreenX(), event.getScreenY());
             }
@@ -301,6 +340,9 @@ public class MiBibliotecaUI {
             switch (event.getCode()) {
                 case ENTER, SPACE -> {
                     selectCard(card);
+                    if (selectAction != null) {
+                        selectAction.run();
+                    }
                     openAction.run();
                 }
                 default -> {
@@ -316,6 +358,13 @@ public class MiBibliotecaUI {
         }
         card.pseudoClassStateChanged(SELECTED_PSEUDO_CLASS, true);
         card.requestFocus();
+    }
+
+    private void clearSelectedCard() {
+        Node previous = selectedCard.getAndSet(null);
+        if (previous != null) {
+            previous.pseudoClassStateChanged(SELECTED_PSEUDO_CLASS, false);
+        }
     }
 
     private Node createPosterContent(String posterPath, String title) {
@@ -353,6 +402,51 @@ public class MiBibliotecaUI {
             builder.append(item.getDirector());
         }
         return builder.toString();
+    }
+
+    private void showMovieDetails(MediaItem item, Label title, Label meta, Label overview, Label file) {
+        title.setText(item.getTitle());
+        StringBuilder metaBuilder = new StringBuilder(buildMeta(item));
+        if (!item.getGenres().isEmpty()) {
+            if (!metaBuilder.isEmpty()) {
+                metaBuilder.append(" · ");
+            }
+            metaBuilder.append(String.join(", ", item.getGenres()));
+        }
+        meta.setText(metaBuilder.isEmpty() ? "Sin metadatos" : metaBuilder.toString());
+        String overviewText = item.getOverview();
+        overview.setText((overviewText == null || overviewText.isBlank()) ? "Sin sinopsis disponible." : overviewText);
+        String filePath = item.getFilePath();
+        if (filePath == null || filePath.isBlank()) {
+            file.setText("Archivo: —");
+        } else {
+            file.setText("Archivo: " + new File(filePath).getName());
+        }
+    }
+
+    private void showMoviePlaceholder(Label title, Label meta, Label overview, Label file) {
+        title.setText("Selecciona una película");
+        meta.setText("Elige una tarjeta para ver los detalles.");
+        overview.setText("");
+        file.setText("");
+    }
+
+    private void showSeriesDetails(SeriesEntry series, Label title, Label meta, Label body) {
+        title.setText(series.getTitle());
+        long episodes = series.getSeasons().values().stream().mapToLong(List::size).sum();
+        meta.setText(series.getSeasons().size() + " temporadas · " + episodes + " episodios");
+        String folder = null;
+        String sampleFile = findSeriesRepresentativeFile(series);
+        if (sampleFile != null) {
+            folder = new File(sampleFile).getParent();
+        }
+        body.setText(folder == null ? "Sin ruta disponible." : "Carpeta: " + folder);
+    }
+
+    private void showSeriesPlaceholder(Label title, Label meta, Label body) {
+        title.setText("Selecciona una serie");
+        meta.setText("Elige una tarjeta para ver los detalles.");
+        body.setText("");
     }
 
     private boolean matchesQuery(MediaItem item, String query) {
