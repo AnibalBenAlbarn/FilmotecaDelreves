@@ -9,6 +9,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.Cursor;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
@@ -32,9 +33,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javafx.css.PseudoClass;
 
 public class MiBibliotecaUI {
     private static final Logger LOGGER = Logger.getLogger(MiBibliotecaUI.class.getName());
+    private static final PseudoClass SELECTED_PSEUDO_CLASS = PseudoClass.getPseudoClass("selected");
     private final Tab tab;
     private final TabPane libraryTabs = new TabPane();
     private final LibraryConfigManager configManager = new LibraryConfigManager();
@@ -43,6 +46,7 @@ public class MiBibliotecaUI {
     private final MetadataScraper metadataScraper = new MetadataScraper();
     private final ObservableList<LibraryEntry> libraries = FXCollections.observableArrayList();
     private final Window owner;
+    private final AtomicReference<Node> selectedCard = new AtomicReference<>();
 
     public MiBibliotecaUI(Window owner) {
         this.owner = owner;
@@ -234,6 +238,7 @@ public class MiBibliotecaUI {
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
         card.setPrefWidth(180);
+        configureCardInteractions(card);
 
         StackPane posterPane = new StackPane();
         posterPane.getStyleClass().add("library-poster");
@@ -259,6 +264,7 @@ public class MiBibliotecaUI {
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
         card.setPrefWidth(180);
+        configureCardInteractions(card);
 
         StackPane posterPane = new StackPane();
         posterPane.getStyleClass().add("library-poster");
@@ -277,6 +283,28 @@ public class MiBibliotecaUI {
 
         card.getChildren().addAll(posterPane, title, meta);
         return card;
+    }
+
+    private void configureCardInteractions(Region card) {
+        card.setCursor(Cursor.HAND);
+        card.setFocusTraversable(true);
+        card.setOnMouseClicked(event -> selectCard(card));
+        card.setOnKeyPressed(event -> {
+            switch (event.getCode()) {
+                case ENTER, SPACE -> selectCard(card);
+                default -> {
+                }
+            }
+        });
+    }
+
+    private void selectCard(Node card) {
+        Node previous = selectedCard.getAndSet(card);
+        if (previous != null && previous != card) {
+            previous.pseudoClassStateChanged(SELECTED_PSEUDO_CLASS, false);
+        }
+        card.pseudoClassStateChanged(SELECTED_PSEUDO_CLASS, true);
+        card.requestFocus();
     }
 
     private Node createPosterContent(String posterPath, String title) {
