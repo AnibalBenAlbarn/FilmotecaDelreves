@@ -144,6 +144,8 @@ public class MiBibliotecaUI {
     private Node buildMoviesView(LibraryEntry entry, LibraryCatalog catalog, Runnable refreshView) {
         VBox container = new VBox(12);
 
+        final String allFiltersLabel = "Todos";
+
         TextField searchField = new TextField();
         searchField.setPromptText("Buscar por título, director o género...");
 
@@ -164,8 +166,10 @@ public class MiBibliotecaUI {
                 .sorted()
                 .collect(Collectors.toList());
 
-        genreFilter.getItems().setAll(genres);
-        directorFilter.getItems().setAll(directors);
+        genreFilter.getItems().add(allFiltersLabel);
+        genreFilter.getItems().addAll(genres);
+        directorFilter.getItems().add(allFiltersLabel);
+        directorFilter.getItems().addAll(directors);
 
         HBox filters = new HBox(10, searchField, genreFilter, directorFilter);
         filters.setAlignment(Pos.CENTER_LEFT);
@@ -194,6 +198,12 @@ public class MiBibliotecaUI {
             String query = searchField.getText() == null ? "" : searchField.getText().toLowerCase();
             String genre = genreFilter.getValue();
             String director = directorFilter.getValue();
+            if (allFiltersLabel.equals(genre)) {
+                genre = null;
+            }
+            if (allFiltersLabel.equals(director)) {
+                director = null;
+            }
             List<MediaItem> filtered = catalog.getMovies().stream()
                     .filter(item -> query.isBlank() || matchesQuery(item, query))
                     .filter(item -> genre == null || item.getGenres().contains(genre))
@@ -209,8 +219,20 @@ public class MiBibliotecaUI {
         };
 
         searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
-        genreFilter.valueProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
-        directorFilter.valueProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
+        genreFilter.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (allFiltersLabel.equals(newValue)) {
+                genreFilter.setValue(null);
+                return;
+            }
+            applyFilters.run();
+        });
+        directorFilter.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (allFiltersLabel.equals(newValue)) {
+                directorFilter.setValue(null);
+                return;
+            }
+            applyFilters.run();
+        });
 
         applyFilters.run();
 
