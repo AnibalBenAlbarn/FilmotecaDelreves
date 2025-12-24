@@ -59,11 +59,11 @@ public class MixdropDownloader implements DirectDownloader {
                     System.err.println("ChromeDriver empaquetado no disponible. Selenium Manager resolverá la versión adecuada.");
                 }
                 ChromeOptions options = new ChromeOptions();
-                String chromeBinary = ChromeExecutableLocator.resolveChromeBinary(CHROME_BINARY_PATH);
+                String chromeBinary = ChromeExecutableLocator.resolvePackagedChromeBinary(CHROME_BINARY_PATH);
                 if (chromeBinary != null) {
                     options.setBinary(chromeBinary);
                 } else {
-                    System.err.println("No se encontró un Chrome personalizado. Se usará el navegador predeterminado del sistema.");
+                    System.err.println("No se encontró el Chrome empaquetado. Se usará el navegador predeterminado del sistema.");
                 }
                 options.addArguments("--no-sandbox", "--disable-dev-shm-usage", "--window-size=1920,1080", "--remote-allow-origins=*");
                 driver = new ChromeDriver(options);
