@@ -17,8 +17,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class MetadataScraper {
+    private static final Logger LOGGER = Logger.getLogger(MetadataScraper.class.getName());
     public enum Provider {
         TMDB,
         OMDB,
@@ -69,9 +72,10 @@ public class MetadataScraper {
     }
 
     private MediaMetadata fetchTmdbMovie(String title, String token) throws IOException, InterruptedException, ParseException {
+        TmdbAuth auth = resolveTmdbAuth(token);
         String url = "https://api.themoviedb.org/3/search/movie?language=es-ES&query=" +
                 URLEncoder.encode(title, StandardCharsets.UTF_8);
-        JSONObject root = getJsonWithAuth(url, token);
+        JSONObject root = getJsonWithAuth(url, auth);
         JSONArray results = (JSONArray) root.get("results");
         if (results == null || results.isEmpty()) {
             return null;
@@ -88,7 +92,7 @@ public class MetadataScraper {
         List<String> genres = new ArrayList<>();
         String director = null;
         if (id != null) {
-            JSONObject details = getJsonWithAuth("https://api.themoviedb.org/3/movie/" + id + "?language=es-ES&append_to_response=credits", token);
+            JSONObject details = getJsonWithAuth("https://api.themoviedb.org/3/movie/" + id + "?language=es-ES&append_to_response=credits", auth);
             JSONArray genreArray = (JSONArray) details.get("genres");
             if (genreArray != null) {
                 for (Object obj : genreArray) {
@@ -114,9 +118,10 @@ public class MetadataScraper {
     }
 
     private MediaMetadata fetchTmdbSeries(String title, String token) throws IOException, InterruptedException, ParseException {
+        TmdbAuth auth = resolveTmdbAuth(token);
         String url = "https://api.themoviedb.org/3/search/tv?language=es-ES&query=" +
                 URLEncoder.encode(title, StandardCharsets.UTF_8);
-        JSONObject root = getJsonWithAuth(url, token);
+        JSONObject root = getJsonWithAuth(url, auth);
         JSONArray results = (JSONArray) root.get("results");
         if (results == null || results.isEmpty()) {
             return null;
@@ -132,7 +137,7 @@ public class MetadataScraper {
 
         List<String> genres = new ArrayList<>();
         if (id != null) {
-            JSONObject details = getJsonWithAuth("https://api.themoviedb.org/3/tv/" + id + "?language=es-ES", token);
+            JSONObject details = getJsonWithAuth("https://api.themoviedb.org/3/tv/" + id + "?language=es-ES", auth);
             JSONArray genreArray = (JSONArray) details.get("genres");
             if (genreArray != null) {
                 for (Object obj : genreArray) {
@@ -188,17 +193,21 @@ public class MetadataScraper {
         return new MediaMetadata("TVmaze", "tv", name, year, overview, posterUrl, null, List.of());
     }
 
-    private JSONObject getJsonWithAuth(String url, String token) throws IOException, InterruptedException, ParseException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+    private JSONObject getJsonWithAuth(String url, TmdbAuth auth) throws IOException, InterruptedException, ParseException {
+        String resolvedUrl = buildTmdbUrl(url, auth);
+        logTmdbRequest(resolvedUrl, auth);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(resolvedUrl))
                 .timeout(Duration.ofSeconds(20))
                 .header("Accept", "application/json")
                 .GET();
-        if (token != null && !token.isBlank()) {
-            builder.header("Authorization", "Bearer " + token);
+        if (auth.type == TmdbTokenType.V4 && auth.token != null && !auth.token.isBlank()) {
+            builder.header("Authorization", "Bearer " + auth.token);
         }
         HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("HTTP " + response.statusCode() + " -> " + url);
+            String body = response.body();
+            logTmdbError(resolvedUrl, auth, response.statusCode(), body);
+            throw new IOException("HTTP " + response.statusCode() + " -> " + resolvedUrl + " body=" + body);
         }
         JSONParser parser = new JSONParser();
         return (JSONObject) parser.parse(response.body());
@@ -231,5 +240,78 @@ public class MetadataScraper {
             }
         }
         return null;
+    }
+
+    private TmdbAuth resolveTmdbAuth(String rawToken) {
+        String token = rawToken == null ? null : rawToken.trim();
+        if (token == null || token.isBlank()) {
+            return new TmdbAuth(null, TmdbTokenType.NONE);
+        }
+        if (looksLikeJwt(token)) {
+            return new TmdbAuth(token, TmdbTokenType.V4);
+        }
+        if (token.matches("(?i)^[a-f0-9]{32}$")) {
+            return new TmdbAuth(token, TmdbTokenType.V3);
+        }
+        LOGGER.warning("Token TMDB no reconocido. Se intentará como Bearer v4.");
+        return new TmdbAuth(token, TmdbTokenType.V4);
+    }
+
+    private boolean looksLikeJwt(String token) {
+        if (token.startsWith("eyJ")) {
+            return true;
+        }
+        int dotCount = 0;
+        for (char c : token.toCharArray()) {
+            if (c == '.') {
+                dotCount++;
+            }
+        }
+        return dotCount >= 2 && token.length() > 40;
+    }
+
+    private String buildTmdbUrl(String url, TmdbAuth auth) {
+        if (auth.type != TmdbTokenType.V3 || auth.token == null || auth.token.isBlank()) {
+            return url;
+        }
+        String separator = url.contains("?") ? "&" : "?";
+        return url + separator + "api_key=" + URLEncoder.encode(auth.token, StandardCharsets.UTF_8);
+    }
+
+    private void logTmdbRequest(String url, TmdbAuth auth) {
+        String tokenHint = maskToken(auth.token);
+        LOGGER.info(() -> "TMDB request -> " + url + " auth=" + auth.type + " token=" + tokenHint);
+    }
+
+    private void logTmdbError(String url, TmdbAuth auth, int statusCode, String body) {
+        String tokenHint = maskToken(auth.token);
+        LOGGER.log(Level.WARNING, "TMDB error -> status={0} url={1} auth={2} token={3} body={4}",
+                new Object[]{statusCode, url, auth.type, tokenHint, body});
+    }
+
+    private String maskToken(String token) {
+        if (token == null || token.isBlank()) {
+            return "(vacío)";
+        }
+        String trimmed = token.trim();
+        int visible = Math.min(4, trimmed.length());
+        String suffix = trimmed.substring(trimmed.length() - visible);
+        return "***" + suffix;
+    }
+
+    private enum TmdbTokenType {
+        NONE,
+        V3,
+        V4
+    }
+
+    private static class TmdbAuth {
+        private final String token;
+        private final TmdbTokenType type;
+
+        private TmdbAuth(String token, TmdbTokenType type) {
+            this.token = token;
+            this.type = type;
+        }
     }
 }
