@@ -413,10 +413,7 @@ public class MiBibliotecaUI {
 
         entry.setScraperProvider(provider.name());
         String rawToken = apiKeyField.getText();
-        String normalizedToken = rawToken == null ? null : rawToken.trim();
-        if (normalizedToken != null && normalizedToken.isBlank()) {
-            normalizedToken = null;
-        }
+        String normalizedToken = normalizeToken(rawToken);
         entry.setScraperApiKey(normalizedToken);
         configManager.saveLibraries(libraries);
         LOGGER.info(() -> "Iniciando scraping para biblioteca '" + entry.getName() + "' con proveedor " + provider);
@@ -701,5 +698,13 @@ public class MiBibliotecaUI {
         } catch (IllegalArgumentException e) {
             return MetadataScraper.Provider.TMDB;
         }
+    }
+
+    private String normalizeToken(String token) {
+        if (token == null) {
+            return null;
+        }
+        String trimmed = token.trim();
+        return trimmed.isBlank() ? null : trimmed;
     }
 }
