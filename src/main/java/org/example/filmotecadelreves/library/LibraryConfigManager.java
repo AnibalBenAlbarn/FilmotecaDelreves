@@ -42,7 +42,7 @@ public class LibraryConfigManager {
                 JSONObject scraper = (JSONObject) entry.get("scraper");
                 if (scraper != null) {
                     libraryEntry.setScraperProvider((String) scraper.get("provider"));
-                    libraryEntry.setScraperApiKey((String) scraper.get("apiKey"));
+                    libraryEntry.setScraperApiKey(normalizeToken((String) scraper.get("apiKey")));
                 }
                 libraries.add(libraryEntry);
             }
@@ -65,8 +65,13 @@ public class LibraryConfigManager {
             if (entry.getScraperProvider() != null) {
                 scraper.put("provider", entry.getScraperProvider());
             }
-            if (entry.getScraperApiKey() != null) {
-                scraper.put("apiKey", entry.getScraperApiKey());
+            String normalizedToken = normalizeToken(entry.getScraperApiKey());
+            if (normalizedToken != null) {
+                scraper.put("apiKey", normalizedToken);
+                String tokenType = detectTmdbTokenType(entry.getScraperProvider(), normalizedToken);
+                if (tokenType != null) {
+                    scraper.put("apiKeyType", tokenType);
+                }
             }
             if (!scraper.isEmpty()) {
                 object.put("scraper", scraper);
@@ -111,5 +116,29 @@ public class LibraryConfigManager {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private String normalizeToken(String token) {
+        if (token == null) {
+            return null;
+        }
+        String trimmed = token.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private String detectTmdbTokenType(String provider, String token) {
+        if (provider == null || token == null) {
+            return null;
+        }
+        if (!"TMDB".equalsIgnoreCase(provider)) {
+            return null;
+        }
+        if (token.startsWith("eyJ") || token.contains(".")) {
+            return "v4";
+        }
+        if (token.matches("(?i)^[a-f0-9]{32}$")) {
+            return "v3";
+        }
+        return "unknown";
     }
 }

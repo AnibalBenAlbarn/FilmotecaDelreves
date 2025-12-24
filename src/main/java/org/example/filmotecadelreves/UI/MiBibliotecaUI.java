@@ -30,8 +30,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class MiBibliotecaUI {
+    private static final Logger LOGGER = Logger.getLogger(MiBibliotecaUI.class.getName());
     private final Tab tab;
     private final TabPane libraryTabs = new TabPane();
     private final LibraryConfigManager configManager = new LibraryConfigManager();
@@ -381,8 +384,14 @@ public class MiBibliotecaUI {
         }
 
         entry.setScraperProvider(provider.name());
-        entry.setScraperApiKey(apiKeyField.getText().trim());
+        String rawToken = apiKeyField.getText();
+        String normalizedToken = rawToken == null ? null : rawToken.trim();
+        if (normalizedToken != null && normalizedToken.isBlank()) {
+            normalizedToken = null;
+        }
+        entry.setScraperApiKey(normalizedToken);
         configManager.saveLibraries(libraries);
+        LOGGER.info(() -> "Iniciando scraping para biblioteca '" + entry.getName() + "' con proveedor " + provider);
 
         ProgressBar progressBar = new ProgressBar(0);
         Label status = new Label("Iniciando scraping...");
@@ -405,7 +414,13 @@ public class MiBibliotecaUI {
                     index++;
                     updateMessage("Scrapeando " + item.getTitle() + " (" + index + "/" + total + ")");
                     updateProgress(index, total);
-                    MediaMetadata metadata = metadataScraper.fetchMovie(item.getTitle(), provider, apiKeyField.getText().trim());
+                    MediaMetadata metadata;
+                    try {
+                        metadata = metadataScraper.fetchMovie(item.getTitle(), provider, normalizedToken);
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Error scrapeando película '" + item.getTitle() + "'", e);
+                        throw e;
+                    }
                     applyMetadata(entry, item, metadata);
                 }
                 for (SeriesEntry series : catalog.getSeries()) {
@@ -415,7 +430,13 @@ public class MiBibliotecaUI {
                     index++;
                     updateMessage("Scrapeando " + series.getTitle() + " (" + index + "/" + total + ")");
                     updateProgress(index, total);
-                    MediaMetadata metadata = metadataScraper.fetchSeries(series.getTitle(), provider, apiKeyField.getText().trim());
+                    MediaMetadata metadata;
+                    try {
+                        metadata = metadataScraper.fetchSeries(series.getTitle(), provider, normalizedToken);
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Error scrapeando serie '" + series.getTitle() + "'", e);
+                        throw e;
+                    }
                     applyMetadata(entry, series, metadata);
                 }
                 return catalog;
