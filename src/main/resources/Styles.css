@@ -184,3 +184,77 @@
 .preview-box {
     -fx-border-color: -color-border;
 }
+
+.library-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-text;
+}
+
+.library-subtitle {
+    -fx-text-fill: -color-text-muted;
+}
+
+.library-location {
+    -fx-text-fill: -color-text-muted;
+}
+
+.library-scroll {
+    -fx-background-color: transparent;
+}
+
+.library-card {
+    -fx-background-color: -color-surface;
+    -fx-border-color: -color-border;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 10;
+}
+
+.library-card:hover {
+    -fx-background-color: -color-surface-alt;
+    -fx-scale-x: 1.02;
+    -fx-scale-y: 1.02;
+}
+
+.library-card-title {
+    -fx-font-weight: 600;
+    -fx-text-fill: -color-text;
+}
+
+.library-card-meta {
+    -fx-text-fill: -color-text-muted;
+    -fx-font-size: 12px;
+}
+
+.library-poster {
+    -fx-background-color: derive(-color-surface, -5%);
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-alignment: center;
+}
+
+.library-poster-placeholder {
+    -fx-fill: derive(-color-surface, -8%);
+    -fx-arc-width: 16;
+    -fx-arc-height: 16;
+}
+
+.library-poster-text {
+    -fx-text-fill: -color-text-muted;
+    -fx-font-size: 12px;
+    -fx-text-alignment: center;
+}
+
+.library-play {
+    -fx-background-color: rgba(0, 0, 0, 0.55);
+    -fx-text-fill: white;
+    -fx-background-radius: 999;
+    -fx-font-size: 14px;
+}
+
+.library-play-mini {
+    -fx-background-color: rgba(58, 145, 200, 0.35);
+    -fx-text-fill: -color-text;
+    -fx-background-radius: 999;
+}

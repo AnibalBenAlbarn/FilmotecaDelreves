@@ -62,6 +62,7 @@ public class MainUI extends Application {
     private DescargasUI descargasUI;
     private TorrentDownloadUI torrentDownloadUI;
     private DirectDownloadUI directDownloadUI;
+    private MiBibliotecaUI miBibliotecaUI;
     private JSONObject configJson;
     private static final String CONFIG_FILE_PATH = "config.json";
     private final ScraperProgressTracker scraperProgressTracker = new ScraperProgressTracker();
@@ -125,6 +126,7 @@ public class MainUI extends Application {
         torrentDownloadUI.updateDownloader(this.torrentDownloader);
 
         directDownloadUI = new DirectDownloadUI(ajustesUI, descargasUI, primaryStage, scraperProgressTracker, this);
+        miBibliotecaUI = new MiBibliotecaUI(primaryStage);
 
         // Inicializar bases de datos después de cargar la configuración
         initializeDatabases(ajustesUI);
@@ -132,6 +134,7 @@ public class MainUI extends Application {
         mainTabs.getTabs().add(torrentDownloadUI.getTab());
         mainTabs.getTabs().add(directDownloadUI.getTab());
         mainTabs.getTabs().add(descargasUI.getTab());
+        mainTabs.getTabs().add(miBibliotecaUI.getTab());
         mainTabs.getTabs().add(ajustesUI.getTab());
 
         // Cargar el TorrentDownloader de forma diferida cuando el usuario seleccione
