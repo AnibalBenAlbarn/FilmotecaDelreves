@@ -230,6 +230,13 @@ public class MainUI extends Application {
         }
     }
 
+    public void applyPowvideoHeadlessPreference(boolean runHeadless) {
+        DownloadManager.updatePowvideoHeadless(runHeadless);
+        if (directDownloadUI != null) {
+            directDownloadUI.applyPowvideoHeadlessPreference(runHeadless);
+        }
+    }
+
     private void ensureTorrentDownloaderInitialized(AjustesUI ajustesUI) {
         if (this.torrentDownloader != null || initializingTorrentDownloader) {
             return;

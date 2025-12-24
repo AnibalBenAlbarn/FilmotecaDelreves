@@ -277,11 +277,14 @@ public class DirectDownloadUI {
         if (streamplayDownloader != null) {
             streamplayDownloader.setRunHeadless(runHeadless);
         }
-        if (powvideoDownloader != null) {
-            powvideoDownloader.setRunHeadless(runHeadless);
-        }
         if (videoStream != null) {
             videoStream.setHeadless(runHeadless);
+        }
+    }
+
+    public void applyPowvideoHeadlessPreference(boolean runHeadless) {
+        if (powvideoDownloader != null) {
+            powvideoDownloader.setRunHeadless(runHeadless);
         }
     }
 
@@ -297,9 +300,11 @@ public class DirectDownloadUI {
         this.powvideoDownloader = new SeleniumPowvideo();
         this.streamplayDownloader = new SeleniumStreamplay();
         boolean runStreamplayHeadless = ajustesUI == null || ajustesUI.isStreamplayHeadless();
-        this.powvideoDownloader.setRunHeadless(runStreamplayHeadless);
+        boolean runPowvideoHeadless = ajustesUI == null || ajustesUI.isPowvideoHeadless();
+        this.powvideoDownloader.setRunHeadless(runPowvideoHeadless);
         this.streamplayDownloader.setRunHeadless(runStreamplayHeadless);
         DownloadManager.updateStreamplayHeadless(runStreamplayHeadless);
+        DownloadManager.updatePowvideoHeadless(runPowvideoHeadless);
         this.mixdropDownloader = new MixdropDownloader();
         this.videoStream = new VideoStream();
         this.videoStream.setHeadless(runStreamplayHeadless);
