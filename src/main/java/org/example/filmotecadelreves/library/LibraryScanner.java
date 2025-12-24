@@ -80,7 +80,16 @@ public class LibraryScanner {
     private String cleanTitle(String fileName) {
         int index = fileName.lastIndexOf('.');
         String base = index > 0 ? fileName.substring(0, index) : fileName;
-        return base.replaceAll("[._]", " ").trim();
+        String cleaned = base.replaceAll("[._]+", " ");
+        cleaned = cleaned.replaceAll("[\\[\\(].*?[\\]\\)]", " ");
+        cleaned = cleaned.replaceAll("(?i)\\b(\\d{3,4}p|x264|x265|h264|h265|hevc|aac|ac3|dts|hdr|hdrip|bdrip|brrip|blu\\s?ray|web\\s?dl|webrip|dvdrip|dvdscr|cam|ts|telesync|remux|subs?|multi|spanish|castellano|latino|espanol|dual|proper|repack|extended|unrated|limited|sample)\\b", " ");
+        String withoutYear = cleaned.replaceAll("(?i)\\b\\d{4}\\b", " ");
+        cleaned = withoutYear.replaceAll("[\\-]+", " ");
+        cleaned = cleaned.replaceAll("\\s{2,}", " ").trim();
+        if (cleaned.isBlank()) {
+            cleaned = base.replaceAll("[._]+", " ").replaceAll("\\s{2,}", " ").trim();
+        }
+        return cleaned;
     }
 
     private String getSeriesName(Path rootPath, Path file) {
