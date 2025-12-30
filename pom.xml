@@ -14,7 +14,6 @@
     <junit.version>5.10.2</junit.version>
     <jlibtorrent.version>2.0.12.5</jlibtorrent.version>
     <javafx.version>21.0.4</javafx.version>
-    <javafx.platform>${os.detected.classifier}</javafx.platform>
     <!-- compilar contra Java 23 (Corretto) -->
     <maven.compiler.source>23</maven.compiler.source>
     <maven.compiler.target>23</maven.compiler.target>
@@ -214,13 +213,6 @@
   </dependencies>
 
   <build>
-    <extensions>
-      <extension>
-        <groupId>kr.motd.maven</groupId>
-        <artifactId>os-maven-plugin</artifactId>
-        <version>1.7.1</version>
-      </extension>
-    </extensions>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -236,7 +228,6 @@
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <shadedArtifactAttached>true</shadedArtifactAttached>
               <shadedClassifierName>fat</shadedClassifierName>
-              <includeSystemScope>true</includeSystemScope>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
