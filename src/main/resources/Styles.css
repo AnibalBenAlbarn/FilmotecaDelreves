@@ -263,6 +263,14 @@
     -fx-padding: 12;
 }
 
+.library-details-poster {
+    -fx-background-color: -color-surface-alt;
+    -fx-border-color: -color-border;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 10;
+}
+
 .library-details-scroll {
     -fx-background-color: transparent;
     -fx-padding: 0;
