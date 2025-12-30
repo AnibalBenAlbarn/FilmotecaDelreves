@@ -263,6 +263,12 @@
     -fx-padding: 12;
 }
 
+.library-details-scroll {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+
 .library-details-title {
     -fx-font-size: 16px;
     -fx-font-weight: 600;
@@ -276,6 +282,10 @@
 
 .library-details-body {
     -fx-text-fill: -color-text;
+}
+
+.library-pagination {
+    -fx-padding: 4 0 0 0;
 }
 
 .library-poster {

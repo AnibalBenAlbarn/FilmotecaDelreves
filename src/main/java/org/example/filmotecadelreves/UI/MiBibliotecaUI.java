@@ -174,6 +174,15 @@ public class MiBibliotecaUI {
         HBox filters = new HBox(10, searchField, genreFilter, directorFilter);
         filters.setAlignment(Pos.CENTER_LEFT);
 
+        ToggleGroup viewModeGroup = new ToggleGroup();
+        RadioButton scrollMode = new RadioButton("Scroll");
+        scrollMode.setToggleGroup(viewModeGroup);
+        scrollMode.setSelected(true);
+        RadioButton paginationMode = new RadioButton("Paginación");
+        paginationMode.setToggleGroup(viewModeGroup);
+        HBox viewMode = new HBox(10, new Label("Vista:"), scrollMode, paginationMode);
+        viewMode.setAlignment(Pos.CENTER_LEFT);
+
         FlowPane grid = new FlowPane();
         grid.setHgap(16);
         grid.setVgap(16);
@@ -190,9 +199,33 @@ public class MiBibliotecaUI {
         detailsFile.getStyleClass().add("library-details-meta");
         detailsFile.setWrapText(true);
 
-        VBox detailsBox = new VBox(6, detailsTitle, detailsMeta, detailsOverview, detailsFile);
+        VBox detailsBody = new VBox(6, detailsOverview, detailsFile);
+        detailsBody.setFillWidth(true);
+        ScrollPane detailsScroll = new ScrollPane(detailsBody);
+        detailsScroll.setFitToWidth(true);
+        detailsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        detailsScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        detailsScroll.setPrefViewportHeight(120);
+        detailsScroll.setMaxHeight(160);
+        detailsScroll.getStyleClass().add("library-details-scroll");
+
+        VBox detailsBox = new VBox(6, detailsTitle, detailsMeta, detailsScroll);
         detailsBox.getStyleClass().add("library-details");
+        detailsBox.setVisible(false);
+        detailsBox.setManaged(false);
         showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile);
+
+        ScrollPane scrollPane = new ScrollPane(grid);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("library-scroll");
+
+        Pagination pagination = new Pagination(1, 0);
+        pagination.getStyleClass().add("library-pagination");
+
+        StackPane resultsPane = new StackPane(scrollPane);
+
+        final int pageSize = 25;
+        AtomicReference<List<MediaItem>> filteredItems = new AtomicReference<>(List.of());
 
         Runnable applyFilters = () -> {
             String query = searchField.getText() == null ? "" : searchField.getText().toLowerCase();
@@ -211,11 +244,44 @@ public class MiBibliotecaUI {
                     .collect(Collectors.toList());
             clearSelectedCard();
             showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile);
-            grid.getChildren().setAll(filtered.stream()
-                    .map(item -> buildMovieCard(entry, catalog, item, refreshView, () -> {
-                        showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile);
-                    }))
-                    .collect(Collectors.toList()));
+            detailsBox.setVisible(false);
+            detailsBox.setManaged(false);
+            filteredItems.set(filtered);
+            if (scrollMode.isSelected()) {
+                grid.getChildren().setAll(filtered.stream()
+                        .map(item -> buildMovieCard(entry, catalog, item, refreshView, () -> {
+                            showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile);
+                            detailsBox.setVisible(true);
+                            detailsBox.setManaged(true);
+                        }))
+                        .collect(Collectors.toList()));
+                resultsPane.getChildren().setAll(scrollPane);
+            } else {
+                int pageCount = Math.max(1, (int) Math.ceil(filtered.size() / (double) pageSize));
+                pagination.setPageCount(pageCount);
+                pagination.setCurrentPageIndex(0);
+                pagination.setPageFactory(pageIndex -> {
+                    FlowPane pageGrid = new FlowPane();
+                    pageGrid.setHgap(16);
+                    pageGrid.setVgap(16);
+                    pageGrid.setPrefWrapLength(1000);
+                    List<MediaItem> items = filteredItems.get();
+                    int fromIndex = pageIndex * pageSize;
+                    if (fromIndex >= items.size()) {
+                        return pageGrid;
+                    }
+                    int toIndex = Math.min(items.size(), fromIndex + pageSize);
+                    pageGrid.getChildren().setAll(items.subList(fromIndex, toIndex).stream()
+                            .map(item -> buildMovieCard(entry, catalog, item, refreshView, () -> {
+                                showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile);
+                                detailsBox.setVisible(true);
+                                detailsBox.setManaged(true);
+                            }))
+                            .collect(Collectors.toList()));
+                    return pageGrid;
+                });
+                resultsPane.getChildren().setAll(pagination);
+            }
         };
 
         searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
@@ -234,13 +300,10 @@ public class MiBibliotecaUI {
             applyFilters.run();
         });
 
+        viewModeGroup.selectedToggleProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
+
         applyFilters.run();
-
-        ScrollPane scrollPane = new ScrollPane(grid);
-        scrollPane.setFitToWidth(true);
-        scrollPane.getStyleClass().add("library-scroll");
-
-        container.getChildren().addAll(filters, scrollPane, detailsBox);
+        container.getChildren().addAll(filters, viewMode, resultsPane, detailsBox);
         return container;
     }
 
