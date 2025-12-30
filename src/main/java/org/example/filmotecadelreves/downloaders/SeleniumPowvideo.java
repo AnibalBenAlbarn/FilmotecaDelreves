@@ -47,10 +47,11 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
             "Extension/nopecaptcha.crx",
             "Extension/NopeCaptcha.crx"
     };
-    private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration DEFAULT_CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
 
     private static final int CAPTCHA_GRACE_SECONDS = 10;
     private static final int MAX_HEADLESS_ATTEMPTS_BEFORE_FALLBACK = 5;
+    private static final Pattern MP4_PATTERN = Pattern.compile("(https?://[^\"'\\s>]+?\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
 
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
     private final Map<String, ResumableHttpDownloadTask> activeDownloads = new ConcurrentHashMap<>();
@@ -61,6 +62,14 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
     private boolean isNopechaInstalled = false;
     private volatile boolean runHeadless = true;
     private boolean currentSessionHeadless = true;
+    private Duration captchaWaitTimeout = DEFAULT_CAPTCHA_WAIT_TIMEOUT;
+
+    public void setNopechaTimeoutSeconds(int seconds) {
+        if (seconds <= 0) {
+            return;
+        }
+        captchaWaitTimeout = Duration.ofSeconds(seconds);
+    }
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -143,7 +152,7 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                                     // El botón aún no está disponible
                                 }
 
-                                if (driver.getPageSource().contains("v.mp4")) {
+                                if (findMp4Url(driver, MP4_PATTERN).isPresent()) {
                                     logDebug("Página de video detectada durante la espera manual.");
                                     break;
                                 }
@@ -164,7 +173,21 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                             javafx.application.Platform.runLater(finalManualDialog::show);
                         } else {
                             if (isNopechaInstalled) {
-                                waitForNopechaResolution("PowVideo");
+                                boolean solved = waitForNopechaResolution("PowVideo");
+                                if (!solved) {
+                                    logWarn("Nopecha no resolvió el captcha. Se requiere intervención manual.");
+                                    if (currentSessionHeadless && runHeadless) {
+                                        fallbackToVisible = true;
+                                        updateDownloadStatus(directDownload, "Waiting", directDownload.getProgress());
+                                        throw new HeadlessFallbackRequiredException("Nopecha agotó el tiempo en modo headless.");
+                                    }
+                                    manualDialog = new ProgressDialog(
+                                            "Interacción requerida",
+                                            "Nopecha agotó el tiempo. Resuelve el captcha manualmente para continuar.",
+                                            true);
+                                    ProgressDialog finalManualDialog = manualDialog;
+                                    javafx.application.Platform.runLater(finalManualDialog::show);
+                                }
                             } else {
                                 logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
                             }
@@ -374,12 +397,12 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
         }
     }
 
-    private void waitForNopechaResolution(String providerName) {
+    private boolean waitForNopechaResolution(String providerName) {
         if (driver == null) {
-            return;
+            return false;
         }
 
-        WebDriverWait captchaWait = new WebDriverWait(driver, CAPTCHA_WAIT_TIMEOUT);
+        WebDriverWait captchaWait = new WebDriverWait(driver, captchaWaitTimeout);
         try {
             captchaWait.until(webDriver -> {
                 try {
@@ -409,9 +432,11 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                 }
             });
             logDebug("Captcha inicial resuelto automáticamente para " + providerName + ".");
+            return true;
         } catch (TimeoutException e) {
             logWarn("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
             collectDebugArtifacts("captcha-no-resuelto");
+            return false;
         }
     }
 
@@ -426,8 +451,43 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
         }
     }
 
+    private Optional<String> findMp4Url(WebDriver webDriver, Pattern pattern) {
+        String pageSource = webDriver.getPageSource();
+        Matcher matcher = pattern.matcher(pageSource);
+        if (matcher.find()) {
+            return Optional.ofNullable(matcher.group(1));
+        }
+
+        if (webDriver instanceof JavascriptExecutor executor) {
+            try {
+                Object result = executor.executeScript(
+                        "const candidates = [];" +
+                                "const video = document.querySelector('video');" +
+                                "if (video) {" +
+                                "  if (video.currentSrc) candidates.push(video.currentSrc);" +
+                                "  if (video.src) candidates.push(video.src);" +
+                                "  const source = video.querySelector('source');" +
+                                "  if (source && source.src) candidates.push(source.src);" +
+                                "}" +
+                                "document.querySelectorAll('source[src], video[src]').forEach(el => candidates.push(el.src));" +
+                                "document.querySelectorAll('[data-src], [data-file], [data-url]').forEach(el => {" +
+                                "  const value = el.getAttribute('data-src') || el.getAttribute('data-file') || el.getAttribute('data-url');" +
+                                "  if (value) candidates.push(value);" +
+                                "});" +
+                                "return candidates.find(src => src && src.includes('.mp4')) || null;"
+                );
+                if (result instanceof String found && !found.isBlank()) {
+                    return Optional.of(found);
+                }
+            } catch (JavascriptException ignored) {
+                // ignore JS errors
+            }
+        }
+
+        return Optional.empty();
+    }
+
     private Optional<String> waitForMp4Url() {
-        Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
         int attempt = 1;
         boolean timeoutArtifactCaptured = false;
         while (!isCancelled.get()) {
@@ -442,12 +502,7 @@ public class SeleniumPowvideo implements DirectDownloader, ManualDownloadCapable
                     if (isCancelled.get()) {
                         throw new CancellationException("Descarga cancelada");
                     }
-                    String pageSource = webDriver.getPageSource();
-                    Matcher matcher = pattern.matcher(pageSource);
-                    if (matcher.find()) {
-                        return matcher.group(1);
-                    }
-                    return null;
+                    return findMp4Url(webDriver, MP4_PATTERN).orElse(null);
                 });
 
                 if (url != null && !url.isBlank()) {

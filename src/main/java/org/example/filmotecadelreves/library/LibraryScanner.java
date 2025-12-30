@@ -3,10 +3,12 @@ package org.example.filmotecadelreves.library;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
@@ -22,49 +24,102 @@ public class LibraryScanner {
     private static final Pattern SEASON_EPISODE_PATTERN = Pattern.compile("(?i)S(\\d{1,2})E(\\d{1,2})");
 
     public LibraryCatalog scanLibrary(LibraryEntry libraryEntry) throws IOException {
+        return scanLibrary(libraryEntry, null).catalog();
+    }
+
+    public LibraryScanResult scanLibrary(LibraryEntry libraryEntry, LibraryCatalog existingCatalog) throws IOException {
         LibraryCatalog catalog = new LibraryCatalog();
+        List<MediaItem> missingMovies = new ArrayList<>();
+        List<EpisodeItem> missingEpisodes = new ArrayList<>();
+
+        if (existingCatalog != null) {
+            catalog.getMovies().addAll(existingCatalog.getMovies());
+            catalog.getSeries().addAll(existingCatalog.getSeries());
+        }
+
+        Map<String, MediaItem> existingMoviesByPath = catalog.getMovies().stream()
+                .filter(item -> item.getFilePath() != null)
+                .collect(Collectors.toMap(MediaItem::getFilePath, item -> item, (first, second) -> first));
+
+        Map<String, SeriesEntry> seriesByTitle = catalog.getSeries().stream()
+                .collect(Collectors.toMap(
+                        entry -> entry.getTitle().toLowerCase(Locale.ROOT),
+                        entry -> entry,
+                        (first, second) -> first
+                ));
+
+        Map<String, EpisodeItem> existingEpisodesByPath = catalog.getSeries().stream()
+                .flatMap(series -> series.getSeasons().values().stream().flatMap(List::stream))
+                .filter(episode -> episode.getFilePath() != null)
+                .collect(Collectors.toMap(EpisodeItem::getFilePath, episode -> episode, (first, second) -> first));
+
+        Set<String> scannedMoviePaths = new HashSet<>();
+        Set<String> scannedEpisodePaths = new HashSet<>();
+
         Path rootPath = Path.of(libraryEntry.getRootPath());
         if (!Files.exists(rootPath)) {
-            return catalog;
+            return new LibraryScanResult(catalog, missingMovies, missingEpisodes);
         }
+
         try (Stream<Path> stream = Files.walk(rootPath)) {
             List<Path> videoFiles = stream
                     .filter(Files::isRegularFile)
                     .filter(this::isVideoFile)
                     .sorted(Comparator.naturalOrder())
                     .collect(Collectors.toList());
+
             if (libraryEntry.getType() == LibraryEntry.LibraryType.MOVIES) {
                 for (Path file : videoFiles) {
-                    String title = cleanTitle(file.getFileName().toString());
-                    String id = UUID.randomUUID().toString();
-                    MediaItem item = new MediaItem(id, file.toString(), title);
-                    catalog.getMovies().add(item);
+                    String filePath = file.toString();
+                    scannedMoviePaths.add(filePath);
+                    if (!existingMoviesByPath.containsKey(filePath)) {
+                        String title = cleanTitle(file.getFileName().toString());
+                        String id = UUID.randomUUID().toString();
+                        MediaItem item = new MediaItem(id, filePath, title);
+                        catalog.getMovies().add(item);
+                    }
                 }
             } else {
                 for (Path file : videoFiles) {
                     String seriesName = getSeriesName(rootPath, file);
-                    SeriesEntry seriesEntry = catalog.getSeries().stream()
-                            .filter(series -> series.getTitle().equalsIgnoreCase(seriesName))
-                            .findFirst()
-                            .orElseGet(() -> {
-                                SeriesEntry newEntry = new SeriesEntry(UUID.randomUUID().toString(), seriesName);
-                                catalog.getSeries().add(newEntry);
-                                return newEntry;
-                            });
-                    String fileName = file.getFileName().toString();
-                    SeasonEpisode seasonEpisode = parseSeasonEpisode(fileName, file);
-                    EpisodeItem episode = new EpisodeItem(
-                            UUID.randomUUID().toString(),
-                            file.toString(),
-                            cleanTitle(fileName),
-                            seasonEpisode.season(),
-                            seasonEpisode.episode()
-                    );
-                    seriesEntry.addEpisode(episode);
+                    String seriesKey = seriesName.toLowerCase(Locale.ROOT);
+                    SeriesEntry seriesEntry = seriesByTitle.computeIfAbsent(seriesKey, key -> {
+                        SeriesEntry newEntry = new SeriesEntry(UUID.randomUUID().toString(), seriesName);
+                        catalog.getSeries().add(newEntry);
+                        return newEntry;
+                    });
+
+                    String filePath = file.toString();
+                    scannedEpisodePaths.add(filePath);
+                    if (!existingEpisodesByPath.containsKey(filePath)) {
+                        String fileName = file.getFileName().toString();
+                        SeasonEpisode seasonEpisode = parseSeasonEpisode(fileName, file);
+                        EpisodeItem episode = new EpisodeItem(
+                                UUID.randomUUID().toString(),
+                                filePath,
+                                cleanTitle(fileName),
+                                seasonEpisode.season(),
+                                seasonEpisode.episode()
+                        );
+                        seriesEntry.addEpisode(episode);
+                    }
                 }
             }
         }
-        return catalog;
+
+        for (MediaItem item : catalog.getMovies()) {
+            if (item.getFilePath() != null && !scannedMoviePaths.contains(item.getFilePath())) {
+                missingMovies.add(item);
+            }
+        }
+
+        for (EpisodeItem episode : existingEpisodesByPath.values()) {
+            if (episode.getFilePath() != null && !scannedEpisodePaths.contains(episode.getFilePath())) {
+                missingEpisodes.add(episode);
+            }
+        }
+
+        return new LibraryScanResult(catalog, missingMovies, missingEpisodes);
     }
 
     private boolean isVideoFile(Path path) {

@@ -66,6 +66,17 @@ public class DownloadManager {
         }
     }
 
+    public static void updateNopechaTimeoutSeconds(int timeoutSeconds) {
+        DirectDownloader streamplayDownloader = downloaders.get("streamplay");
+        if (streamplayDownloader instanceof SeleniumStreamplay) {
+            ((SeleniumStreamplay) streamplayDownloader).setNopechaTimeoutSeconds(timeoutSeconds);
+        }
+        DirectDownloader powvideoDownloader = downloaders.get("powvideo");
+        if (powvideoDownloader instanceof SeleniumPowvideo) {
+            ((SeleniumPowvideo) powvideoDownloader).setNopechaTimeoutSeconds(timeoutSeconds);
+        }
+    }
+
     /**
      * Inicia una descarga para una película
      * @param item El elemento de la cesta de descargas
@@ -110,6 +121,10 @@ public class DownloadManager {
             if (manualMode && !(downloader instanceof ManualDownloadCapable)) {
                 System.err.println("El downloader para el servidor " + item.getServer() + " no soporta modo manual.");
                 return false;
+            }
+
+            if (!manualMode && (downloader instanceof SeleniumStreamplay || downloader instanceof SeleniumPowvideo)) {
+                manualMode = true;
             }
 
             String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());
@@ -192,6 +207,10 @@ public class DownloadManager {
             if (manualMode && !(downloader instanceof ManualDownloadCapable)) {
                 System.err.println("El downloader para el servidor " + item.getServer() + " no soporta modo manual.");
                 return false;
+            }
+
+            if (!manualMode && (downloader instanceof SeleniumStreamplay || downloader instanceof SeleniumPowvideo)) {
+                manualMode = true;
             }
 
             String normalizedLink = UrlNormalizer.normalizeMediaUrl(item.getLink());

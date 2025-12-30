@@ -522,15 +522,22 @@ public class MiBibliotecaUI {
         ProgressIndicator indicator = new ProgressIndicator();
         container.getChildren().setAll(indicator);
 
-        Task<LibraryCatalog> scanTask = new Task<>() {
+        Task<LibraryScanResult> scanTask = new Task<>() {
             @Override
-            protected LibraryCatalog call() throws Exception {
-                return libraryScanner.scanLibrary(entry);
+            protected LibraryScanResult call() throws Exception {
+                LibraryCatalog existing = catalogStore.loadCatalog(configManager.getLibraryDataDir(entry));
+                return libraryScanner.scanLibrary(entry, existing);
             }
         };
 
         scanTask.setOnSucceeded(event -> {
-            LibraryCatalog catalog = scanTask.getValue();
+            LibraryScanResult result = scanTask.getValue();
+            LibraryCatalog catalog = result.catalog();
+            if (!result.missingMovies().isEmpty() || !result.missingEpisodes().isEmpty()) {
+                if (confirmRemoval(result.missingMovies().size(), result.missingEpisodes().size())) {
+                    removeMissingMedia(catalog, result.missingMovies(), result.missingEpisodes());
+                }
+            }
             catalogStore.saveCatalog(configManager.getLibraryDataDir(entry), catalog);
             refreshView.run();
         });
@@ -540,6 +547,49 @@ public class MiBibliotecaUI {
         });
 
         new Thread(scanTask).start();
+    }
+
+    private boolean confirmRemoval(int missingMovies, int missingEpisodes) {
+        StringBuilder message = new StringBuilder("Se encontraron elementos que ya no existen en la ruta escaneada.\n");
+        if (missingMovies > 0) {
+            message.append("\nPelículas faltantes: ").append(missingMovies);
+        }
+        if (missingEpisodes > 0) {
+            message.append("\nEpisodios faltantes: ").append(missingEpisodes);
+        }
+        message.append("\n\n¿Quieres eliminarlos del catálogo?");
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message.toString(), ButtonType.YES, ButtonType.NO);
+        alert.initOwner(owner);
+        alert.setTitle("Actualizar catálogo");
+        alert.setHeaderText(null);
+        Optional<ButtonType> result = alert.showAndWait();
+        return result.isPresent() && result.get() == ButtonType.YES;
+    }
+
+    private void removeMissingMedia(LibraryCatalog catalog,
+                                    List<MediaItem> missingMovies,
+                                    List<EpisodeItem> missingEpisodes) {
+        if (!missingMovies.isEmpty()) {
+            List<String> missingMoviePaths = missingMovies.stream()
+                    .map(MediaItem::getFilePath)
+                    .filter(Objects::nonNull)
+                    .toList();
+            catalog.getMovies().removeIf(item -> missingMoviePaths.contains(item.getFilePath()));
+        }
+
+        if (!missingEpisodes.isEmpty()) {
+            List<String> missingEpisodePaths = missingEpisodes.stream()
+                    .map(EpisodeItem::getFilePath)
+                    .filter(Objects::nonNull)
+                    .toList();
+            catalog.getSeries().removeIf(series -> {
+                series.getSeasons().values().forEach(episodes ->
+                        episodes.removeIf(ep -> missingEpisodePaths.contains(ep.getFilePath())));
+                series.getSeasons().entrySet().removeIf(entry -> entry.getValue().isEmpty());
+                return series.getSeasons().isEmpty();
+            });
+        }
     }
 
     private void openScrapeDialog(LibraryEntry entry, StackPane container, Runnable refreshView) {

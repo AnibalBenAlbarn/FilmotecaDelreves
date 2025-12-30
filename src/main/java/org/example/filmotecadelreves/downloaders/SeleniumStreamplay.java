@@ -11,6 +11,7 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +35,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * Implementación de descargador para el servidor Streamplay
@@ -46,8 +51,9 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             "Extension/nopecaptcha.crx",
             "Extension/NopeCaptcha.crx"
     };
-    private static final Duration CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration DEFAULT_CAPTCHA_WAIT_TIMEOUT = Duration.ofSeconds(60);
     private static final int MAX_MP4_TIMEOUTS_BEFORE_MANUAL = 2;
+    private static final Pattern MP4_PATTERN = Pattern.compile("(https?://[^\"'\\s>]+?\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
 
     private static final int CAPTCHA_GRACE_SECONDS = 10; // Tiempo para que NoCaptcha resuelva automáticamente
 
@@ -60,6 +66,15 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
     private Thread downloadThread;
     private boolean isNopechaInstalled = false;
     private volatile boolean runHeadless = true;
+    private Duration captchaWaitTimeout = DEFAULT_CAPTCHA_WAIT_TIMEOUT;
+    private boolean currentSessionHeadless = true;
+
+    public void setNopechaTimeoutSeconds(int seconds) {
+        if (seconds <= 0) {
+            return;
+        }
+        captchaWaitTimeout = Duration.ofSeconds(seconds);
+    }
 
     @Override
     public void download(String videoUrl, String destinationPath, DescargasUI.DirectDownload directDownload) {
@@ -93,8 +108,6 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                 wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
                 logPageState("Página inicial cargada");
 
-                ProgressDialog progressDialog = null;
-
                 if (requiresInteraction) {
                     if (manualOverride && !limitReached) {
                         logDebug("Modo manual solicitado por el usuario. Esperando interacción.");
@@ -109,65 +122,30 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                             ? "Se abrió una ventana independiente. Resuelva el captcha y pulse los botones correspondientes."
                             : "Por favor, resuelva el CAPTCHA en el navegador";
 
-                    progressDialog = new ProgressDialog(title, message, true);
-                    ProgressDialog finalProgressDialog = progressDialog;
-                    javafx.application.Platform.runLater(finalProgressDialog::show);
-
-                    long startTime = System.currentTimeMillis();
                     long timeoutMillis = (manualOverride && !limitReached) ? 300000 : 120000;
-
-                    while (System.currentTimeMillis() - startTime < timeoutMillis) {
-                        if (isCancelled.get()) {
-                            javafx.application.Platform.runLater(finalProgressDialog::close);
-                            updateDownloadStatus(directDownload, "Cancelled", 0);
-                            return;
-                        }
-
-                        long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
-                        long remainingSeconds = Math.max(0, remainingMillis / 1000);
-                        String countdownText = String.format("Tiempo restante: %02d:%02d",
-                                remainingSeconds / 60, remainingSeconds % 60);
-
-                        javafx.application.Platform.runLater(() -> finalProgressDialog.updateCountdown(countdownText));
-
-                        try {
-                            WebElement btn = driver.findElement(By.id("btn_download"));
-                            if (btn.isDisplayed() && btn.isEnabled()) {
-                                logDebug("Captcha resuelto manualmente, continuando con la descarga.");
-                                break;
-                            }
-                        } catch (NoSuchElementException ignored) {
-                            // El botón aún no está disponible
-                        }
-
-                        try {
-                            List<WebElement> videoList = driver.findElements(By.cssSelector("video"));
-                            if (!videoList.isEmpty() && videoList.get(0).isDisplayed()) {
-                                logDebug("Reproductor detectado durante la espera manual.");
-                                break;
-                            }
-                        } catch (Exception ignored) {
-                            // Continuar esperando
-                        }
-
-                        if (driver.getPageSource().contains("v.mp4")) {
-                            logDebug("Página de video detectada durante la espera manual.");
-                            break;
-                        }
-
-                        Thread.sleep(1000);
-                    }
-
-                    javafx.application.Platform.runLater(finalProgressDialog::close);
-
-                    if (System.currentTimeMillis() - startTime >= timeoutMillis) {
-                        updateDownloadStatus(directDownload, "Error", 0);
-                        logError("Tiempo agotado esperando que el usuario complete la interacción manual.");
+                    if (!waitForManualInteraction(directDownload, title, message, timeoutMillis)) {
                         return;
                     }
                 } else {
                     if (isNopechaInstalled) {
-                        waitForNopechaResolution(PROVIDER_NAME);
+                        boolean solved = waitForNopechaResolution(PROVIDER_NAME);
+                        if (!solved) {
+                            logWarn("Nopecha no resolvió el captcha. Solicitando intervención manual.");
+                            if (currentSessionHeadless && runHeadless) {
+                                shutdownDriver();
+                                setupBrowser(true);
+                                driver.get(videoUrl);
+                                wait.until(ExpectedConditions.jsReturnsValue("return document.readyState === 'complete';"));
+                                logPageState("Página recargada en modo visible para intervención manual");
+                            }
+                            if (!waitForManualInteraction(
+                                    directDownload,
+                                    "Interacción requerida",
+                                    "Nopecha agotó el tiempo. Resuelve el captcha manualmente para continuar.",
+                                    120000)) {
+                                return;
+                            }
+                        }
                     } else {
                         logWarn("Extensión NoPeCaptcha no disponible, se continúa sin esperar la resolución automática del captcha.");
                     }
@@ -337,6 +315,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
             throw e;
         }
         wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+        currentSessionHeadless = headlessMode;
         logDebug("Navegador inicializado. Modo headless=" + headlessMode + ", popup=" + popupExtensionLoaded + ", nopecha=" + isNopechaInstalled);
     }
 
@@ -417,8 +396,109 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         collectDebugArtifacts("boton-proceed-reintentos-agotados");
     }
 
+    private boolean waitForManualInteraction(DescargasUI.DirectDownload directDownload,
+                                             String title,
+                                             String message,
+                                             long timeoutMillis) throws InterruptedException {
+        ProgressDialog progressDialog = new ProgressDialog(title, message, true);
+        javafx.application.Platform.runLater(progressDialog::show);
+
+        long startTime = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startTime < timeoutMillis) {
+            if (isCancelled.get()) {
+                javafx.application.Platform.runLater(progressDialog::close);
+                updateDownloadStatus(directDownload, "Cancelled", 0);
+                return false;
+            }
+
+            long remainingMillis = timeoutMillis - (System.currentTimeMillis() - startTime);
+            long remainingSeconds = Math.max(0, remainingMillis / 1000);
+            String countdownText = String.format("Tiempo restante: %02d:%02d",
+                    remainingSeconds / 60, remainingSeconds % 60);
+
+            javafx.application.Platform.runLater(() -> progressDialog.updateCountdown(countdownText));
+
+            if (isManualReady()) {
+                logDebug("Interacción manual completada, continuando con la descarga.");
+                javafx.application.Platform.runLater(progressDialog::close);
+                return true;
+            }
+
+            Thread.sleep(1000);
+        }
+
+        javafx.application.Platform.runLater(progressDialog::close);
+        updateDownloadStatus(directDownload, "Error", 0);
+        logError("Tiempo agotado esperando que el usuario complete la interacción manual.");
+        return false;
+    }
+
+    private boolean isManualReady() {
+        try {
+            WebElement btn = driver.findElement(By.id("btn_download"));
+            if (btn.isDisplayed() && btn.isEnabled()) {
+                logDebug("Botón de descarga disponible durante la espera manual.");
+                return true;
+            }
+        } catch (NoSuchElementException ignored) {
+            // El botón aún no está disponible
+        }
+
+        try {
+            List<WebElement> videoList = driver.findElements(By.cssSelector("video"));
+            if (!videoList.isEmpty() && videoList.get(0).isDisplayed()) {
+                logDebug("Reproductor detectado durante la espera manual.");
+                return true;
+            }
+        } catch (Exception ignored) {
+            // Continuar esperando
+        }
+
+        if (findMp4Url(driver, MP4_PATTERN).isPresent()) {
+            logDebug("Página con enlace mp4 detectada durante la espera manual.");
+            return true;
+        }
+
+        return false;
+    }
+
+    private Optional<String> findMp4Url(WebDriver webDriver, Pattern pattern) {
+        String pageSource = webDriver.getPageSource();
+        Matcher matcher = pattern.matcher(pageSource);
+        if (matcher.find()) {
+            return Optional.ofNullable(matcher.group(1));
+        }
+
+        if (webDriver instanceof JavascriptExecutor executor) {
+            try {
+                Object result = executor.executeScript(
+                        "const candidates = [];" +
+                                "const video = document.querySelector('video');" +
+                                "if (video) {" +
+                                "  if (video.currentSrc) candidates.push(video.currentSrc);" +
+                                "  if (video.src) candidates.push(video.src);" +
+                                "  const source = video.querySelector('source');" +
+                                "  if (source && source.src) candidates.push(source.src);" +
+                                "}" +
+                                "document.querySelectorAll('source[src], video[src]').forEach(el => candidates.push(el.src));" +
+                                "document.querySelectorAll('[data-src], [data-file], [data-url]').forEach(el => {" +
+                                "  const value = el.getAttribute('data-src') || el.getAttribute('data-file') || el.getAttribute('data-url');" +
+                                "  if (value) candidates.push(value);" +
+                                "});" +
+                                "return candidates.find(src => src && src.includes('.mp4')) || null;"
+                );
+                if (result instanceof String found && !found.isBlank()) {
+                    return Optional.of(found);
+                }
+            } catch (JavascriptException ignored) {
+                // ignore JS errors
+            }
+        }
+
+        return Optional.empty();
+    }
+
     private Optional<String> waitForMp4Url(String videoUrl) {
-        Pattern pattern = Pattern.compile("(https?://[^\"'\\s>]+?v\\.mp4(?:\\?[^\"'\\s>]*)?)", Pattern.CASE_INSENSITIVE);
         int attempt = 1;
         boolean timeoutArtifactCaptured = false;
         int consecutiveTimeouts = 0;
@@ -430,12 +510,7 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                     if (isCancelled.get()) {
                         throw new CancellationException("Descarga cancelada");
                     }
-                    String pageSource = webDriver.getPageSource();
-                    Matcher matcher = pattern.matcher(pageSource);
-                    if (matcher.find()) {
-                        return matcher.group(1);
-                    }
-                    return null;
+                    return findMp4Url(webDriver, MP4_PATTERN).orElse(null);
                 });
 
                 if (url != null && !url.isBlank()) {
@@ -488,7 +563,14 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         command.add(packagedChrome.toString());
         command.add("--user-data-dir=" + Paths.get("ChromeProfiles", "streamplay-manual").toAbsolutePath());
         command.add("--no-first-run");
-        command.add("--disable-extensions");
+        List<Path> extensionDirs = resolveManualExtensionDirs();
+        if (!extensionDirs.isEmpty()) {
+            String joined = extensionDirs.stream()
+                    .map(Path::toAbsolutePath)
+                    .map(Path::toString)
+                    .collect(Collectors.joining(","));
+            command.add("--load-extension=" + joined);
+        }
         command.add(videoUrl);
 
         try {
@@ -497,6 +579,123 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         } catch (IOException e) {
             logError("No se pudo lanzar el navegador manual empaquetado: " + e.getMessage());
         }
+    }
+
+    private List<Path> resolveManualExtensionDirs() {
+        Set<Path> resolved = new LinkedHashSet<>();
+        addIfDirectory(resolved, Paths.get("Extension", "PopUpStrictOld"));
+        addIfDirectory(resolved, Paths.get("Extension", "nopecatcha old"));
+
+        List<String> candidates = new ArrayList<>();
+        for (String candidate : VideosStreamerManager.getPopupExtensionCandidates()) {
+            candidates.add(candidate);
+        }
+        for (String candidate : VideosStreamerManager.getStreamtapePackagedCandidates()) {
+            candidates.add(candidate);
+        }
+        for (String candidate : NOPECHA_EXTENSION_CANDIDATES) {
+            candidates.add(candidate);
+        }
+
+        Path cacheDir = Paths.get("ChromeProfiles", "extensions-cache");
+        for (String candidate : candidates) {
+            File addon = resolveAddonFile(candidate);
+            if (addon == null || !addon.exists()) {
+                continue;
+            }
+            if (addon.isDirectory()) {
+                resolved.add(addon.toPath());
+                continue;
+            }
+            try {
+                Path unpacked = extractCrx(addon, cacheDir);
+                if (unpacked != null) {
+                    resolved.add(unpacked);
+                }
+            } catch (IOException e) {
+                logWarn("No se pudo extraer la extensión manual " + addon.getName() + ": " + e.getMessage());
+            }
+        }
+
+        return new ArrayList<>(resolved);
+    }
+
+    private void addIfDirectory(Set<Path> resolved, Path path) {
+        if (Files.isDirectory(path)) {
+            resolved.add(path);
+        }
+    }
+
+    private Path extractCrx(File crxFile, Path cacheDir) throws IOException {
+        if (crxFile == null) {
+            return null;
+        }
+        Files.createDirectories(cacheDir);
+        String baseName = crxFile.getName().replaceAll("\\.crx$", "");
+        Path targetDir = cacheDir.resolve(baseName);
+        if (Files.exists(targetDir)) {
+            try (java.util.stream.Stream<Path> stream = Files.list(targetDir)) {
+                if (stream.findAny().isPresent()) {
+                    return targetDir;
+                }
+            }
+        }
+
+        byte[] bytes = Files.readAllBytes(crxFile.toPath());
+        int zipStart = findCrxZipStart(bytes);
+        if (zipStart < 0 || zipStart >= bytes.length) {
+            return null;
+        }
+
+        Files.createDirectories(targetDir);
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(bytes, zipStart, bytes.length - zipStart))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                Path entryPath = targetDir.resolve(entry.getName());
+                if (entry.isDirectory()) {
+                    Files.createDirectories(entryPath);
+                } else {
+                    Files.createDirectories(entryPath.getParent());
+                    Files.copy(zis, entryPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+                zis.closeEntry();
+            }
+        }
+
+        return targetDir;
+    }
+
+    private int findCrxZipStart(byte[] bytes) {
+        if (bytes.length < 4) {
+            return -1;
+        }
+        if (bytes[0] != 'C' || bytes[1] != 'r' || bytes[2] != '2' || bytes[3] != '4') {
+            return 0;
+        }
+        if (bytes.length < 12) {
+            return -1;
+        }
+        int version = readLittleEndianInt(bytes, 4);
+        if (version == 2) {
+            if (bytes.length < 16) {
+                return -1;
+            }
+            int pubKeyLength = readLittleEndianInt(bytes, 8);
+            int sigLength = readLittleEndianInt(bytes, 12);
+            return 16 + pubKeyLength + sigLength;
+        }
+        if (version == 3) {
+            int headerSize = readLittleEndianInt(bytes, 8);
+            return 12 + headerSize;
+        }
+        return -1;
+    }
+
+    private int readLittleEndianInt(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xFF) |
+                ((bytes[offset + 1] & 0xFF) << 8) |
+                ((bytes[offset + 2] & 0xFF) << 16) |
+                ((bytes[offset + 3] & 0xFF) << 24);
     }
 
     private boolean prepareForMp4Retry(int attempt) {
@@ -624,12 +823,12 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
         }
     }
 
-    private void waitForNopechaResolution(String providerName) {
+    private boolean waitForNopechaResolution(String providerName) {
         if (driver == null) {
-            return;
+            return false;
         }
 
-        WebDriverWait captchaWait = new WebDriverWait(driver, CAPTCHA_WAIT_TIMEOUT);
+        WebDriverWait captchaWait = new WebDriverWait(driver, captchaWaitTimeout);
         try {
             captchaWait.until(webDriver -> {
                 try {
@@ -659,9 +858,11 @@ public class SeleniumStreamplay implements DirectDownloader, ManualDownloadCapab
                 }
             });
             logDebug("Captcha inicial resuelto automáticamente para " + providerName + ".");
+            return true;
         } catch (TimeoutException e) {
             logWarn("Tiempo de espera agotado esperando la resolución automática del captcha para " + providerName + ".");
             collectDebugArtifacts("captcha-no-resuelto");
+            return false;
         }
     }
 

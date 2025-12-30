@@ -240,6 +240,13 @@ public class MainUI extends Application {
         }
     }
 
+    public void applyNopechaTimeoutPreference(int timeoutSeconds) {
+        DownloadManager.updateNopechaTimeoutSeconds(timeoutSeconds);
+        if (directDownloadUI != null) {
+            directDownloadUI.applyNopechaTimeoutPreference(timeoutSeconds);
+        }
+    }
+
     private void ensureTorrentDownloaderInitialized(AjustesUI ajustesUI) {
         if (this.torrentDownloader != null || initializingTorrentDownloader) {
             return;
