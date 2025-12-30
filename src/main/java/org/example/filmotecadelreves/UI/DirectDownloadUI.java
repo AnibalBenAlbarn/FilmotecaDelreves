@@ -288,6 +288,15 @@ public class DirectDownloadUI {
         }
     }
 
+    public void applyNopechaTimeoutPreference(int timeoutSeconds) {
+        if (streamplayDownloader != null) {
+            streamplayDownloader.setNopechaTimeoutSeconds(timeoutSeconds);
+        }
+        if (powvideoDownloader != null) {
+            powvideoDownloader.setNopechaTimeoutSeconds(timeoutSeconds);
+        }
+    }
+
     // ==================== DESCARGAS Y SERVIDORES Y ESTATUS ====================
 
     // ==================== INICIALIZACIÓN Y CONFIGURACIÓN ====================
@@ -301,10 +310,14 @@ public class DirectDownloadUI {
         this.streamplayDownloader = new SeleniumStreamplay();
         boolean runStreamplayHeadless = ajustesUI == null || ajustesUI.isStreamplayHeadless();
         boolean runPowvideoHeadless = ajustesUI == null || ajustesUI.isPowvideoHeadless();
+        int nopechaTimeoutSeconds = ajustesUI == null ? 60 : ajustesUI.getNopechaTimeoutSeconds();
         this.powvideoDownloader.setRunHeadless(runPowvideoHeadless);
         this.streamplayDownloader.setRunHeadless(runStreamplayHeadless);
+        this.powvideoDownloader.setNopechaTimeoutSeconds(nopechaTimeoutSeconds);
+        this.streamplayDownloader.setNopechaTimeoutSeconds(nopechaTimeoutSeconds);
         DownloadManager.updateStreamplayHeadless(runStreamplayHeadless);
         DownloadManager.updatePowvideoHeadless(runPowvideoHeadless);
+        DownloadManager.updateNopechaTimeoutSeconds(nopechaTimeoutSeconds);
         this.mixdropDownloader = new MixdropDownloader();
         this.videoStream = new VideoStream();
         this.videoStream.setHeadless(runStreamplayHeadless);

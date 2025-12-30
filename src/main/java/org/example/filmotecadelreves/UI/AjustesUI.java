@@ -68,6 +68,7 @@ public class AjustesUI {
     private CheckBox streamplayHeadlessCheckbox;
     private CheckBox powvideoHeadlessCheckbox;
     private TextField apiKeyCaptchaField;
+    private Spinner<Integer> nopechaTimeoutSpinner;
 
     // Configuración de interfaz
     private ComboBox<String> themeComboBox;
@@ -437,6 +438,10 @@ public class AjustesUI {
         apiKeyCaptchaField = new TextField();
         apiKeyCaptchaField.setPromptText("Introduce tu API Key de 2Captcha");
 
+        Label nopechaTimeoutLabel = new Label("Tiempo máximo para NoPeCaptcha (segundos):");
+        nopechaTimeoutSpinner = new Spinner<>(5, 300, 60);
+        nopechaTimeoutSpinner.setEditable(true);
+
 // Botón para verificar la API Key
         Button verifyApiKeyButton = new Button("Verificar API Key");
         verifyApiKeyButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
@@ -460,8 +465,10 @@ public class AjustesUI {
         grid.add(apiKeyCaptchaLabel, 0, 0);
         grid.add(apiKeyCaptchaField, 0, 1);
         grid.add(verifyApiKeyButton, 1, 1);
-        grid.add(captchaInfoLabel, 0, 2, 2, 1);
-        grid.add(captchaLink, 0, 3, 2, 1);
+        grid.add(nopechaTimeoutLabel, 0, 2);
+        grid.add(nopechaTimeoutSpinner, 0, 3);
+        grid.add(captchaInfoLabel, 0, 4, 2, 1);
+        grid.add(captchaLink, 0, 5, 2, 1);
 
         TitledPane captchaPane = new TitledPane("Configuración de 2Captcha", grid);
         captchaPane.setExpanded(true);
@@ -971,6 +978,7 @@ public class AjustesUI {
         config.put("streamplayHeadless", streamplayHeadlessCheckbox.isSelected());
         config.put("powvideoHeadless", powvideoHeadlessCheckbox.isSelected());
         config.put("apiKeyCaptcha", apiKeyCaptchaField.getText());
+        config.put("nopechaTimeoutSeconds", nopechaTimeoutSpinner.getValue());
 
 // Configuración de interfaz
         config.put("theme", themeComboBox.getValue());
@@ -1008,6 +1016,7 @@ public class AjustesUI {
                 mainUI.updateConfig(config);
                 mainUI.applyStreamplayHeadlessPreference(streamplayHeadlessCheckbox.isSelected());
                 mainUI.applyPowvideoHeadlessPreference(powvideoHeadlessCheckbox.isSelected());
+                mainUI.applyNopechaTimeoutPreference(nopechaTimeoutSpinner.getValue());
             }
 
             // Generar y aplicar el archivo CSS solo si el tema seleccionado es "Personalizado".
@@ -1143,10 +1152,17 @@ public class AjustesUI {
                 if (config.containsKey("apiKeyCaptcha")) {
                     apiKeyCaptchaField.setText((String) config.get("apiKeyCaptcha"));
                 }
+                if (config.containsKey("nopechaTimeoutSeconds")) {
+                    nopechaTimeoutSpinner.getValueFactory().setValue(
+                            parseConfigInt(config.get("nopechaTimeoutSeconds"), 60));
+                } else {
+                    nopechaTimeoutSpinner.getValueFactory().setValue(60);
+                }
 
                 if (mainUI != null) {
                     mainUI.applyStreamplayHeadlessPreference(streamplayHeadlessCheckbox.isSelected());
                     mainUI.applyPowvideoHeadlessPreference(powvideoHeadlessCheckbox.isSelected());
+                    mainUI.applyNopechaTimeoutPreference(nopechaTimeoutSpinner.getValue());
                 }
 
 // Configuración de interfaz
@@ -1268,6 +1284,7 @@ public class AjustesUI {
         streamplayHeadlessCheckbox.setSelected(true);
         powvideoHeadlessCheckbox.setSelected(true);
         apiKeyCaptchaField.setText("");
+        nopechaTimeoutSpinner.getValueFactory().setValue(60);
 
 // Configuración de interfaz
         themeComboBox.setValue("Oscuro Elegante");
@@ -1282,6 +1299,7 @@ public class AjustesUI {
         if (mainUI != null) {
             mainUI.applyStreamplayHeadlessPreference(true);
             mainUI.applyPowvideoHeadlessPreference(true);
+            mainUI.applyNopechaTimeoutPreference(nopechaTimeoutSpinner.getValue());
         }
 
 // Restaurar colores predeterminados
@@ -1393,6 +1411,10 @@ public class AjustesUI {
 
     public String getApiKeyCaptcha() {
         return apiKeyCaptchaField.getText();
+    }
+
+    public int getNopechaTimeoutSeconds() {
+        return nopechaTimeoutSpinner == null ? 60 : nopechaTimeoutSpinner.getValue();
     }
 
     // Getters para configuración de interfaz
