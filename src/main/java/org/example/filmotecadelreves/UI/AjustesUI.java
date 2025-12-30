@@ -122,10 +122,10 @@ public class AjustesUI {
         Tab interfaceSettingsTab = new Tab("Ajustes Interfaz");
 
 // Configurar contenido de las pestañas
-        torrentSettingsTab.setContent(createTorrentSettingsContent(primaryStage));
-        directDownloadSettingsTab.setContent(createDirectDownloadSettingsContent(primaryStage));
-        databaseSettingsTab.setContent(createDatabaseSettingsContent(primaryStage));
-        interfaceSettingsTab.setContent(createInterfaceSettingsContent());
+        torrentSettingsTab.setContent(wrapInScrollPane(createTorrentSettingsContent(primaryStage)));
+        directDownloadSettingsTab.setContent(wrapInScrollPane(createDirectDownloadSettingsContent(primaryStage)));
+        databaseSettingsTab.setContent(wrapInScrollPane(createDatabaseSettingsContent(primaryStage)));
+        interfaceSettingsTab.setContent(wrapInScrollPane(createInterfaceSettingsContent()));
 
 // Añadir pestañas al TabPane
         settingsTabs.getTabs().addAll(
@@ -218,6 +218,13 @@ public class AjustesUI {
         content.getChildren().addAll(interfacePane, colorCustomizationPane);
 
         return content;
+    }
+
+    private ScrollPane wrapInScrollPane(VBox content) {
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        return scrollPane;
     }
 
     private TitledPane createTorrentPathsSection(Stage primaryStage) {
@@ -470,7 +477,7 @@ public class AjustesUI {
         grid.add(captchaInfoLabel, 0, 4, 2, 1);
         grid.add(captchaLink, 0, 5, 2, 1);
 
-        TitledPane captchaPane = new TitledPane("Configuración de 2Captcha", grid);
+        TitledPane captchaPane = new TitledPane("Ajustes de Captcha", grid);
         captchaPane.setExpanded(true);
 
         return captchaPane;
