@@ -15,10 +15,10 @@
     <jlibtorrent.version>2.0.12.5</jlibtorrent.version>
     <javafx.version>21.0.4</javafx.version>
     <javafx.platform>${os.detected.classifier}</javafx.platform>
-    <!-- compilar contra Java 21 -->
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-    <maven.compiler.release>21</maven.compiler.release>
+    <!-- compilar contra Java 23 (Corretto) -->
+    <maven.compiler.source>23</maven.compiler.source>
+    <maven.compiler.target>23</maven.compiler.target>
+    <maven.compiler.release>23</maven.compiler.release>
   </properties>
 
   <dependencies>
@@ -236,6 +236,7 @@
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <shadedArtifactAttached>true</shadedArtifactAttached>
               <shadedClassifierName>fat</shadedClassifierName>
+              <includeSystemScope>true</includeSystemScope>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
@@ -279,7 +280,7 @@
             <configuration>
               <rules>
                 <requireJavaVersion>
-                  <version>[21,)</version>
+                  <version>[23,)</version>
                 </requireJavaVersion>
               </rules>
             </configuration>
