@@ -49,10 +49,14 @@ import javafx.util.Duration;
 import javafx.stage.Window;
 import org.example.filmotecadelreves.moviesad.DelayedLoadingDialog;
 import org.example.filmotecadelreves.moviesad.DownloadPersistenceManager;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 //ver1.3
 
 public class MainUI extends Application {
+
+    private static final Logger LOGGER = LogManager.getLogger(MainUI.class);
 
     private ConnectDataBase torrentDB;
     private ConnectDataBase directDB;
@@ -699,9 +703,16 @@ public class MainUI extends Application {
                 Files.createDirectories(resourcesDir);
                 System.out.println("Directorio resources creado: " + resourcesDir.toAbsolutePath());
             }
+
+            Path logsDir = Paths.get("logs");
+            if (!Files.exists(logsDir)) {
+                Files.createDirectories(logsDir);
+                System.out.println("Directorio logs creado: " + logsDir.toAbsolutePath());
+            }
         } catch (Exception e) {
             System.err.println("Error al crear directorios: " + e.getMessage());
             e.printStackTrace();
+            LOGGER.error("Error al crear directorios necesarios.", e);
             showAlert(Alert.AlertType.ERROR, "Error", "No se pudieron crear los directorios necesarios: " + e.getMessage());
         }
     }
@@ -890,6 +901,25 @@ public class MainUI extends Application {
     }
 
     public static void main(String[] args) {
-        launch(args);
+        ensureLogDirectory();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            LOGGER.error("Error no controlado en el hilo: {}", thread.getName(), throwable);
+        });
+
+        try {
+            launch(args);
+        } catch (Exception e) {
+            LOGGER.error("Error crítico durante el arranque de la aplicación.", e);
+            throw e;
+        }
+    }
+
+    private static void ensureLogDirectory() {
+        try {
+            Files.createDirectories(Paths.get("logs"));
+        } catch (Exception e) {
+            System.err.println("No se pudo crear el directorio de logs: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
