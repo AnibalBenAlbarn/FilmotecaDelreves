@@ -227,7 +227,6 @@
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <shadedArtifactAttached>false</shadedArtifactAttached>
-              <includeSystemScope>true</includeSystemScope>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
