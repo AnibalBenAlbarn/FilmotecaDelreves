@@ -226,8 +226,7 @@
             </goals>
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-              <shadedArtifactAttached>true</shadedArtifactAttached>
-              <shadedClassifierName>fat</shadedClassifierName>
+              <shadedArtifactAttached>false</shadedArtifactAttached>
               <includeSystemScope>true</includeSystemScope>
               <filters>
                 <filter>
