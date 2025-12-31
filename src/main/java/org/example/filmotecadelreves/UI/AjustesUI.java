@@ -2,6 +2,7 @@ package org.example.filmotecadelreves.UI;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import org.example.filmotecadelreves.downloaders.TorrentDownloader;
 import org.example.filmotecadelreves.scrapers.ScraperProgressTracker;

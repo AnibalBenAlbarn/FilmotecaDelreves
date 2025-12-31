@@ -259,10 +259,12 @@ public class MiBibliotecaUI {
             if (allFiltersLabel.equals(director)) {
                 director = null;
             }
+            String finalGenre = genre;
+            String finalDirector = director;
             List<MediaItem> filtered = catalog.getMovies().stream()
                     .filter(item -> query.isBlank() || matchesQuery(item, query))
-                    .filter(item -> genre == null || item.getGenres().contains(genre))
-                    .filter(item -> director == null || director.equalsIgnoreCase(item.getDirector()))
+                    .filter(item -> finalGenre == null || item.getGenres().contains(finalGenre))
+                    .filter(item -> finalDirector == null || finalDirector.equalsIgnoreCase(item.getDirector()))
                     .collect(Collectors.toList());
             clearSelectedCard();
             showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane);
