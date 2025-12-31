@@ -151,7 +151,7 @@
           <artifactId>jlibtorrent</artifactId>
           <version>2.0.12.5</version>
           <scope>system</scope>
-          <systemPath>${project.basedir}/libs/jlibtorrent-2.0.12.5.jar</systemPath>
+          <systemPath>${project.basedir}/lib/jlibtorrent-2.0.12.5.jar</systemPath>
       </dependency>
 
     <!-- Logging -->
@@ -228,6 +228,7 @@
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <shadedArtifactAttached>true</shadedArtifactAttached>
               <shadedClassifierName>fat</shadedClassifierName>
+              <includeSystemScope>true</includeSystemScope>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
