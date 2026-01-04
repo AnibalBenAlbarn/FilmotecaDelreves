@@ -29,6 +29,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,6 +79,7 @@ public class TorrentDownloadUI {
     private final String TEMP_DIR = System.getProperty("java.io.tmpdir") + File.separator + "torrent_downloader";
 
     private final MainUI mainUI;
+    private String dontorrentBaseUrlOverride;
     private boolean notifyStartupOnInitialData = true;
 
     public TorrentDownloadUI(AjustesUI ajustesUI, DescargasUI descargasUI, Stage primaryStage, ScraperProgressTracker scraperProgressTracker, MainUI mainUI) {
@@ -568,6 +570,35 @@ public class TorrentDownloadUI {
      * @return Ruta al archivo torrent descargado, o null si hubo un error
      */
     private String downloadTorrentFile(String torrentUrl, String itemName) {
+        String effectiveUrl = applyDontorrentOverride(torrentUrl);
+        String downloaded = attemptTorrentDownload(effectiveUrl, itemName);
+        if (downloaded != null) {
+            return downloaded;
+        }
+
+        if (!isDontorrentUrl(effectiveUrl)) {
+            return null;
+        }
+
+        Optional<String> baseOverride = promptForDontorrentBaseUrl(effectiveUrl);
+        if (baseOverride.isEmpty()) {
+            return null;
+        }
+
+        String normalizedBase = normalizeBaseUrl(baseOverride.get());
+        if (normalizedBase == null) {
+            Platform.runLater(() -> showAlert(Alert.AlertType.ERROR,
+                    "URL inválida",
+                    "La URL base introducida no es válida. Usa un formato como https://dontorrent.sarl"));
+            return null;
+        }
+
+        dontorrentBaseUrlOverride = normalizedBase;
+        String retryUrl = rebuildUrlWithBase(torrentUrl, normalizedBase);
+        return attemptTorrentDownload(retryUrl, itemName);
+    }
+
+    private String attemptTorrentDownload(String torrentUrl, String itemName) {
         try {
             // Sanitizar el nombre del elemento para usarlo como nombre de archivo
             String sanitizedName = itemName.replaceAll("[^a-zA-Z0-9.-]", "_");
@@ -609,6 +640,109 @@ public class TorrentDownloadUI {
             System.err.println("Error al descargar archivo torrent: " + e.getMessage());
             e.printStackTrace();
             return null;
+        }
+    }
+
+    private String applyDontorrentOverride(String torrentUrl) {
+        if (dontorrentBaseUrlOverride == null || dontorrentBaseUrlOverride.isBlank()) {
+            return torrentUrl;
+        }
+        if (!isDontorrentUrl(torrentUrl)) {
+            return torrentUrl;
+        }
+        return rebuildUrlWithBase(torrentUrl, dontorrentBaseUrlOverride);
+    }
+
+    private boolean isDontorrentUrl(String torrentUrl) {
+        if (torrentUrl == null) {
+            return false;
+        }
+        try {
+            URI uri = new URI(torrentUrl);
+            String host = uri.getHost();
+            if (host != null) {
+                return host.toLowerCase().contains("dontorrent");
+            }
+        } catch (Exception ignored) {
+            // Fallback to raw string inspection
+        }
+        return torrentUrl.toLowerCase().contains("dontorrent");
+    }
+
+    private Optional<String> promptForDontorrentBaseUrl(String currentUrl) {
+        CompletableFuture<Optional<String>> future = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            String suggestedBase = extractBaseUrl(currentUrl);
+            TextInputDialog dialog = new TextInputDialog(suggestedBase != null ? suggestedBase : "");
+            dialog.setTitle("Actualizar dominio de DonTorrent");
+            dialog.setHeaderText("No se pudo descargar el torrent desde DonTorrent.");
+            dialog.setContentText("Introduce la URL base actual (ej. https://dontorrent.sarl):");
+            Optional<String> result = dialog.showAndWait();
+            future.complete(result.map(String::trim).filter(value -> !value.isEmpty()));
+        });
+        return future.join();
+    }
+
+    private String extractBaseUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = new URI(url);
+            if (uri.getScheme() == null || uri.getHost() == null) {
+                return null;
+            }
+            int port = uri.getPort();
+            String portSuffix = port > 0 ? ":" + port : "";
+            return uri.getScheme() + "://" + uri.getHost() + portSuffix;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        if (baseUrl == null) {
+            return null;
+        }
+        String trimmed = baseUrl.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (!trimmed.matches("(?i)^https?://.*")) {
+            trimmed = "https://" + trimmed;
+        }
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        try {
+            URI uri = new URI(trimmed);
+            return uri.getScheme() != null && uri.getHost() != null ? trimmed : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String rebuildUrlWithBase(String originalUrl, String baseUrl) {
+        try {
+            URI originalUri = new URI(originalUrl);
+            URI baseUri = new URI(baseUrl);
+            String basePath = baseUri.getPath() == null ? "" : baseUri.getPath();
+            if (!basePath.isEmpty() && basePath.endsWith("/")) {
+                basePath = basePath.substring(0, basePath.length() - 1);
+            }
+            String originalPath = originalUri.getRawPath() == null ? "" : originalUri.getRawPath();
+            String combinedPath = basePath + originalPath;
+            return new URI(
+                    baseUri.getScheme(),
+                    baseUri.getUserInfo(),
+                    baseUri.getHost(),
+                    baseUri.getPort(),
+                    combinedPath,
+                    originalUri.getRawQuery(),
+                    originalUri.getRawFragment()
+            ).toString();
+        } catch (Exception e) {
+            return originalUrl;
         }
     }
 
