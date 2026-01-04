@@ -24,6 +24,7 @@ import org.example.filmotecadelreves.library.*;
 import java.awt.Desktop;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -108,6 +109,7 @@ public class MiBibliotecaUI {
 
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.getStyleClass().add("library-toolbar");
         Label locationLabel = new Label("Ruta: " + entry.getRootPath());
         locationLabel.getStyleClass().add("library-location");
         Button scanButton = new Button("Escanear biblioteca");
@@ -173,6 +175,7 @@ public class MiBibliotecaUI {
 
         HBox filters = new HBox(10, searchField, genreFilter, directorFilter);
         filters.setAlignment(Pos.CENTER_LEFT);
+        filters.getStyleClass().add("library-filters");
 
         ToggleGroup viewModeGroup = new ToggleGroup();
         RadioButton scrollMode = new RadioButton("Scroll");
@@ -182,6 +185,7 @@ public class MiBibliotecaUI {
         paginationMode.setToggleGroup(viewModeGroup);
         HBox viewMode = new HBox(10, new Label("Vista:"), scrollMode, paginationMode);
         viewMode.setAlignment(Pos.CENTER_LEFT);
+        viewMode.getStyleClass().add("library-view-mode");
 
         FlowPane grid = new FlowPane();
         grid.setHgap(16);
@@ -198,8 +202,51 @@ public class MiBibliotecaUI {
         Label detailsFile = new Label();
         detailsFile.getStyleClass().add("library-details-meta");
         detailsFile.setWrapText(true);
+        Label detailsPath = new Label();
+        detailsPath.getStyleClass().add("library-details-path");
+        detailsPath.setWrapText(true);
 
-        VBox detailsBody = new VBox(6, detailsOverview, detailsFile);
+        AtomicReference<MediaItem> selectedMovie = new AtomicReference<>();
+        Button playButton = new Button("Reproducir");
+        playButton.getStyleClass().add("library-primary-button");
+        MenuButton settingsButton = new MenuButton("Ajustes");
+        settingsButton.getStyleClass().add("library-secondary-button");
+
+        MenuItem locationItem = new MenuItem("Mostrar ubicación");
+        locationItem.setOnAction(event -> {
+            MediaItem item = selectedMovie.get();
+            if (item != null) {
+                openInExplorer(item.getFilePath());
+            }
+        });
+        MenuItem renameItem = new MenuItem("Cambiar nombre");
+        renameItem.setOnAction(event -> renameMovie(entry, catalog, selectedMovie.get(), refreshView));
+        MenuItem removeItem = new MenuItem("Eliminar de biblioteca");
+        removeItem.setOnAction(event -> removeMovieFromCatalog(entry, catalog, selectedMovie.get(), refreshView));
+        MenuItem deleteItem = new MenuItem("Eliminar archivo");
+        deleteItem.setOnAction(event -> deleteMovieFile(entry, catalog, selectedMovie.get(), refreshView));
+        MenuItem propertiesItem = new MenuItem("Propiedades");
+        propertiesItem.setOnAction(event -> {
+            MediaItem item = selectedMovie.get();
+            if (item != null) {
+                showMovieProperties(item);
+            }
+        });
+        settingsButton.getItems().addAll(locationItem, renameItem, removeItem, deleteItem, propertiesItem);
+
+        playButton.setOnAction(event -> {
+            MediaItem item = selectedMovie.get();
+            if (item != null) {
+                openFile(item.getFilePath());
+            }
+        });
+        playButton.setDisable(true);
+        settingsButton.setDisable(true);
+
+        HBox detailsActions = new HBox(10, playButton, settingsButton);
+        detailsActions.getStyleClass().add("library-details-actions");
+
+        VBox detailsBody = new VBox(6, detailsOverview, detailsFile, detailsPath);
         detailsBody.setFillWidth(true);
         ScrollPane detailsScroll = new ScrollPane(detailsBody);
         detailsScroll.setFitToWidth(true);
@@ -210,7 +257,7 @@ public class MiBibliotecaUI {
         detailsScroll.setMaxHeight(280);
         detailsScroll.getStyleClass().add("library-details-scroll");
 
-        VBox detailsText = new VBox(6, detailsTitle, detailsMeta, detailsScroll);
+        VBox detailsText = new VBox(6, detailsTitle, detailsMeta, detailsActions, detailsScroll);
         detailsText.setFillWidth(true);
 
         StackPane detailsPosterPane = new StackPane();
@@ -223,10 +270,11 @@ public class MiBibliotecaUI {
         HBox.setHgrow(detailsText, Priority.ALWAYS);
         detailsBox.setVisible(false);
         detailsBox.setManaged(false);
-        showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane);
+        showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane);
 
         ScrollPane scrollPane = new ScrollPane(grid);
         scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
         scrollPane.getStyleClass().add("library-scroll");
 
         Pagination pagination = new Pagination(1, 0);
@@ -242,9 +290,24 @@ public class MiBibliotecaUI {
 
         ScrollPane pageScrollPane = new ScrollPane(pageGrid);
         pageScrollPane.setFitToWidth(true);
+        pageScrollPane.setFitToHeight(true);
         pageScrollPane.getStyleClass().add("library-scroll");
 
         VBox resultsPane = new VBox(8, scrollPane);
+        resultsPane.getStyleClass().add("library-results");
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        VBox.setVgrow(pageScrollPane, Priority.ALWAYS);
+
+        scrollPane.viewportBoundsProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue.getWidth() > 0) {
+                grid.setPrefWrapLength(newValue.getWidth());
+            }
+        });
+        pageScrollPane.viewportBoundsProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue.getWidth() > 0) {
+                pageGrid.setPrefWrapLength(newValue.getWidth());
+            }
+        });
 
         final int pageSize = 25;
         AtomicReference<List<MediaItem>> filteredItems = new AtomicReference<>(List.of());
@@ -267,14 +330,20 @@ public class MiBibliotecaUI {
                     .filter(item -> finalDirector == null || finalDirector.equalsIgnoreCase(item.getDirector()))
                     .collect(Collectors.toList());
             clearSelectedCard();
-            showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane);
+            showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane);
+            selectedMovie.set(null);
+            playButton.setDisable(true);
+            settingsButton.setDisable(true);
             detailsBox.setVisible(false);
             detailsBox.setManaged(false);
             filteredItems.set(filtered);
             if (scrollMode.isSelected()) {
                 grid.getChildren().setAll(filtered.stream()
                         .map(item -> buildMovieCard(entry, catalog, item, refreshView, () -> {
-                            showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane);
+                            showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane);
+                            selectedMovie.set(item);
+                            playButton.setDisable(item.getFilePath() == null || item.getFilePath().isBlank());
+                            settingsButton.setDisable(false);
                             detailsBox.setVisible(true);
                             detailsBox.setManaged(true);
                         }))
@@ -285,7 +354,8 @@ public class MiBibliotecaUI {
                 pagination.setPageCount(pageCount);
                 pagination.setCurrentPageIndex(0);
                 updatePaginationPage(filteredItems, pageGrid, entry, catalog, refreshView,
-                        detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane, 0, pageSize, detailsBox);
+                        detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane, 0, pageSize,
+                        detailsBox, selectedMovie, playButton, settingsButton);
                 resultsPane.getChildren().setAll(pagination, pageScrollPane);
             }
         };
@@ -295,8 +365,8 @@ public class MiBibliotecaUI {
                 return;
             }
             updatePaginationPage(filteredItems, pageGrid, entry, catalog, refreshView,
-                    detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane, newValue.intValue(), pageSize,
-                    detailsBox);
+                    detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane, newValue.intValue(),
+                    pageSize, detailsBox, selectedMovie, playButton, settingsButton);
         });
 
         searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
@@ -318,7 +388,15 @@ public class MiBibliotecaUI {
         viewModeGroup.selectedToggleProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
 
         applyFilters.run();
-        container.getChildren().addAll(filters, viewMode, resultsPane, detailsBox);
+
+        HBox contentRow = new HBox(16, resultsPane, detailsBox);
+        contentRow.getStyleClass().add("library-content");
+        HBox.setHgrow(resultsPane, Priority.ALWAYS);
+        detailsBox.setPrefWidth(360);
+        detailsBox.setMaxWidth(380);
+
+        container.getChildren().addAll(filters, viewMode, contentRow);
+        VBox.setVgrow(contentRow, Priority.ALWAYS);
         return container;
     }
 
@@ -365,9 +443,23 @@ public class MiBibliotecaUI {
 
         ScrollPane scrollPane = new ScrollPane(grid);
         scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
         scrollPane.getStyleClass().add("library-scroll");
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
 
-        container.getChildren().addAll(searchField, scrollPane, detailsBox);
+        scrollPane.viewportBoundsProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue.getWidth() > 0) {
+                grid.setPrefWrapLength(newValue.getWidth());
+            }
+        });
+
+        HBox contentRow = new HBox(16, scrollPane, detailsBox);
+        HBox.setHgrow(scrollPane, Priority.ALWAYS);
+        detailsBox.setPrefWidth(320);
+        detailsBox.setMaxWidth(360);
+
+        container.getChildren().addAll(searchField, contentRow);
+        VBox.setVgrow(contentRow, Priority.ALWAYS);
         return container;
     }
 
@@ -375,7 +467,7 @@ public class MiBibliotecaUI {
         VBox card = new VBox(8);
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
-        card.setPrefWidth(180);
+        card.setPrefWidth(170);
         ContextMenu contextMenu = createMovieContextMenu(entry, catalog, item, refreshView);
         configureCardInteractions(card, () -> openFile(item.getFilePath()), contextMenu, onSelect);
 
@@ -397,7 +489,7 @@ public class MiBibliotecaUI {
         VBox card = new VBox(8);
         card.getStyleClass().add("library-card");
         card.setAlignment(Pos.TOP_LEFT);
-        card.setPrefWidth(180);
+        card.setPrefWidth(170);
         ContextMenu contextMenu = createSeriesContextMenu(entry, catalog, series, refreshView);
         configureCardInteractions(card, () -> openSeriesDialog(series), contextMenu, onSelect);
 
@@ -511,6 +603,7 @@ public class MiBibliotecaUI {
     }
 
     private void showMovieDetails(MediaItem item, Label title, Label meta, Label overview, Label file,
+                                  Label path,
                                   StackPane posterPane) {
         title.setText(item.getTitle());
         StringBuilder metaBuilder = new StringBuilder(buildMeta(item));
@@ -526,18 +619,165 @@ public class MiBibliotecaUI {
         String filePath = item.getFilePath();
         if (filePath == null || filePath.isBlank()) {
             file.setText("Archivo: —");
+            path.setText("Ubicación: —");
         } else {
             file.setText("Archivo: " + new File(filePath).getName());
+            path.setText("Ubicación: " + filePath);
         }
         updatePosterPane(posterPane, item.getPosterPath(), item.getTitle());
     }
 
-    private void showMoviePlaceholder(Label title, Label meta, Label overview, Label file, StackPane posterPane) {
+    private void showMoviePlaceholder(Label title, Label meta, Label overview, Label file, Label path,
+                                      StackPane posterPane) {
         title.setText("Selecciona una película");
         meta.setText("Elige una tarjeta para ver los detalles.");
         overview.setText("");
         file.setText("");
+        path.setText("");
         updatePosterPane(posterPane, null, "Sin carátula");
+    }
+
+    private void renameMovie(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
+        if (item == null) {
+            return;
+        }
+        String filePath = item.getFilePath();
+        if (filePath == null || filePath.isBlank()) {
+            showAlert("Sin archivo", "No se encontró una ruta asociada a esta película.");
+            return;
+        }
+        File file = new File(filePath);
+        if (!file.exists()) {
+            showAlert("Archivo no disponible", "El archivo ya no existe en el disco.");
+            return;
+        }
+
+        String baseName = file.getName();
+        int extensionIndex = baseName.lastIndexOf('.');
+        String nameOnly = extensionIndex > 0 ? baseName.substring(0, extensionIndex) : baseName;
+        String extension = extensionIndex > 0 ? baseName.substring(extensionIndex + 1) : "";
+
+        TextInputDialog dialog = new TextInputDialog(nameOnly);
+        dialog.initOwner(owner);
+        dialog.setTitle("Cambiar nombre");
+        dialog.setHeaderText("Nuevo nombre para la película");
+        dialog.setContentText("Nombre:");
+
+        Optional<String> result = dialog.showAndWait();
+        if (result.isEmpty()) {
+            return;
+        }
+        String newName = result.get().trim();
+        if (newName.isBlank()) {
+            showAlert("Nombre inválido", "Escribe un nombre válido.");
+            return;
+        }
+        if (newName.equals(nameOnly)) {
+            return;
+        }
+
+        String newFileName = extension.isBlank() ? newName : newName + "." + extension;
+        Path targetPath = file.toPath().resolveSibling(newFileName);
+        if (Files.exists(targetPath)) {
+            showAlert("Archivo existente", "Ya existe un archivo con ese nombre.");
+            return;
+        }
+
+        try {
+            Files.move(file.toPath(), targetPath);
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo renombrar el archivo: " + e.getMessage());
+            return;
+        }
+
+        MediaItem updated = cloneMovieItem(item, targetPath.toString(), newName);
+        replaceMovieItem(catalog, item, updated);
+        catalogStore.saveCatalog(configManager.getLibraryDataDir(entry), catalog);
+        refreshView.run();
+    }
+
+    private void removeMovieFromCatalog(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
+        if (item == null) {
+            return;
+        }
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
+                "¿Seguro que quieres eliminar esta película de la biblioteca?",
+                ButtonType.YES, ButtonType.NO);
+        alert.initOwner(owner);
+        alert.setTitle("Eliminar de biblioteca");
+        alert.setHeaderText(null);
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.YES) {
+            return;
+        }
+        int index = findMovieIndex(catalog, item);
+        if (index >= 0) {
+            catalog.getMovies().remove(index);
+            catalogStore.saveCatalog(configManager.getLibraryDataDir(entry), catalog);
+            refreshView.run();
+        }
+    }
+
+    private void deleteMovieFile(LibraryEntry entry, LibraryCatalog catalog, MediaItem item, Runnable refreshView) {
+        if (item == null) {
+            return;
+        }
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
+                "Esto eliminará el archivo de tu disco.\n¿Quieres continuar?",
+                ButtonType.YES, ButtonType.NO);
+        alert.initOwner(owner);
+        alert.setTitle("Eliminar archivo");
+        alert.setHeaderText(null);
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.YES) {
+            return;
+        }
+        String filePath = item.getFilePath();
+        if (filePath != null && !filePath.isBlank()) {
+            try {
+                Files.deleteIfExists(Path.of(filePath));
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo eliminar el archivo: " + e.getMessage());
+                return;
+            }
+        }
+        int index = findMovieIndex(catalog, item);
+        if (index >= 0) {
+            catalog.getMovies().remove(index);
+        }
+        catalogStore.saveCatalog(configManager.getLibraryDataDir(entry), catalog);
+        refreshView.run();
+    }
+
+    private int findMovieIndex(LibraryCatalog catalog, MediaItem item) {
+        if (item == null) {
+            return -1;
+        }
+        for (int i = 0; i < catalog.getMovies().size(); i++) {
+            MediaItem candidate = catalog.getMovies().get(i);
+            if (candidate.getId().equals(item.getId())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void replaceMovieItem(LibraryCatalog catalog, MediaItem oldItem, MediaItem updatedItem) {
+        int index = findMovieIndex(catalog, oldItem);
+        if (index >= 0) {
+            catalog.getMovies().set(index, updatedItem);
+        }
+    }
+
+    private MediaItem cloneMovieItem(MediaItem item, String filePath, String title) {
+        MediaItem updated = new MediaItem(item.getId(), filePath, title);
+        updated.setScrapedTitle(item.getScrapedTitle());
+        updated.setYear(item.getYear());
+        updated.setDirector(item.getDirector());
+        updated.setGenres(item.getGenres());
+        updated.setOverview(item.getOverview());
+        updated.setPosterPath(item.getPosterPath());
+        return updated;
     }
 
     private void updatePosterPane(StackPane posterPane, String posterPath, String title) {
@@ -547,7 +787,9 @@ public class MiBibliotecaUI {
     private void updatePaginationPage(AtomicReference<List<MediaItem>> filteredItems, FlowPane pageGrid,
                                       LibraryEntry entry, LibraryCatalog catalog, Runnable refreshView,
                                       Label detailsTitle, Label detailsMeta, Label detailsOverview, Label detailsFile,
-                                      StackPane detailsPosterPane, int pageIndex, int pageSize, Region detailsBox) {
+                                      Label detailsPath, StackPane detailsPosterPane, int pageIndex, int pageSize,
+                                      Region detailsBox, AtomicReference<MediaItem> selectedMovie, Button playButton,
+                                      MenuButton settingsButton) {
         List<MediaItem> items = filteredItems.get();
         int fromIndex = pageIndex * pageSize;
         if (fromIndex >= items.size()) {
@@ -557,7 +799,11 @@ public class MiBibliotecaUI {
         int toIndex = Math.min(items.size(), fromIndex + pageSize);
         pageGrid.getChildren().setAll(items.subList(fromIndex, toIndex).stream()
                 .map(item -> buildMovieCard(entry, catalog, item, refreshView, () -> {
-                    showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPosterPane);
+                    showMovieDetails(item, detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath,
+                            detailsPosterPane);
+                    selectedMovie.set(item);
+                    playButton.setDisable(item.getFilePath() == null || item.getFilePath().isBlank());
+                    settingsButton.setDisable(false);
                     detailsBox.setVisible(true);
                     detailsBox.setManaged(true);
                 }))
