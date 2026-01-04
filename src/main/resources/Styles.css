@@ -199,6 +199,24 @@
     -fx-text-fill: -color-text-muted;
 }
 
+.library-toolbar,
+.library-filters,
+.library-view-mode {
+    -fx-background-color: -color-surface;
+    -fx-border-color: -color-border;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 8 12;
+}
+
+.library-content {
+    -fx-padding: 4 0 0 0;
+}
+
+.library-results {
+    -fx-background-color: transparent;
+}
+
 .library-scroll {
     -fx-background-color: transparent;
 }
@@ -288,8 +306,43 @@
     -fx-font-size: 12px;
 }
 
+.library-details-path {
+    -fx-text-fill: -color-text-muted;
+    -fx-font-size: 11px;
+}
+
 .library-details-body {
     -fx-text-fill: -color-text;
+}
+
+.library-details-actions {
+    -fx-padding: 4 0 4 0;
+    -fx-alignment: center-left;
+}
+
+.library-primary-button {
+    -fx-background-color: linear-gradient(to right, -color-accent, -color-accent-hover);
+    -fx-text-fill: white;
+    -fx-background-radius: 999;
+    -fx-padding: 8 18;
+    -fx-font-weight: 600;
+}
+
+.library-primary-button:disabled {
+    -fx-opacity: 0.6;
+}
+
+.library-secondary-button {
+    -fx-background-color: -color-surface-alt;
+    -fx-text-fill: -color-text;
+    -fx-background-radius: 999;
+    -fx-border-color: -color-border;
+    -fx-border-radius: 999;
+    -fx-padding: 8 16;
+}
+
+.library-secondary-button:disabled {
+    -fx-opacity: 0.6;
 }
 
 .library-pagination {
