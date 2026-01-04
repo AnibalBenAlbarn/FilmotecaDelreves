@@ -5,6 +5,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -252,24 +253,26 @@ public class MiBibliotecaUI {
         detailsScroll.setFitToWidth(true);
         detailsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         detailsScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        detailsScroll.setPrefViewportHeight(220);
-        detailsScroll.setMinHeight(180);
-        detailsScroll.setMaxHeight(280);
+        detailsScroll.setPrefViewportHeight(260);
+        detailsScroll.setMinHeight(200);
+        detailsScroll.setMaxHeight(Double.MAX_VALUE);
         detailsScroll.getStyleClass().add("library-details-scroll");
+        VBox.setVgrow(detailsScroll, Priority.ALWAYS);
 
-        VBox detailsText = new VBox(6, detailsTitle, detailsMeta, detailsActions, detailsScroll);
+        VBox detailsText = new VBox(10, detailsTitle, detailsMeta, detailsActions, detailsScroll);
         detailsText.setFillWidth(true);
 
         StackPane detailsPosterPane = new StackPane();
         detailsPosterPane.getStyleClass().add("library-details-poster");
-        detailsPosterPane.getChildren().add(createPosterContent(null, "Sin carátula", 220, 320));
+        detailsPosterPane.getChildren().add(createPosterContent(null, "Sin carátula", 260, 380));
 
         HBox detailsBox = new HBox(16, detailsText, detailsPosterPane);
         detailsBox.getStyleClass().add("library-details");
         detailsBox.setAlignment(Pos.TOP_LEFT);
         HBox.setHgrow(detailsText, Priority.ALWAYS);
-        detailsBox.setVisible(false);
-        detailsBox.setManaged(false);
+        detailsBox.setMinWidth(360);
+        detailsBox.setPrefWidth(420);
+        detailsBox.setMaxWidth(Double.MAX_VALUE);
         showMoviePlaceholder(detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane);
 
         ScrollPane scrollPane = new ScrollPane(grid);
@@ -312,6 +315,17 @@ public class MiBibliotecaUI {
         final int pageSize = 25;
         AtomicReference<List<MediaItem>> filteredItems = new AtomicReference<>(List.of());
 
+        SplitPane contentRow = new SplitPane();
+        contentRow.setOrientation(Orientation.HORIZONTAL);
+        contentRow.getStyleClass().add("library-content");
+        contentRow.getItems().add(resultsPane);
+        SplitPane.setResizableWithParent(resultsPane, true);
+        SplitPane.setResizableWithParent(detailsBox, true);
+        contentRow.setDividerPositions(0.68);
+
+        Runnable showDetailsPane = () -> toggleDetailsPane(contentRow, detailsBox, true);
+        Runnable hideDetailsPane = () -> toggleDetailsPane(contentRow, detailsBox, false);
+
         Runnable applyFilters = () -> {
             String query = searchField.getText() == null ? "" : searchField.getText().toLowerCase();
             String genre = genreFilter.getValue();
@@ -334,8 +348,7 @@ public class MiBibliotecaUI {
             selectedMovie.set(null);
             playButton.setDisable(true);
             settingsButton.setDisable(true);
-            detailsBox.setVisible(false);
-            detailsBox.setManaged(false);
+            hideDetailsPane.run();
             filteredItems.set(filtered);
             if (scrollMode.isSelected()) {
                 grid.getChildren().setAll(filtered.stream()
@@ -344,8 +357,7 @@ public class MiBibliotecaUI {
                             selectedMovie.set(item);
                             playButton.setDisable(item.getFilePath() == null || item.getFilePath().isBlank());
                             settingsButton.setDisable(false);
-                            detailsBox.setVisible(true);
-                            detailsBox.setManaged(true);
+                            showDetailsPane.run();
                         }))
                         .collect(Collectors.toList()));
                 resultsPane.getChildren().setAll(scrollPane);
@@ -355,7 +367,7 @@ public class MiBibliotecaUI {
                 pagination.setCurrentPageIndex(0);
                 updatePaginationPage(filteredItems, pageGrid, entry, catalog, refreshView,
                         detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane, 0, pageSize,
-                        detailsBox, selectedMovie, playButton, settingsButton);
+                        selectedMovie, playButton, settingsButton, showDetailsPane);
                 resultsPane.getChildren().setAll(pagination, pageScrollPane);
             }
         };
@@ -366,7 +378,7 @@ public class MiBibliotecaUI {
             }
             updatePaginationPage(filteredItems, pageGrid, entry, catalog, refreshView,
                     detailsTitle, detailsMeta, detailsOverview, detailsFile, detailsPath, detailsPosterPane, newValue.intValue(),
-                    pageSize, detailsBox, selectedMovie, playButton, settingsButton);
+                    pageSize, selectedMovie, playButton, settingsButton, showDetailsPane);
         });
 
         searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
@@ -388,12 +400,7 @@ public class MiBibliotecaUI {
         viewModeGroup.selectedToggleProperty().addListener((obs, oldValue, newValue) -> applyFilters.run());
 
         applyFilters.run();
-
-        HBox contentRow = new HBox(16, resultsPane, detailsBox);
-        contentRow.getStyleClass().add("library-content");
-        HBox.setHgrow(resultsPane, Priority.ALWAYS);
-        detailsBox.setPrefWidth(360);
-        detailsBox.setMaxWidth(380);
+        hideDetailsPane.run();
 
         container.getChildren().addAll(filters, viewMode, contentRow);
         VBox.setVgrow(contentRow, Priority.ALWAYS);
@@ -781,15 +788,15 @@ public class MiBibliotecaUI {
     }
 
     private void updatePosterPane(StackPane posterPane, String posterPath, String title) {
-        posterPane.getChildren().setAll(createPosterContent(posterPath, title, 220, 320));
+        posterPane.getChildren().setAll(createPosterContent(posterPath, title, 260, 380));
     }
 
     private void updatePaginationPage(AtomicReference<List<MediaItem>> filteredItems, FlowPane pageGrid,
                                       LibraryEntry entry, LibraryCatalog catalog, Runnable refreshView,
                                       Label detailsTitle, Label detailsMeta, Label detailsOverview, Label detailsFile,
                                       Label detailsPath, StackPane detailsPosterPane, int pageIndex, int pageSize,
-                                      Region detailsBox, AtomicReference<MediaItem> selectedMovie, Button playButton,
-                                      MenuButton settingsButton) {
+                                      AtomicReference<MediaItem> selectedMovie, Button playButton,
+                                      MenuButton settingsButton, Runnable showDetailsPane) {
         List<MediaItem> items = filteredItems.get();
         int fromIndex = pageIndex * pageSize;
         if (fromIndex >= items.size()) {
@@ -804,10 +811,24 @@ public class MiBibliotecaUI {
                     selectedMovie.set(item);
                     playButton.setDisable(item.getFilePath() == null || item.getFilePath().isBlank());
                     settingsButton.setDisable(false);
-                    detailsBox.setVisible(true);
-                    detailsBox.setManaged(true);
+                    showDetailsPane.run();
                 }))
                 .collect(Collectors.toList()));
+    }
+
+    private void toggleDetailsPane(SplitPane contentRow, Node detailsBox, boolean show) {
+        if (show) {
+            if (!contentRow.getItems().contains(detailsBox)) {
+                contentRow.getItems().add(detailsBox);
+                contentRow.setDividerPositions(0.68);
+            }
+            detailsBox.setVisible(true);
+            detailsBox.setManaged(true);
+        } else {
+            contentRow.getItems().remove(detailsBox);
+            detailsBox.setVisible(false);
+            detailsBox.setManaged(false);
+        }
     }
 
     private void showSeriesDetails(SeriesEntry series, Label title, Label meta, Label body) {
